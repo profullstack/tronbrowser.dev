@@ -30,6 +30,22 @@ pnpm test
 pnpm build
 ```
 
+## Secrets / env (Doppler)
+
+Secrets are managed with the [Doppler](https://doppler.com) CLI (project
+`tronbrowser`, config `dev`). After `doppler login`, the repo is already scoped
+via [`doppler.yaml`](doppler.yaml) — run anything that needs env through Doppler:
+
+```bash
+doppler setup            # one-time, reads doppler.yaml
+doppler run -- pnpm test
+doppler run -- node apps/...   # injects TRONBROWSER_DB_URL, _AUTH_TOKEN, …
+```
+
+[`.env.example`](.env.example) documents every variable; a local `.env`
+(gitignored) still works as a fallback, but Doppler is the source of truth.
+Cloud AI provider keys live in the DB (`ai_provider_keys`), not in env.
+
 ## Milestones
 
 | Milestone | Scope |

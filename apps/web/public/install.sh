@@ -70,15 +70,26 @@ usage() {
 tron — TronBrowser CLI
 
 Usage:
-  tron [url...]     Launch TronBrowser (optionally opening URLs)
-  tron upgrade      Update to the latest release
-  tron remove       Uninstall TronBrowser (keeps your profile data)
-  tron version      Print the installed version
-  tron help         Show this help
+  tron <url> [url...]   Open URL(s) in TronBrowser (agent-friendly)
+  tron open <url>       Same as above, explicit
+  tron                  Launch TronBrowser
+  tron upgrade          Update to the latest release
+  tron remove           Uninstall TronBrowser (keeps your profile data)
+  tron version          Print the installed version
+  tron help             Show this help
 USAGE
 }
 
+launch() {
+  [ -x "$CURRENT" ] || { echo "TronBrowser is not installed. Run: curl -fsSL $INSTALL_URL | sh" >&2; exit 1; }
+  exec "$CURRENT" "$@"
+}
+
 case "${1:-}" in
+  open)
+    shift
+    [ "$#" -gt 0 ] || { echo "usage: tron open <url>" >&2; exit 2; }
+    launch "$@" ;;
   upgrade|update)
     exec sh -c "curl -fsSL '$INSTALL_URL' | sh -s -- upgrade" ;;
   remove|uninstall)
@@ -90,8 +101,8 @@ case "${1:-}" in
   help|--help|-h)
     usage ;;
   *)
-    [ -x "$CURRENT" ] || { echo "TronBrowser is not installed. Run: curl -fsSL $INSTALL_URL | sh" >&2; exit 1; }
-    exec "$CURRENT" "$@" ;;
+    # Bare `tron` launches; `tron <url> [url...]` opens URLs (passthrough).
+    launch "$@" ;;
 esac
 TRON
   chmod +x "$TRON_CLI"
