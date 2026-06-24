@@ -45,4 +45,4 @@ pnpm build
 
 ## License
 
-TBD (open-source).
+[MIT](LICENSE) © Profullstack, Inc.

@@ -1,0 +1,18 @@
+# Caddy config for the tronbrowser.dev static site. Railway terminates TLS at
+# the edge and injects $PORT; Caddy serves plain HTTP on it.
+{
+	admin off
+	auto_https off
+}
+
+:{$PORT:80} {
+	root * /srv
+	encode gzip
+	file_server
+
+	# install.sh is a real file and is served directly; everything else falls
+	# back to the homepage.
+	try_files {path} {path}/ /index.html
+
+	header /install.sh Content-Type "text/x-shellscript; charset=utf-8"
+}
