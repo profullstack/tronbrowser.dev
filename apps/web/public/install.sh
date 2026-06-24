@@ -1,18 +1,25 @@
 #!/bin/sh
 # TronBrowser installer.
 #   curl -fsSL https://tronbrowser.dev/install.sh | sh
-#   curl -fsSL https://tronbrowser.dev/install.sh | sh -s -- upgrade
-#   curl -fsSL https://tronbrowser.dev/install.sh | sh -s -- remove
 #
-# Commands: install (default) | upgrade | remove | version | help
+# After install, manage TronBrowser with the `tron` CLI:
+#   tron            launch the browser
+#   tron upgrade    update to the latest release
+#   tron remove     uninstall (keeps your profile data)
+#   tron version    print the installed version
+#
+# This installer also accepts: install (default) | upgrade | remove | version | help
 # Env: TRONBROWSER_PREFIX (default $HOME/.local), TRONBROWSER_REPO
 set -eu
 
 REPO="${TRONBROWSER_REPO:-profullstack/tronbrowser.dev}"
 PREFIX="${TRONBROWSER_PREFIX:-$HOME/.local}"
 APP_DIR="$PREFIX/lib/tronbrowser"
-BIN_LINK="$PREFIX/bin/tronbrowser"
+CURRENT="$APP_DIR/current"          # stable symlink -> the browser binary
+TRON_CLI="$PREFIX/bin/tron"         # the user-facing CLI
+ALIAS_CLI="$PREFIX/bin/tronbrowser" # alias -> tron
 VERSION_FILE="$APP_DIR/VERSION"
+INSTALL_URL="https://tronbrowser.dev/install.sh"
 
 say()  { printf '%s\n' "$*"; }
 info() { printf '\033[36m==>\033[0m %s\n' "$*"; }
@@ -45,6 +52,52 @@ latest_tag() {
   sed -n 's/.*"tag_name":[[:space:]]*"\([^"]*\)".*/\1/p' /tmp/tb_rel.json | head -n1
 }
 
+# Writes the `tron` management CLI to $PREFIX/bin/tron.
+write_cli() {
+  mkdir -p "$PREFIX/bin"
+  cat > "$TRON_CLI" <<'TRON'
+#!/bin/sh
+# tron — TronBrowser CLI
+set -eu
+PREFIX="${TRONBROWSER_PREFIX:-$HOME/.local}"
+APP_DIR="$PREFIX/lib/tronbrowser"
+CURRENT="$APP_DIR/current"
+VERSION_FILE="$APP_DIR/VERSION"
+INSTALL_URL="https://tronbrowser.dev/install.sh"
+
+usage() {
+  cat <<USAGE
+tron — TronBrowser CLI
+
+Usage:
+  tron [url...]     Launch TronBrowser (optionally opening URLs)
+  tron upgrade      Update to the latest release
+  tron remove       Uninstall TronBrowser (keeps your profile data)
+  tron version      Print the installed version
+  tron help         Show this help
+USAGE
+}
+
+case "${1:-}" in
+  upgrade|update)
+    exec sh -c "curl -fsSL '$INSTALL_URL' | sh -s -- upgrade" ;;
+  remove|uninstall)
+    rm -rf "$APP_DIR"
+    rm -f "$PREFIX/bin/tron" "$PREFIX/bin/tronbrowser"
+    echo "Removed TronBrowser. (Profile data kept; delete ~/.tronbrowser to wipe it.)" ;;
+  version|--version|-v)
+    cat "$VERSION_FILE" 2>/dev/null || echo "not installed" ;;
+  help|--help|-h)
+    usage ;;
+  *)
+    [ -x "$CURRENT" ] || { echo "TronBrowser is not installed. Run: curl -fsSL $INSTALL_URL | sh" >&2; exit 1; }
+    exec "$CURRENT" "$@" ;;
+esac
+TRON
+  chmod +x "$TRON_CLI"
+  ln -sf "$TRON_CLI" "$ALIAS_CLI"
+}
+
 do_install() {
   need uname
   asset="$(detect_asset)"
@@ -67,16 +120,18 @@ do_install() {
   [ -n "$bin" ] || bin="$(find "$APP_DIR" -maxdepth 3 -type f -name 'TronBrowser' 2>/dev/null | head -n1)"
   [ -n "$bin" ] || err "browser binary not found in archive"
   chmod +x "$bin"
-  ln -sf "$bin" "$BIN_LINK"
+  ln -sf "$bin" "$CURRENT"
   echo "$tag" > "$VERSION_FILE"
 
-  info "Installed to $APP_DIR"
-  say  "    binary: $BIN_LINK"
+  write_cli
+
+  info "Installed TronBrowser $tag to $APP_DIR"
+  say  "    launch:  tron"
+  say  "    manage:  tron upgrade | tron remove | tron version"
   case ":$PATH:" in
     *":$PREFIX/bin:"*) : ;;
-    *) warn "$PREFIX/bin is not on PATH — add it to use 'tronbrowser' directly." ;;
+    *) warn "$PREFIX/bin is not on PATH — add it so 'tron' is available." ;;
   esac
-  say "Run: tronbrowser"
 }
 
 do_upgrade() {
@@ -87,8 +142,8 @@ do_upgrade() {
 do_remove() {
   info "Removing TronBrowser"
   rm -rf "$APP_DIR"
-  [ -L "$BIN_LINK" ] && rm -f "$BIN_LINK"
-  say "Removed. (User profile/bookmarks/history are kept; delete ~/.tronbrowser to wipe data.)"
+  rm -f "$TRON_CLI" "$ALIAS_CLI"
+  say "Removed. (Profile/bookmarks/history kept; delete ~/.tronbrowser to wipe data.)"
 }
 
 do_version() {
@@ -99,7 +154,7 @@ usage() {
   cat <<EOF
 TronBrowser installer
 
-Usage: install.sh [command]
+Usage: curl -fsSL $INSTALL_URL | sh [-s -- <command>]
 
 Commands:
   install    Download and install the latest TronBrowser (default)
@@ -107,6 +162,8 @@ Commands:
   remove     Uninstall TronBrowser (keeps your profile data)
   version    Print the installed version
   help       Show this help
+
+After install, prefer the 'tron' CLI: tron upgrade | tron remove | tron version
 
 Env:
   TRONBROWSER_PREFIX   install prefix (default: \$HOME/.local)

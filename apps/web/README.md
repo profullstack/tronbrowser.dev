@@ -10,16 +10,23 @@ Marketing site + web dashboard for TronBrowser.
 - `public/install.sh` — served at **https://tronbrowser.dev/install.sh**.
 
 ```bash
-# install (default), then the usual commands:
+# one-line install:
 curl -fsSL https://tronbrowser.dev/install.sh | sh
-curl -fsSL https://tronbrowser.dev/install.sh | sh -s -- upgrade
-curl -fsSL https://tronbrowser.dev/install.sh | sh -s -- remove
-curl -fsSL https://tronbrowser.dev/install.sh | sh -s -- version
 ```
 
 The installer detects OS/arch, pulls the latest GitHub release artifact, installs
-under `$TRONBROWSER_PREFIX` (default `~/.local`), and symlinks `tronbrowser` onto
-`$PREFIX/bin`. `remove` keeps the user's profile/bookmarks/history.
+under `$TRONBROWSER_PREFIX` (default `~/.local`), and drops a **`tron`** CLI onto
+`$PREFIX/bin` (with a `tronbrowser` alias). After install, manage it with `tron`:
+
+```bash
+tron            # launch the browser (tron <url> opens URLs)
+tron upgrade    # update to the latest release
+tron remove     # uninstall (keeps your profile data)
+tron version    # print the installed version
+```
+
+The bootstrap installer also accepts `… | sh -s -- {install,upgrade,remove,version,help}`
+for use before `tron` exists on PATH.
 
 Preview the static site locally:
 
