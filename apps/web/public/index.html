@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>TronBrowser — privacy-first, AI-native browser</title>
+<meta name="description" content="Open-source, privacy-first, AI-native browser on a Chromium fork. No telemetry, no ads, no sponsored tabs." />
+<style>
+  :root {
+    --bg: #05070d; --panel: #0b1020; --line: #1b2540;
+    --cyan: #34e7ff; --fg: #cfe8ff; --muted: #6f86b3;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: radial-gradient(1200px 600px at 50% -10%, #0a1430 0%, var(--bg) 60%);
+    color: var(--fg); font: 16px/1.6 ui-monospace, "SF Mono", Menlo, monospace;
+    min-height: 100vh;
+  }
+  .wrap { max-width: 860px; margin: 0 auto; padding: 72px 20px 96px; }
+  header { text-align: center; margin-bottom: 56px; }
+  .logo { font-size: 44px; font-weight: 800; letter-spacing: 2px;
+    color: #fff; text-shadow: 0 0 18px var(--cyan); }
+  .logo span { color: var(--cyan); }
+  .tag { color: var(--muted); margin-top: 10px; }
+  .install { background: var(--panel); border: 1px solid var(--line);
+    border-radius: 12px; padding: 22px; box-shadow: 0 0 40px rgba(52,231,255,.06); }
+  .label { color: var(--muted); font-size: 13px; text-transform: uppercase; letter-spacing: 1px; }
+  .cmd { display: flex; align-items: center; gap: 12px; margin: 10px 0 4px;
+    background: #04060c; border: 1px solid var(--line); border-radius: 8px; padding: 14px 16px; }
+  .cmd code { color: var(--cyan); white-space: nowrap; overflow-x: auto; flex: 1; }
+  .cmd button { background: transparent; border: 1px solid var(--line); color: var(--fg);
+    border-radius: 6px; padding: 6px 12px; cursor: pointer; font: inherit; font-size: 13px; }
+  .cmd button:hover { border-color: var(--cyan); color: var(--cyan); }
+  .sub { color: var(--muted); font-size: 14px; margin-top: 14px; }
+  .sub code { color: var(--fg); }
+  .principles { list-style: none; padding: 0; margin: 48px 0 0;
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(220px,1fr)); gap: 12px; }
+  .principles li { background: var(--panel); border: 1px solid var(--line);
+    border-radius: 10px; padding: 14px 16px; }
+  .principles b { color: var(--cyan); }
+  footer { text-align: center; margin-top: 56px; color: var(--muted); }
+  a { color: var(--cyan); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="logo">Tron<span>Browser</span></div>
+    <div class="tag">Open-source · privacy-first · AI-native · built on a Chromium fork</div>
+  </header>
+
+  <section class="install">
+    <div class="label">Install (macOS / Linux)</div>
+    <div class="cmd">
+      <code id="cmd">curl -fsSL https://tronbrowser.dev/install.sh | sh</code>
+      <button onclick="copyCmd()">copy</button>
+    </div>
+    <div class="sub">
+      Then manage it with the usual commands:<br />
+      <code>… | sh -s -- upgrade</code> &nbsp;·&nbsp;
+      <code>… | sh -s -- remove</code> &nbsp;·&nbsp;
+      <code>tronbrowser --version</code>
+      <br />Windows &amp; manual downloads on the
+      <a href="https://github.com/profullstack/tronbrowsers.dev/releases">releases page</a>.
+    </div>
+  </section>
+
+  <ul class="principles">
+    <li><b>No telemetry</b> — nothing phones home, by default.</li>
+    <li><b>No ads</b> — and no sponsored tabs.</li>
+    <li><b>No affiliate injection</b> — your links stay your links.</li>
+    <li><b>User-owned data</b> — bring your own SQLite, or use the cloud.</li>
+    <li><b>Chrome-compatible</b> — extensions, profiles, bookmarks, DevTools.</li>
+    <li><b>Self-hostable</b> — run the services yourself.</li>
+  </ul>
+
+  <footer>
+    <a href="https://github.com/profullstack/tronbrowsers.dev">GitHub</a> ·
+    <a href="https://github.com/profullstack/tronbrowsers.dev/blob/main/docs/tronbrowser-prd.md">PRD</a>
+  </footer>
+</div>
+<script>
+  function copyCmd() {
+    var text = document.getElementById('cmd').textContent;
+    navigator.clipboard && navigator.clipboard.writeText(text);
+  }
+</script>
+</body>
+</html>
