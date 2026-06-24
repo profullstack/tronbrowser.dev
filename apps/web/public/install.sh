@@ -8,7 +8,7 @@
 # Env: TRONBROWSER_PREFIX (default $HOME/.local), TRONBROWSER_REPO
 set -eu
 
-REPO="${TRONBROWSER_REPO:-profullstack/tronbrowsers.dev}"
+REPO="${TRONBROWSER_REPO:-profullstack/tronbrowser.dev}"
 PREFIX="${TRONBROWSER_PREFIX:-$HOME/.local}"
 APP_DIR="$PREFIX/lib/tronbrowser"
 BIN_LINK="$PREFIX/bin/tronbrowser"
