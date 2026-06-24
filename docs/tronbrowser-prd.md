@@ -79,14 +79,21 @@ Replace:
 
 # AI
 
-Providers:
-- OpenAI
-- Anthropic
-- Google
-- OpenRouter
-- Ollama
-- LM Studio
-- vLLM
+Providers (BYOK set mirrors crawlproof.com — 8 cloud + local):
+- Anthropic (ANTHROPIC_API_KEY)
+- OpenAI (OPENAI_API_KEY)
+- Google / Gemini (GEMINI_API_KEY)
+- DeepSeek (DEEPSEEK_API_KEY)
+- Perplexity (PERPLEXITY_API_KEY)
+- Hugging Face (HUGGINGFACE_API_KEY)
+- Kimi / Moonshot (MOONSHOT_API_KEY / KIMI_API_KEY)
+- Qwen / Alibaba (DASHSCOPE_API_KEY / QWEN_API_KEY)
+- Local (keyless): Ollama, LM Studio, vLLM
+
+Keys:
+- BYOK (free / self-hosted): user's own keys from web app .env / their store
+- Cloud (paid): OUR keys in the DB (ai_provider_keys, scoped per app_id — multi-app)
+- resolveProviderKey prefers BYOK, falls back to cloud on paid plans
 
 Execution:
 - Local

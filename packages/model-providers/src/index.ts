@@ -5,12 +5,20 @@
 
 export const PACKAGE_NAME = '@tronbrowser/model-providers' as const;
 
-/** Providers supported by TronBrowser (PRD §AI Providers). */
+/**
+ * Providers supported by TronBrowser. The cloud (BYOK) set mirrors the providers
+ * used across Profullstack apps (see crawlproof.com): anthropic, openai, google,
+ * deepseek, perplexity, huggingface. Plus keyless local runtimes.
+ */
 export const PROVIDER_IDS = [
-  'openai',
   'anthropic',
+  'openai',
   'google',
-  'openrouter',
+  'deepseek',
+  'perplexity',
+  'huggingface',
+  'kimi',
+  'qwen',
   'ollama',
   'lmstudio',
   'vllm',
@@ -19,6 +27,9 @@ export type ProviderId = (typeof PROVIDER_IDS)[number];
 
 /** Where inference runs (PRD §AI Execution). */
 export type ExecutionMode = 'local' | 'cloud' | 'hybrid';
+
+export * from './catalog.js';
+export * from './keys.js';
 
 export interface ChatMessage {
   role: 'system' | 'user' | 'assistant' | 'tool';

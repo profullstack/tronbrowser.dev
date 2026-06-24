@@ -11,9 +11,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # pnpm version comes from the "packageManager" field in package.json.
       - uses: pnpm/action-setup@v4
-        with:
-          version: 9
 
       - uses: actions/setup-node@v4
         with:
@@ -35,17 +34,17 @@ jobs:
       - name: Build
         run: pnpm build
 
-  # package + release jobs are stubbed until M1 (Chromium fork) lands.
+  # package + release jobs are stubbed until the Chromium build lands in CI.
   package:
     runs-on: ubuntu-latest
     needs: build
     if: github.ref == 'refs/heads/main'
     steps:
-      - run: echo "package: stub — implemented at M1"
+      - run: echo "package stub - implemented later"
 
   release:
     runs-on: ubuntu-latest
     needs: package
     if: startsWith(github.ref, 'refs/tags/v')
     steps:
-      - run: echo "release: stub — implemented at M1"
+      - run: echo "release stub - implemented later"

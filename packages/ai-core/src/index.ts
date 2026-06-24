@@ -14,10 +14,14 @@ export type ExecutionMode = 'local' | 'cloud' | 'hybrid';
 
 /** Mirrors @tronbrowser/model-providers ProviderId (PRD §AI Providers). */
 export type ProviderId =
-  | 'openai'
   | 'anthropic'
+  | 'openai'
   | 'google'
-  | 'openrouter'
+  | 'deepseek'
+  | 'perplexity'
+  | 'huggingface'
+  | 'kimi'
+  | 'qwen'
   | 'ollama'
   | 'lmstudio'
   | 'vllm';
