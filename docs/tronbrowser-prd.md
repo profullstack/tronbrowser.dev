@@ -51,6 +51,7 @@ packages/
 - storage
 - sdk
 - plugins
+- payments
 - ui
 - shared
 
@@ -121,6 +122,32 @@ Lifecycle:
 - disable
 - update
 - uninstall
+
+# Payments
+
+CoinPay OAuth + x402.
+
+Auth:
+- CoinPay OAuth (Authorization Code + PKCE)
+- Scopes: wallet:read, payments:x402
+- Self-hosted CoinPay overridable
+
+x402 (HTTP 402 Payment Required):
+- Parse payment requirements from 402 responses
+- Pay from the user's CoinPay global wallet addresses (match network + asset)
+- Custodial keys (never leave CoinPay)
+- Per-request maxAmount guard; budgets/ledger via agent runtime
+
+Package: packages/payments (x402 + CoinPay wallet + PaymentProcessor)
+
+# Storage
+
+SQLite/libSQL, self-hostable.
+
+- Default: managed cloud DB (Turso) — managed backups + replication
+- Bring your own: local SQLite file, local libSQL replica, or your own libSQL server (self-hosted, user-owned, user-managed backups)
+- Object storage: Cloudflare R2
+- Config via TRONBROWSER_DB_URL / TRONBROWSER_DB_AUTH_TOKEN / TRONBROWSER_DB_PATH
 
 # Sync
 
