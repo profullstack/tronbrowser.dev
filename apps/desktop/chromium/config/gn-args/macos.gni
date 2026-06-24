@@ -1,0 +1,4 @@
+# TronBrowser — macOS-specific GN args. Imported after common.gni.
+target_os = "mac"
+target_cpu = "arm64"   # set to "x64" for Intel builds
+use_system_xcode = true

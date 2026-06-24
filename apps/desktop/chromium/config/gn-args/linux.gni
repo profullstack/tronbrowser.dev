@@ -1,0 +1,6 @@
+# TronBrowser — Linux-specific GN args. Imported after common.gni.
+target_os = "linux"
+target_cpu = "x64"
+use_sysroot = true
+use_pulseaudio = true
+use_vaapi = true

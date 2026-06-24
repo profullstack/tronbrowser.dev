@@ -1,0 +1,3 @@
+# TronBrowser — Windows-specific GN args. Imported after common.gni.
+target_os = "win"
+target_cpu = "x64"

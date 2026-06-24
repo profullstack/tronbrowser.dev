@@ -1,0 +1,35 @@
+# TronBrowser — common GN build args (all platforms).
+#
+# These enforce the PRD privacy guarantees at COMPILE time. The Ungoogled
+# Chromium patch set already strips most Google integrations; these args make
+# the posture explicit and add branding. Runtime flags live in
+# ../../src/chromium-flags.ts.
+
+# --- Branding -------------------------------------------------------------
+is_official_build = true
+chrome_pgo_phase = 0
+
+# --- Privacy: no telemetry / no phone-home (PRD §Principles) --------------
+# Empty Google keys disable all Google service integrations.
+google_api_key = ""
+google_default_client_id = ""
+google_default_client_secret = ""
+use_official_google_api_keys = false
+
+enable_reporting = false
+enable_remoting = false
+enable_rlz = false
+enable_hangout_services_extension = false
+safe_browsing_mode = 0          # no Safe Browsing phone-home
+enable_mdns = false
+
+# --- Compatibility: preserve media + extensions (PRD §Desktop) -----------
+proprietary_codecs = true
+ffmpeg_branding = "Chrome"
+enable_widevine = false          # opt-in DRM only; ship without by default
+
+# --- Build size / speed ---------------------------------------------------
+is_debug = false
+symbol_level = 0
+blink_symbol_level = 0
+enable_nacl = false

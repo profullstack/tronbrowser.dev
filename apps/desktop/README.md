@@ -1,19 +1,33 @@
 # @tronbrowser/desktop
 
-Desktop Chromium browser shell
+Desktop shell for the TronBrowser Chromium fork — the isolated, desktop-specific
+integration layer (PRD rule: *desktop-specific code stays isolated*).
 
-> Status: **stub** — interfaces defined, implementation pending. Part of milestone **M0 (Monorepo)**.
+> Milestone **M1 (Chromium fork)**: build pipeline + privacy-enforcing launch
+> layer in place. The actual Chromium compile is large (~50GB checkout) and runs
+> via guarded scripts, not in CI yet.
 
-## Install
+## Two halves
 
-```bash
-pnpm add @tronbrowser/desktop
+| Path | Responsibility |
+| --- | --- |
+| [`chromium/`](chromium/) | Fork the browser: pinned versions, GN build args, branding, patch series, fetch/build scripts. See [chromium/README](chromium/README.md). |
+| [`src/`](src/) | Resolve the built binary and launch it with privacy flags enforced. |
+
+## TypeScript API
+
+```ts
+import { launch, buildLaunchFlags } from '@tronbrowser/desktop';
+
+// Privacy flags are applied by default; sponsored/affiliate flags are refused.
+launch({ outDir: '/path/to/chromium/out/TronBrowser', urls: ['https://tronbrowser.dev'] });
 ```
 
 ## Scripts
 
-- `pnpm build` — compile TypeScript to `dist/`
-- `pnpm typecheck` — type-check without emitting
-- `pnpm test` — run unit tests (vitest)
+- `pnpm build` / `pnpm typecheck` / `pnpm test`
+- `pnpm chromium:fetch | sync | patch | build | package` — fork pipeline
+  (each dry-runs unless `TB_RUN=1`).
 
-See the [PRD](../../docs/tronbrowser-prd.md) for the overall architecture.
+See the [PRD](../../docs/tronbrowser-prd.md) and
+[ADR 0001](../../docs/adr/0001-chromium-fork-base.md).

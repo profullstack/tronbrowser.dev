@@ -2,7 +2,7 @@
   "name": "@tronbrowser/desktop",
   "version": "0.0.0",
   "private": true,
-  "description": "Desktop Chromium browser shell",
+  "description": "Desktop shell for the TronBrowser Chromium fork",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -16,7 +16,12 @@
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run --passWithNoTests",
-    "lint": "echo \"[lint] desktop: stub\""
+    "lint": "echo \"[lint] desktop: stub\"",
+    "chromium:fetch": "chromium/scripts/fetch.sh",
+    "chromium:sync": "chromium/scripts/sync.sh",
+    "chromium:patch": "chromium/scripts/apply-patches.sh",
+    "chromium:build": "chromium/scripts/build.sh",
+    "chromium:package": "chromium/scripts/package.sh"
   },
   "devDependencies": {
     "typescript": "^5.6.3",

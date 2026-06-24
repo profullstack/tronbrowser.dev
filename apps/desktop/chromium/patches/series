@@ -1,0 +1,7 @@
+# TronBrowser patch series — applied in order AFTER the Ungoogled Chromium
+# patch set. One concern per patch. Generate patches with:
+#   git -C <chromium-src> diff > apps/desktop/chromium/patches/tronbrowser/<name>.patch
+tronbrowser/0001-branding-strings.patch
+tronbrowser/0002-disable-telemetry-residual.patch
+tronbrowser/0003-remove-sponsored-integrations.patch
+tronbrowser/0004-default-search-and-newtab.patch

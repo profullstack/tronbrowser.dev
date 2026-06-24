@@ -1,0 +1,12 @@
+# TronBrowser branding. Mirrors chrome/app/theme/<brand>/BRANDING; applied by
+# the branding patch (see ../patches). Replaces all "Chromium"/"Google Chrome"
+# product strings.
+COMPANY_FULLNAME=Profullstack, Inc.
+COMPANY_SHORTNAME=Profullstack
+PRODUCT_FULLNAME=TronBrowser
+PRODUCT_SHORTNAME=TronBrowser
+PRODUCT_INSTALLER_FULLNAME=TronBrowser Installer
+PRODUCT_INSTALLER_SHORTNAME=TronBrowser Installer
+COPYRIGHT=Copyright 2026 Profullstack, Inc. All Rights Reserved.
+MAC_BUNDLE_ID=dev.tronbrowser.TronBrowser
+MAC_CREATOR_CODE=TrBr

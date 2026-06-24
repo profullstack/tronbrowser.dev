@@ -1,0 +1,7 @@
+{
+  "$comment": "Pinned upstream versions for the TronBrowser fork. Bump deliberately.",
+  "chromiumVersion": "131.0.6778.85",
+  "ungoogledChromiumTag": "131.0.6778.85-1",
+  "ungoogledChromiumRepo": "https://github.com/ungoogled-software/ungoogled-chromium.git",
+  "depotToolsRepo": "https://chromium.googlesource.com/chromium/tools/depot_tools.git"
+}
