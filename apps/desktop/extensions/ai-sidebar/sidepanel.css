@@ -13,7 +13,9 @@ header {
   display: flex; align-items: center; gap: 8px;
   padding: 10px 12px; border-bottom: 1px solid var(--line);
 }
+.brand-logo { width: 20px; height: 20px; display: block; filter: drop-shadow(0 0 6px rgba(52,231,255,.4)); }
 .brand { font-weight: 800; letter-spacing: 1px; }
+.brand .accent { color: var(--cyan); }
 .accent { color: var(--cyan); }
 .provider { color: var(--muted); font-size: 12px; flex: 1; }
 header button { background: transparent; border: 1px solid var(--line); color: var(--fg);
