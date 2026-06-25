@@ -2,6 +2,7 @@ import { loadFeeds, parseFeed } from './feeds.js';
 import { coinpaySignIn, coinpayState, coinpaySignOut } from './coinpay-auth.js';
 import { fetchQuotes, fetchAllScores } from './markets.js';
 import { fetchMotd } from './motd.js';
+import { getToken as btrToken, BTR_BASE } from './bittorrented.js';
 
 const el = (id) => document.getElementById(id);
 
@@ -233,7 +234,39 @@ async function renderMotd() {
   }
 }
 
+// --- bittorrented favorites (Live TV + Podcasts) when connected ---
+async function renderBtr() {
+  const sec = el('btr-sec');
+  const token = await btrToken();
+  if (!token) { sec.hidden = true; return; }
+  let data;
+  try {
+    const r = await fetch(`${BTR_BASE}/api/v1/favorites`, { headers: { authorization: `Bearer ${token}` } });
+    if (!r.ok) { sec.hidden = true; return; }
+    data = await r.json();
+  } catch { sec.hidden = true; return; }
+
+  const tv = data.tv || [];
+  const pods = data.podcasts || [];
+  sec.hidden = false;
+  const item = (href, img, ph, label) =>
+    `<a class="btr-item" href="${escAttr(href)}" target="_blank">` +
+    (img ? `<img src="${escAttr(img)}" alt="" loading="lazy" referrerpolicy="no-referrer" />` : `<span class="btr-ph">${ph}</span>`) +
+    `<span class="btr-label">${escapeHtml(label)}</span></a>`;
+  const group = (title, items) => items.length
+    ? `<div class="btr-group"><h3>${title}</h3><div class="btr-items">${items.join('')}</div></div>` : '';
+
+  if (!tv.length && !pods.length) {
+    el('btr').innerHTML = '<p class="muted">Connected — add Live TV or podcast favorites on bittorrented.com and they’ll show up here.</p>';
+    return;
+  }
+  el('btr').innerHTML =
+    group('Live TV', tv.slice(0, 12).map((c) => item(c.url, c.logo, '📺', c.name))) +
+    group('Podcasts', pods.slice(0, 12).map((p) => item(p.url, p.image, '🎙', p.title)));
+}
+
 renderMotd();
+renderBtr();
 renderFeeds();
 renderMarkets();
 renderSports();

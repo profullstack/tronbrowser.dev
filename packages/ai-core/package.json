@@ -1,6 +1,6 @@
 {
   "name": "@tronbrowser/ai-core",
-  "version": "0.1.39",
+  "version": "0.1.40",
   "private": true,
   "description": "AI orchestration core (provider routing, execution modes)",
   "type": "module",
