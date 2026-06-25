@@ -101,7 +101,7 @@ FLAGS="--user-data-dir=$DATA --class=TronBrowser --no-first-run --no-default-bro
 
 if [ "$BROWSER" = "flatpak" ]; then
   # shellcheck disable=SC2086
-  exec flatpak run --filesystem="$DATA" --filesystem="$EXT_SRC" "$FLATPAK_APP" $FLAGS "$@"
+  exec flatpak run --filesystem="$DATA" --filesystem="$EXTBASE_SRC" "$FLATPAK_APP" $FLAGS "$@"
 else
   # shellcheck disable=SC2086
   exec "$BROWSER" $FLAGS "$@"
