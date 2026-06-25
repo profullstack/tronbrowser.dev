@@ -35,11 +35,12 @@
 	header /install.sh Content-Type "text/x-shellscript; charset=utf-8"
 	header /sitemap.xml Content-Type "application/xml; charset=utf-8"
 
-	# Caching: longer for static assets, short for HTML.
-	@assets path *.svg *.png *.ico *.css *.js
-	header @assets Cache-Control "public, max-age=86400"
-	@pages path / *.html /privacy
-	header @pages Cache-Control "public, max-age=300, s-maxage=3600"
+	# Caching: long for images, SHORT for code/HTML so updates propagate fast
+	# (no content hashing yet — don't let stale JS strand logged-in users).
+	@images path *.svg *.png *.ico
+	header @images Cache-Control "public, max-age=86400"
+	@code path *.js *.css *.html / /privacy /login /settings
+	header @code Cache-Control "public, max-age=60, must-revalidate"
 
 	encode gzip zstd
 
