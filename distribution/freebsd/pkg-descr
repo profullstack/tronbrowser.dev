@@ -1,0 +1,8 @@
+TronBrowser is an open-source, privacy-first, AI-native web browser built on
+Ungoogled Chromium. No telemetry, no ads, no sponsored tabs. It ships an
+agent-friendly CLI (tron <url>) and a bring-your-own-keys AI sidebar.
+
+This port installs a launcher that runs the system Chromium with TronBrowser's
+privacy flags and the AI sidebar extension.
+
+WWW: https://tronbrowser.dev

@@ -1,50 +1,56 @@
 # Distribution channels
 
-How TronBrowser reaches users — the same channel set as pairux.com, kept in this
-**single monorepo** (no per-package repos). GitHub Releases is the source of
-truth; package managers consume the release assets.
+Every channel lives **here** in the one monorepo (no per-package repos), modeled
+on pairux.com. GitHub Releases is the source of truth; each channel consumes the
+release assets. Goal: every major OS + open-source platform.
 
-## Channels
+## Platform matrix
 
-| Channel | Manifest | Artifact | Status |
+| OS / family | Channel | Manifest | Status |
 | --- | --- | --- | --- |
-| `curl \| sh` | [`apps/web/public/install.sh`](../apps/web/public/install.sh) | linux tar.gz / macos zip | ✅ live |
-| GitHub Releases | [`release.yml`](../.github/workflows/release.yml) | all | ✅ live |
-| Homebrew | [`homebrew/tronbrowser.rb`](homebrew/tronbrowser.rb) | linux tar.gz / macos zip | 🟡 formula ready (needs `profullstack/homebrew-tap`) |
-| AUR | [`aur/PKGBUILD`](aur/PKGBUILD) | linux tar.gz | 🟡 ready (needs `AUR_SSH_KEY`) |
-| Nix | [`nix/tronbrowser.nix`](nix/tronbrowser.nix) | linux tar.gz | 🟡 ready |
-| Gentoo | [`gentoo/`](gentoo/) | linux tar.gz | 🟡 ebuild ready |
-| apt (.deb) | [`packaging/nfpm.yaml`](../packaging/nfpm.yaml) | built by nfpm in CI | 🟡 built, needs an apt repo |
-| rpm (.rpm) | [`packaging/nfpm.yaml`](../packaging/nfpm.yaml) | built by nfpm in CI | 🟡 built, needs a yum repo |
-| Scoop | [`scoop/tronbrowser.json`](scoop/tronbrowser.json) | win zip | ⬜ needs Windows artifact hash |
-| winget | [`winget/`](winget/) | win zip | ⬜ needs Windows artifact + winget-pkgs PR |
-| Chocolatey | [`chocolatey/`](chocolatey/) | win zip | ⬜ needs Windows artifact + `CHOCOLATEY_API_KEY` |
+| **All** | `curl \| sh` | [`apps/web/public/install.sh`](../apps/web/public/install.sh) | ✅ live |
+| **All** | GitHub Releases | [`release.yml`](../.github/workflows/release.yml) | ✅ live |
+| macOS / Linux | Homebrew | [`homebrew/`](homebrew/) | 🟡 formula ready (needs tap repo) |
+| Windows | Scoop | [`scoop/`](scoop/) | ⬜ needs win zip hash |
+| Windows | winget | [`winget/`](winget/) | ⬜ needs winget-pkgs PR |
+| Windows | Chocolatey | [`chocolatey/`](chocolatey/) | ⬜ needs `CHOCOLATEY_API_KEY` |
+| Debian / Ubuntu | apt (.deb) | [`deb-rpm/`](deb-rpm/) (nfpm) | ✅ built in CI |
+| RedHat / Fedora / SUSE | rpm (.rpm) | [`deb-rpm/`](deb-rpm/) (nfpm) | ✅ built in CI |
+| Arch | AUR | [`aur/PKGBUILD`](aur/PKGBUILD) | 🟡 needs `AUR_SSH_KEY` |
+| Gentoo | ebuild | [`gentoo/`](gentoo/) | 🟡 overlay ready |
+| NixOS | Nix | [`nix/tronbrowser.nix`](nix/tronbrowser.nix) | 🟡 ready |
+| Ubuntu / universal | Snap | [`snap/snapcraft.yaml`](snap/snapcraft.yaml) | 🟡 classic snap (Snap Store login) |
+| Universal Linux | Flatpak | [`flatpak/`](flatpak/) | 🟡 manifest ready (Flathub PR) |
+| Universal Linux | AppImage | [`appimage/`](appimage/) | ✅ built in CI |
+| FreeBSD | port | [`freebsd/`](freebsd/) | 🟡 port ready |
+| Librem 5 / PinePhone / Ubuntu Touch | `curl \| sh` (arm64) | install.sh | ✅ noarch launcher |
+| iOS / Android | Expo / EAS | [`apps/mobile`](../apps/mobile) | 🚧 Phase 2 |
 
 ## CI/CD (per platform, one repo)
 
-[`release.yml`](../.github/workflows/release.yml) runs on a `v*` tag:
+[`release.yml`](../.github/workflows/release.yml) on a `v*` tag:
 
-1. **create-release** — open a draft GitHub Release.
-2. **build** (matrix: `ubuntu-latest` → linux tar.gz + .deb + .rpm,
-   `macos-latest` → macos zip, `windows-latest` → win zip) — each runner builds
-   its platform's artifacts and `gh release upload`s them to the draft.
-3. **publish** — un-draft once all platforms uploaded.
+1. **create-release** — draft GitHub Release.
+2. **build** matrix — `ubuntu` (linux tar.gz + .deb + .rpm + AppImage),
+   `macos` (zip), `windows` (win zip); each uploads via `gh release upload`.
+3. **publish** — un-draft.
 
-[`submit-packages.yml`](../.github/workflows/submit-packages.yml) runs on release
-publish (or manual dispatch with `version` / `dry_run` / `package_managers`). It
-runs [`scripts/submit-packages.mjs`](../scripts/submit-packages.mjs) to refresh
-each manifest's version + sha256 from the release assets, then submits per
+[`submit-packages.yml`](../.github/workflows/submit-packages.yml) on release publish
+(or dispatch) runs [`scripts/submit-packages.mjs`](../scripts/submit-packages.mjs)
+to refresh each manifest's version + sha256 from the release assets and submit per
 channel — gated on that channel's secret, dry-run by default.
 
-## Secrets needed to actually submit
-
-`AUR_SSH_KEY`, `GPG_PRIVATE_KEY`/`GPG_PASSPHRASE`, `CHOCOLATEY_API_KEY`,
-`PKG_SUBMIT_TOKEN` (for tap/bucket/winget-pkgs PRs). Until set, channels dry-run.
-
-## Bump a release
+## Build a single channel locally
 
 ```bash
-pnpm version:set 0.1.1            # sync all app/package versions
-git tag v0.1.1 && git push origin v0.1.1
-# release.yml builds + publishes; submit-packages.yml refreshes manifests
+bash apps/desktop/scripts/build-release.sh v0.1.1 linux   # tar.gz
+bash distribution/deb-rpm/build.sh v0.1.1                  # .deb + .rpm (needs nfpm)
+bash distribution/appimage/build.sh v0.1.1                # .AppImage
+node scripts/submit-packages.mjs -v 0.1.1 -p all --dry-run
 ```
+
+## Secrets to actually publish
+
+`AUR_SSH_KEY`, `GPG_PRIVATE_KEY`/`GPG_PASSPHRASE`, `CHOCOLATEY_API_KEY`,
+`SNAPCRAFT_STORE_CREDENTIALS`, `PKG_SUBMIT_TOKEN` (tap/bucket/winget-pkgs/Flathub
+PRs). Until set, channels dry-run.

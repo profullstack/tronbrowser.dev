@@ -1,0 +1,4 @@
+#!/bin/sh
+# Flatpak entrypoint: the bundled launcher needs the HOST's Chromium, so run it
+# outside the sandbox via flatpak-spawn.
+exec flatpak-spawn --host /app/lib/tronbrowser/tronbrowser "$@"

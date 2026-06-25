@@ -1,0 +1,25 @@
+# Snap (Ubuntu / universal Linux). Classic confinement so the launcher can find
+# and exec the host's Chromium. `snapcraft` builds; publish with `snapcraft upload`.
+name: tronbrowser
+base: core24
+version: '0.1.1'
+summary: Privacy-first, AI-native browser (Ungoogled Chromium fork)
+description: |
+  Open-source, privacy-first, AI-native web browser built on Ungoogled Chromium.
+  No telemetry, no ads, no sponsored tabs. Bring your own AI keys, or run local.
+license: MIT
+grade: stable
+confinement: classic
+
+apps:
+  tronbrowser:
+    command: tronbrowser
+  tron:
+    command: tronbrowser
+
+parts:
+  tronbrowser:
+    plugin: dump
+    source: https://github.com/profullstack/tronbrowser.dev/releases/download/v0.1.1/tronbrowser-linux-x64.tar.gz
+    organize:
+      'tronbrowser/*': './'

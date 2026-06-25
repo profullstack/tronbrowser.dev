@@ -17,7 +17,7 @@ import { createHash } from 'node:crypto';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const REPO = process.env.TRONBROWSER_REPO || 'profullstack/tronbrowser.dev';
-const ALL = ['homebrew', 'scoop', 'winget', 'aur', 'apt', 'rpm', 'gentoo', 'nix', 'chocolatey'];
+const ALL = ['homebrew', 'scoop', 'winget', 'aur', 'apt', 'rpm', 'gentoo', 'nix', 'chocolatey', 'snap', 'flatpak', 'appimage', 'freebsd'];
 
 const args = process.argv.slice(2);
 let version = '';
@@ -105,9 +105,27 @@ for (const pm of targets) {
         ...(sums.windows ? [[/checksum64\s+= '[^']+'/, `checksum64     = '${sums.windows}'`]] : []),
       ]);
       break;
+    case 'snap':
+      patch('distribution/snap/snapcraft.yaml', [
+        [/version: '[^']+'/, `version: '${version}'`],
+        [/download\/v[^/]+\/tronbrowser-linux-x64\.tar\.gz/g, `download/v${version}/tronbrowser-linux-x64.tar.gz`],
+      ]);
+      break;
+    case 'flatpak':
+      patch('distribution/flatpak/dev.tronbrowser.TronBrowser.yml', [
+        [/download\/v[^/]+\/tronbrowser-linux-x64\.tar\.gz/g, `download/v${version}/tronbrowser-linux-x64.tar.gz`],
+        ...(sums.linux ? [[/sha256: (__SHA256_LINUX__|[0-9a-f]{64})/, `sha256: ${sums.linux}`]] : []),
+      ]);
+      break;
+    case 'freebsd':
+      patch('distribution/freebsd/Makefile', [[/DISTVERSION=\t[^\n]+/, `DISTVERSION=\t${version}`]]);
+      break;
     case 'apt':
     case 'rpm':
-      console.log(`  built by packaging/build-deb-rpm.sh (nfpm) during release; nothing to template`);
+      console.log(`  built by distribution/deb-rpm/build.sh (nfpm) during release; nothing to template`);
+      break;
+    case 'appimage':
+      console.log(`  built by distribution/appimage/build.sh during release; attached to the GitHub release`);
       break;
     default:
       console.log(`  unknown package manager: ${pm}`);

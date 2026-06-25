@@ -1,0 +1,29 @@
+# Flatpak manifest. Build: flatpak-builder build dev.tronbrowser.TronBrowser.yml
+# Publish via Flathub PR. The launcher is sandboxed, so it uses flatpak-spawn to
+# run the host's Chromium (see the tron wrapper below).
+app-id: dev.tronbrowser.TronBrowser
+runtime: org.freedesktop.Platform
+runtime-version: '24.08'
+sdk: org.freedesktop.Sdk
+command: tron
+finish-args:
+  - --share=network
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --device=dri
+  - --filesystem=home
+  # Allow running the host browser binary from inside the sandbox.
+  - --talk-name=org.freedesktop.Flatpak
+modules:
+  - name: tronbrowser
+    buildsystem: simple
+    build-commands:
+      - mkdir -p /app/lib/tronbrowser
+      - cp -r tronbrowser/. /app/lib/tronbrowser/
+      - install -Dm755 tron-wrapper /app/bin/tron
+    sources:
+      - type: archive
+        url: https://github.com/profullstack/tronbrowser.dev/releases/download/v0.1.1/tronbrowser-linux-x64.tar.gz
+        sha256: __SHA256_LINUX__
+      - type: file
+        path: tron-wrapper

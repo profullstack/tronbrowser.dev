@@ -61,12 +61,14 @@ jobs:
         if: matrix.platform != 'windows'
         run: bash apps/desktop/scripts/build-release.sh "v${{ needs.create-release.outputs.version }}" ${{ matrix.platform }}
 
-      - name: Package (linux deb + rpm)
+      - name: Package (linux deb + rpm + AppImage)
         if: matrix.platform == 'linux'
         run: |
           curl -sSfL "https://github.com/goreleaser/nfpm/releases/download/v2.41.0/nfpm_2.41.0_amd64.deb" -o /tmp/nfpm.deb
           sudo dpkg -i /tmp/nfpm.deb
-          bash packaging/build-deb-rpm.sh "v${{ needs.create-release.outputs.version }}"
+          sudo apt-get update -qq && sudo apt-get install -y -qq librsvg2-bin
+          bash distribution/deb-rpm/build.sh "v${{ needs.create-release.outputs.version }}"
+          bash distribution/appimage/build.sh "v${{ needs.create-release.outputs.version }}"
 
       - name: Package (windows)
         if: matrix.platform == 'windows'
@@ -88,7 +90,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           shopt -s nullglob
-          assets=(dist/tronbrowser-*.tar.gz dist/tronbrowser-*.zip dist/*.deb dist/*.rpm)
+          assets=(dist/tronbrowser-*.tar.gz dist/tronbrowser-*.zip dist/*.deb dist/*.rpm dist/*.AppImage)
           gh release upload "${{ needs.create-release.outputs.tag }}" "${assets[@]}" --clobber
 
   # 3) Publish (un-draft) once every platform has uploaded.

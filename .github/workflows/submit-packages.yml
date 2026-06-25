@@ -40,7 +40,7 @@ jobs:
         run: |
           PMS="${{ github.event.inputs.package_managers }}"
           [ -z "$PMS" ] && PMS="all"
-          if [ "$PMS" = "all" ]; then PMS="homebrew,scoop,winget,aur,apt,rpm,gentoo,nix"; fi
+          if [ "$PMS" = "all" ]; then PMS="homebrew,scoop,winget,aur,apt,rpm,gentoo,nix,snap,flatpak,appimage,freebsd"; fi
           echo "list=$(echo "$PMS" | sed 's/chocolatey,*//g')" >> "$GITHUB_OUTPUT"
 
       - name: Refresh + submit manifests
