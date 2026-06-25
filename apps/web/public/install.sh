@@ -151,6 +151,38 @@ ensure_browser() {
   fi
 }
 
+# (macOS) Brand the app icon: replace Ungoogled Chromium's icon with ours so the
+# dock/Cmd-Tab shows TronBrowser while you browse. Built on-device from the
+# bundled PNG via sips+iconutil. Chromium's own auto-update resets it — re-run
+# `tron upgrade` to re-apply. Skip with TB_NO_ICON=1. $1 = path to tronbrowser.png
+brand_macos_icon() {
+  [ "$(uname -s)" = "Darwin" ] || return 0
+  [ "${TB_NO_ICON:-0}" = "1" ] && return 0
+  command -v sips >/dev/null 2>&1 && command -v iconutil >/dev/null 2>&1 || return 0
+  local png="$1"; [ -f "$png" ] || return 0
+  local app="/Applications/Chromium.app"; [ -d "$app" ] || app="$HOME/Applications/Chromium.app"
+  [ -d "$app" ] || return 0
+
+  local iconfile; iconfile="$(defaults read "$app/Contents/Info" CFBundleIconFile 2>/dev/null || echo app)"
+  case "$iconfile" in *.icns) ;; *) iconfile="$iconfile.icns" ;; esac
+  [ -f "$app/Contents/Resources/$iconfile" ] || iconfile="app.icns"
+
+  local set icns; set="$(mktemp -d)/icon.iconset"; mkdir -p "$set"; icns="$(mktemp).icns"
+  _g() { sips -z "$2" "$2" "$png" --out "$set/$1" >/dev/null 2>&1; }
+  _g icon_16x16.png 16;   _g icon_16x16@2x.png 32
+  _g icon_32x32.png 32;   _g icon_32x32@2x.png 64
+  _g icon_128x128.png 128;_g icon_128x128@2x.png 256
+  _g icon_256x256.png 256;_g icon_256x256@2x.png 512
+  _g icon_512x512.png 512;_g icon_512x512@2x.png 1024
+  if iconutil -c icns "$set" -o "$icns" 2>/dev/null && cp -f "$icns" "$app/Contents/Resources/$iconfile" 2>/dev/null; then
+    touch "$app" 2>/dev/null
+    killall Dock 2>/dev/null || true
+    info "Branded $app with the TronBrowser icon (resets on Chromium update; re-run 'tron upgrade')."
+  else
+    warn "Couldn't write the app icon (permissions?). The browser still works."
+  fi
+}
+
 do_install() {
   need uname
   asset="$(detect_asset)"
@@ -200,6 +232,7 @@ DESKTOP
   command -v update-desktop-database >/dev/null 2>&1 && update-desktop-database "$apps_dir" 2>/dev/null || true
 
   ensure_browser
+  brand_macos_icon "$(dirname "$bin")/tronbrowser.png"
 
   info "Installed TronBrowser $tag to $APP_DIR"
   say  "    launch:  tron   (or find 'TronBrowser' in your app menu)"
@@ -222,6 +255,7 @@ do_upgrade() {
   if [ "$current" = "$latest" ] && [ "${TB_FORCE:-0}" != "1" ]; then
     info "TronBrowser is already up to date ($current)."
     ensure_browser   # still make sure Ungoogled Chromium is installed
+    brand_macos_icon "$(find "$APP_DIR" -maxdepth 3 -name tronbrowser.png 2>/dev/null | head -n1)"  # re-apply icon (Chromium updates reset it)
     info "Re-install anyway with: TB_FORCE=1 tron upgrade"
     return
   fi
