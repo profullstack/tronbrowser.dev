@@ -66,6 +66,16 @@ body {
 .btr-item .btr-sub { font-size: 10px; text-align: center; line-height: 1.2; color: var(--muted);
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .btr-item:hover .btr-label { color: var(--cyan); }
+.btr-item { position: relative; }
+.btr-item .btr-played { position: absolute; top: -4px; right: 8px; width: 18px; height: 18px;
+  border-radius: 50%; background: #2fd47a; color: #04060c; font-size: 11px; font-weight: 700;
+  display: grid; place-items: center; }
+.btr-filter { width: 100%; max-width: 360px; margin: 10px 0 4px; padding: 8px 12px;
+  background: var(--panel); color: var(--fg); border: 1px solid var(--line); border-radius: 8px;
+  font: inherit; }
+.btr-filter::placeholder { color: var(--muted); }
+#btr-groups { display: flex; flex-direction: column; gap: 14px; margin-top: 8px; }
+.btr-group .btr-count { color: var(--muted); font-weight: 400; letter-spacing: 0; }
 
 .tickers { margin-top: 12px; display: flex; flex-wrap: wrap; gap: 8px; }
 .tk { background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
