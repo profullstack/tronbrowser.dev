@@ -1,5 +1,5 @@
 import { PROVIDERS, KNOWN_MODELS, listModels } from './providers.js';
-import { DEFAULT_FEEDS, parseOpml, toOpml, loadFeeds, saveFeeds } from './feeds.js';
+import { mountSettingsSections } from './settings-sections.js';
 import { coinpaySignIn, coinpayState, coinpaySignOut, emailSignIn, emailSignUp } from './coinpay-auth.js';
 import { pushSettings, pullSettings } from './settings-store.js';
 import { encryptVault, decryptVault } from './vault.js';
@@ -142,23 +142,21 @@ el('btrConnect').addEventListener('click', async () => {
   await renderBtr();
 });
 
-/* ---------- Search engine ---------- */
-el('saveSearch').addEventListener('click', async () => {
-  await chrome.storage.local.set({ searchEngine: el('searchEngine').value });
-  await pushSettings();
-  flash('savedSearch', 'saved ✓');
-});
-
-/* ---------- Markets & Sports (new-tab widgets) ---------- */
-el('saveMarkets').addEventListener('click', async () => {
-  const tickers = el('tickers').value.trim();
-  const leagues = el('leagues').value.trim();
-  await chrome.storage.local.set({ tickers, leagues });
-  // Invalidate the new-tab caches so the change shows immediately.
-  await chrome.storage.local.remove(['marketCache', 'sportsCache']);
-  await pushSettings();
-  flash('savedMarkets', 'saved ✓');
-});
+/* ---------- Search / Markets / Sports / Feeds — the SHARED module ---------- */
+// Same UI + logic as the website settings page. Persist locally, invalidate the
+// matching new-tab caches, and push to the cloud; the shared module renders it.
+const sectionsStore = {
+  get: (keys) => chrome.storage.local.get(keys),
+  set: async (obj) => {
+    await chrome.storage.local.set(obj);
+    const inval = [];
+    if ('feeds' in obj) inval.push('feedCache');
+    if ('tickers' in obj || 'leagues' in obj) inval.push('marketCache', 'sportsCache');
+    if (inval.length) await chrome.storage.local.remove(inval);
+    await pushSettings();
+  },
+};
+const mountSections = () => mountSettingsSections({ store: sectionsStore, el, flash });
 
 /* ---------- Account + sync (CoinPay or email — same as the website) ---------- */
 async function renderAccount() {
@@ -213,56 +211,6 @@ el('emailSignup').addEventListener('click', async () => {
   } catch (e) { flash('emailMsg', e.message); }
 });
 
-/* ---------- Feeds ---------- */
-async function renderFeeds() {
-  const feeds = await loadFeeds();
-  const list = el('feedlist');
-  list.innerHTML = '';
-  feeds.forEach((f, i) => {
-    const li = document.createElement('li');
-    li.innerHTML = `<span><b>${escape(f.title)}</b> <span class="cat">${escape(f.category || '')}</span><br><span class="cat">${escape(f.xmlUrl)}</span></span>`;
-    const x = document.createElement('button');
-    x.className = 'x'; x.textContent = '✕'; x.title = 'Remove';
-    x.addEventListener('click', async () => { feeds.splice(i, 1); await persistFeeds(feeds); });
-    li.appendChild(x);
-    list.appendChild(li);
-  });
-}
-async function persistFeeds(feeds) {
-  await saveFeeds(feeds);
-  await chrome.storage.local.remove('feedCache');
-  await pushSettings();
-  await renderFeeds();
-}
-el('addFeed').addEventListener('click', async () => {
-  const url = el('fUrl').value.trim();
-  if (!url) return flash('feedMsg', 'URL required');
-  const feeds = await loadFeeds();
-  feeds.push({ title: el('fTitle').value.trim() || url, category: el('fCat').value.trim() || 'Feeds', xmlUrl: url, htmlUrl: url });
-  el('fTitle').value = el('fCat').value = el('fUrl').value = '';
-  await persistFeeds(feeds);
-  flash('feedMsg', 'added ✓');
-});
-el('importOpml').addEventListener('click', async () => {
-  let xml = el('opmlText').value.trim();
-  const file = el('opmlFile').files[0];
-  if (!xml && file) xml = await file.text();
-  if (!xml) return flash('feedMsg', 'paste OPML or pick a file');
-  const parsed = parseOpml(xml);
-  if (!parsed.length) return flash('feedMsg', 'no feeds found in OPML');
-  await persistFeeds(parsed);
-  el('opmlText').value = '';
-  flash('feedMsg', `imported ${parsed.length} feeds ✓`);
-});
-el('exportOpml').addEventListener('click', async () => {
-  const opml = toOpml(await loadFeeds());
-  const url = URL.createObjectURL(new Blob([opml], { type: 'text/xml' }));
-  const a = document.createElement('a');
-  a.href = url; a.download = 'tronbrowser-feeds.opml'; a.click();
-  URL.revokeObjectURL(url);
-});
-el('resetFeeds').addEventListener('click', async () => { await persistFeeds(DEFAULT_FEEDS.slice()); flash('feedMsg', 'reset ✓'); });
-
 /* ---------- masked passphrase dialog (prompt() can't hide input) ---------- */
 function promptPassword(message) {
   return new Promise((resolve) => {
@@ -310,12 +258,8 @@ async function loadAll() {
   buildProviders(provs, aiDefault);
   el('cpClient').value = coinpayConfig?.clientId || '';
   el('syncUrl').value = syncConfig?.url || '';
-  const mkt = await chrome.storage.local.get(['tickers', 'leagues', 'searchEngine']);
-  el('tickers').value = mkt.tickers ?? '';
-  el('leagues').value = mkt.leagues ?? '';
-  el('searchEngine').value = mkt.searchEngine ?? 'xprivo';
   await renderAccount();
-  await renderFeeds();
+  await mountSections(); // Search / Markets / Sports / RSS feeds (shared module)
   await renderBtr();
 }
 el('cpClient').addEventListener('change', async () => {

@@ -3,7 +3,24 @@
 // Keys are E2E-encrypted with a vault passphrase before they ever leave the
 // browser; the server stores only ciphertext.
 import { encryptVault, decryptVault } from './vault.js';
+import { mountSettingsSections } from './settings-sections.js';
 const $ = (id) => document.getElementById(id);
+
+// Persist the settings object to the cloud account (never plaintext keys).
+async function persistSettings() {
+  const { aiProviders: _a, aiConfig: _c, ...payload } = settings;
+  const r = await fetch('/api/settings', {
+    credentials: 'include', method: 'PUT',
+    headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload),
+  });
+  return r.ok;
+}
+// Store adapter for the shared Search/Markets/Sports/Feeds sections.
+const cloudStore = {
+  get: (keys) => { const o = {}; for (const k of keys) o[k] = settings[k]; return Promise.resolve(o); },
+  set: async (obj) => { Object.assign(settings, obj); await persistSettings(); },
+};
+function flashMsg(id, msg) { const e = $(id); if (e) { e.textContent = msg; setTimeout(() => { e.textContent = ''; }, 1600); } }
 
 const PROVIDERS = [
   { id: 'anthropic', label: 'Anthropic (Claude)', keyless: false },
@@ -183,6 +200,9 @@ async function load() {
     }
   }
   buildProviderRows();
+  // Shared Search / Markets / Sports / RSS-feeds sections (same module the
+  // extension options page uses) — read/write the same /api/settings object.
+  await mountSettingsSections({ store: cloudStore, el: $, flash: flashMsg });
 }
 
 $('save').addEventListener('click', async () => {

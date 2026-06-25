@@ -32,6 +32,13 @@
   .pw-dialog button{border-radius:8px;padding:8px 14px;font:inherit;cursor:pointer;background:transparent;color:var(--fg);border:1px solid var(--line)}
   .pw-dialog button.primary{background:var(--cyan);color:#04060c;border:0;font-weight:700}
   a{color:var(--cyan)}
+  label{display:block;margin:14px 0 6px;color:var(--muted);font-size:13px}
+  textarea{width:100%;min-height:110px;padding:9px;background:#04060c;color:var(--fg);border:1px solid var(--line);border-radius:8px;font:inherit;resize:vertical;margin-top:8px}
+  button.ghost{background:transparent;color:var(--fg);border:1px solid var(--line)}
+  .feedlist{list-style:none;padding:0;margin:12px 0}
+  .feedlist li{display:flex;justify-content:space-between;gap:8px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;margin-bottom:6px}
+  .feedlist .cat{color:var(--muted);font-size:12px}
+  .feedlist .x{color:#ff8a9b;cursor:pointer;background:none;border:0;margin:0;padding:0;font-weight:700}
 </style></head>
 <body>
   <header>
@@ -66,6 +73,48 @@
   <div class="row">
     <button id="save">Save</button>
     <span id="msg"></span>
+  </div>
+
+  <!-- Shared sections (identical to the extension options page, via settings-sections.js) -->
+  <h2>Search</h2>
+  <p class="hint">Default search engine for the new-tab search box.</p>
+  <label for="searchEngine">New-tab search engine</label>
+  <select id="searchEngine">
+    <option value="xprivo">Xprivo (private, default)</option>
+    <option value="ddg">DuckDuckGo</option>
+    <option value="altpower">Altpower</option>
+    <option value="oxiverse">Oxiverse</option>
+  </select>
+  <div class="row"><button id="saveSearch">Save search</button><span id="savedSearch" class="saved"></span></div>
+
+  <h2>Markets &amp; Sports</h2>
+  <p class="hint">Shown on the new-tab page. Free &amp; keyless — stock/crypto quotes from
+  Yahoo Finance, scores from ESPN. Leave blank to hide a section.</p>
+  <label for="tickers">Stock / crypto tickers (comma-separated)</label>
+  <input id="tickers" placeholder="SPY, AAPL, NVDA, BTC-USD, TSLA" />
+  <label for="leagues">Sports leagues (comma-separated)</label>
+  <input id="leagues" placeholder="worldcup, nfl, nba, epl" />
+  <p class="hint" style="margin-top:8px">US: nfl, ncaaf, nba, wnba, ncaam, mlb, nhl.
+  Soccer: worldcup (or fifa), wwc, wcq, euro, ucl, uel, mls, epl, laliga, bundesliga, seriea, ligue1.</p>
+  <div class="row"><button id="saveMarkets">Save markets &amp; sports</button><span id="savedMarkets" class="saved"></span></div>
+
+  <h2>RSS feeds</h2>
+  <ul id="feedlist" class="feedlist"></ul>
+  <div class="row">
+    <div style="flex:1"><label for="fTitle">Title</label><input id="fTitle" placeholder="My Blog" /></div>
+    <div style="flex:1"><label for="fCat">Category</label><input id="fCat" placeholder="Feeds" /></div>
+  </div>
+  <label for="fUrl">Feed URL (RSS/Atom)</label>
+  <input id="fUrl" placeholder="https://example.com/rss.xml" />
+  <div class="row"><button id="addFeed">Add feed</button><span id="feedMsg" class="saved"></span></div>
+
+  <h3 style="color:var(--muted);font-size:13px;margin-top:24px">Import / export OPML</h3>
+  <input id="opmlFile" type="file" accept=".opml,.xml,text/xml" />
+  <textarea id="opmlText" placeholder="…or paste OPML here"></textarea>
+  <div class="row">
+    <button id="importOpml">Import OPML</button>
+    <button id="exportOpml" class="ghost">Export OPML</button>
+    <button id="resetFeeds" class="ghost">Reset to defaults</button>
   </div>
 
   <script type="module" src="/settings.js"></script>
