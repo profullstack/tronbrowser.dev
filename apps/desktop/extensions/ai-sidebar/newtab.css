@@ -56,7 +56,9 @@ body {
 .btr-item img, .btr-item .btr-ph { width: 64px; height: 64px; border-radius: 10px;
   border: 1px solid var(--line); background: var(--panel); object-fit: cover;
   display: grid; place-items: center; font-size: 26px; }
-.btr-item .btr-label { font-size: 11px; text-align: center; line-height: 1.2;
+.btr-item .btr-label { font-size: 11px; text-align: center; line-height: 1.2; font-weight: 700;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.btr-item .btr-sub { font-size: 10px; text-align: center; line-height: 1.2; color: var(--muted);
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .btr-item:hover .btr-label { color: var(--cyan); }
 

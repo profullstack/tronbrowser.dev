@@ -250,10 +250,11 @@ async function renderBtr() {
   sec.hidden = false;
 
   // Playable tiles carry data-player (open in a modal); the rest link out.
-  const tile = (player, url, img, ph, label) =>
+  const tile = (player, url, img, ph, label, sub) =>
     `<a class="btr-item" ${player ? `href="#" data-player="${escAttr(player)}"` : `href="${escAttr(url)}" target="_blank"`}>` +
     (img ? `<img src="${escAttr(img)}" alt="" loading="lazy" referrerpolicy="no-referrer" />` : `<span class="btr-ph">${ph}</span>`) +
-    `<span class="btr-label">${escapeHtml(label)}</span></a>`;
+    `<span class="btr-label">${escapeHtml(label)}</span>` +
+    (sub ? `<span class="btr-sub">${escapeHtml(sub)}</span>` : '') + `</a>`;
   const group = (title, items) => items.length
     ? `<div class="btr-group"><h3>${title}</h3><div class="btr-items">${items.join('')}</div></div>` : '';
 
@@ -263,7 +264,10 @@ async function renderBtr() {
   }
   el('btr').innerHTML =
     group('Live TV', tv.slice(0, 12).map((c) => tile(c.player, c.url, c.logo, '📺', c.name))) +
-    group('Podcasts', pods.slice(0, 12).map((p) => tile((p.episodes || [])[0]?.player, p.url, p.image, '🎙', p.title))) +
+    group('Podcasts', pods.slice(0, 12).map((p) => {
+      const ep = (p.episodes || [])[0];
+      return tile(ep?.player, p.url, p.image, '🎙', p.title, ep ? `▶ ${ep.title}` : 'no recent episodes');
+    })) +
     group('Radio', radio.slice(0, 12).map((s) => tile(null, s.url, s.logo, '📻', s.name))) +
     group('Movies', movies.slice(0, 12).map((m) => tile(null, m.url, m.poster, '🎬', m.title)));
 }
