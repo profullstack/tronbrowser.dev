@@ -281,7 +281,10 @@ async function renderBtr() {
 function openPlayer(url) {
   const sep = url.includes('?') ? '&' : '?';
   const tk = btrTokenCache ? `&token=${encodeURIComponent(btrTokenCache)}` : '';
-  el('player-frame').src = `${url}${sep}theme=dark&bg=${encodeURIComponent('#05070d')}&accent=${encodeURIComponent('#34e7ff')}${tk}`;
+  // _ cache-buster: never reuse a previously-cached response (older builds got an
+  // X-Frame-Options header that the browser may still be holding).
+  el('player-frame').src =
+    `${url}${sep}theme=dark&bg=${encodeURIComponent('#05070d')}&accent=${encodeURIComponent('#34e7ff')}${tk}&_=${Date.now()}`;
   el('player-modal').hidden = false;
 }
 function closePlayer() { el('player-modal').hidden = true; el('player-frame').src = 'about:blank'; }
