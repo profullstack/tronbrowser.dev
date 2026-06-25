@@ -15,7 +15,6 @@ export const DEFAULT_FEEDS = [
   { category: 'Profullstack, Inc.', title: 'sh1pt Blog', xmlUrl: 'https://sh1pt.com/blog/rss.xml', htmlUrl: 'https://sh1pt.com/blog' },
   { category: 'Profullstack, Inc.', title: 'ThreatCrush Blog', xmlUrl: 'https://threatcrush.com/blog/rss.xml', htmlUrl: 'https://threatcrush.com/blog' },
   { category: 'Profullstack, Inc.', title: 'ugig blog', xmlUrl: 'https://ugig.net/blog/rss.xml', htmlUrl: 'https://ugig.net/blog' },
-  { category: 'Profullstack, Inc.', title: 'vu1nz Blog', xmlUrl: 'https://vu1nz.com/blog/rss.xml', htmlUrl: 'https://vu1nz.com/blog' },
   { category: 'Projects', title: 'MLT', xmlUrl: 'https://www.mltframework.org/feed.xml', htmlUrl: 'https://mltframework.org/' },
 ];
 
