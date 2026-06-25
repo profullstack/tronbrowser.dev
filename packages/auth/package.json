@@ -1,6 +1,6 @@
 {
   "name": "@tronbrowser/auth",
-  "version": "0.1.41",
+  "version": "0.1.42",
   "private": true,
   "description": "Authentication and session primitives",
   "type": "module",

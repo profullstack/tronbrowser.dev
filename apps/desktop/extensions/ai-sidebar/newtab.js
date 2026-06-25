@@ -246,24 +246,42 @@ async function renderBtr() {
     data = await r.json();
   } catch { sec.hidden = true; return; }
 
-  const tv = data.tv || [];
-  const pods = data.podcasts || [];
+  const tv = data.tv || [], radio = data.radio || [], pods = data.podcasts || [], movies = data.movies || [];
   sec.hidden = false;
-  const item = (href, img, ph, label) =>
-    `<a class="btr-item" href="${escAttr(href)}" target="_blank">` +
+
+  // Playable tiles carry data-player (open in a modal); the rest link out.
+  const tile = (player, url, img, ph, label) =>
+    `<a class="btr-item" ${player ? `href="#" data-player="${escAttr(player)}"` : `href="${escAttr(url)}" target="_blank"`}>` +
     (img ? `<img src="${escAttr(img)}" alt="" loading="lazy" referrerpolicy="no-referrer" />` : `<span class="btr-ph">${ph}</span>`) +
     `<span class="btr-label">${escapeHtml(label)}</span></a>`;
   const group = (title, items) => items.length
     ? `<div class="btr-group"><h3>${title}</h3><div class="btr-items">${items.join('')}</div></div>` : '';
 
-  if (!tv.length && !pods.length) {
-    el('btr').innerHTML = '<p class="muted">Connected — add Live TV or podcast favorites on bittorrented.com and they’ll show up here.</p>';
+  if (!tv.length && !radio.length && !pods.length && !movies.length) {
+    el('btr').innerHTML = '<p class="muted">Connected — add Live TV, radio, podcast or movie favorites on bittorrented.com and they’ll show up here.</p>';
     return;
   }
   el('btr').innerHTML =
-    group('Live TV', tv.slice(0, 12).map((c) => item(c.url, c.logo, '📺', c.name))) +
-    group('Podcasts', pods.slice(0, 12).map((p) => item(p.url, p.image, '🎙', p.title)));
+    group('Live TV', tv.slice(0, 12).map((c) => tile(c.player, c.url, c.logo, '📺', c.name))) +
+    group('Podcasts', pods.slice(0, 12).map((p) => tile((p.episodes || [])[0]?.player, p.url, p.image, '🎙', p.title))) +
+    group('Radio', radio.slice(0, 12).map((s) => tile(null, s.url, s.logo, '📻', s.name))) +
+    group('Movies', movies.slice(0, 12).map((m) => tile(null, m.url, m.poster, '🎬', m.title)));
 }
+
+// Open a bittorrented /api/player URL in a themed modal iframe.
+function openPlayer(url) {
+  const sep = url.includes('?') ? '&' : '?';
+  el('player-frame').src = `${url}${sep}theme=dark&bg=${encodeURIComponent('#05070d')}&accent=${encodeURIComponent('#34e7ff')}`;
+  el('player-modal').hidden = false;
+}
+function closePlayer() { el('player-modal').hidden = true; el('player-frame').src = 'about:blank'; }
+el('btr').addEventListener('click', (e) => {
+  const a = e.target.closest('[data-player]');
+  if (a) { e.preventDefault(); openPlayer(a.getAttribute('data-player')); }
+});
+el('player-close').addEventListener('click', closePlayer);
+el('player-modal').addEventListener('click', (e) => { if (e.target === el('player-modal')) closePlayer(); });
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closePlayer(); });
 
 renderMotd();
 renderBtr();
