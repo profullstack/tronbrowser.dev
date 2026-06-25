@@ -10,6 +10,7 @@ import {
 import { token, uuid, hashPassword, verifyPassword, SESSION_TTL, EMAIL_TOKEN_TTL } from './auth.js';
 import { sendEmail } from './email.js';
 import { store } from './store/routes.js';
+import { swarmRoutes } from './swarm.js';
 
 const CP = {
   clientId: process.env.COINPAY_CLIENT_ID || '',
@@ -48,6 +49,9 @@ app.get('/api/healthz', (c) => c.json({ ok: true }));
 
 /* ---------- Extension store (tronbrowser.dev/store) ---------- */
 app.route('/api/store', store);
+
+/* ---------- Agent swarm (@logicsrc/agentswarm, BYO key) ---------- */
+app.route('/api/swarm', swarmRoutes({ currentUser }));
 
 /* ---------- CoinPay OAuth (preferred) ---------- */
 app.get('/api/auth/coinpay/login', (c) => {
