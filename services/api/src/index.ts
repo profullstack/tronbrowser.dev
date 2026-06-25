@@ -119,7 +119,7 @@ app.post('/api/auth/signup', async (c) => {
 app.get('/api/auth/verify', async (c) => {
   const t = c.req.query('token');
   const userId = t ? await consumeEmailToken(t, 'verify') : null;
-  if (!userId) return c.text('invalid or expired verification link', 400);
+  if (!userId) return c.redirect(`${APP_URL}/login?msg=link-expired`);
   await setEmailVerified(userId);
   await startSession(c, userId);
   return c.redirect(`${APP_URL}/?verified=1`);

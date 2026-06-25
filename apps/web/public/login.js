@@ -24,3 +24,10 @@ async function go(path) {
 
 $('login').onclick = () => go('/api/auth/login');
 $('signup').onclick = () => go('/api/auth/signup');
+
+// Surface notices (e.g. expired verification link).
+const msg = new URLSearchParams(location.search).get('msg');
+if (msg === 'link-expired') {
+  $('msg').textContent = 'That verification link expired — log in, or sign up again to get a new one.';
+  $('msg').className = 'msg err';
+}
