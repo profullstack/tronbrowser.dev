@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "TronBrowser AI Sidebar",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Privacy-first AI sidebar — bring your own keys (Claude, GPT, Gemini, DeepSeek, Perplexity, Kimi, Qwen) or run local.",
   "permissions": [
     "storage",

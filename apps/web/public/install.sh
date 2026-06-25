@@ -97,8 +97,8 @@ case "${1:-}" in
     exec sh -c "curl -fsSL '$INSTALL_URL' | sh -s -- upgrade" ;;
   remove|uninstall)
     rm -rf "$APP_DIR"
-    rm -f "$PREFIX/bin/tron" "$PREFIX/bin/tronbrowser"
-    echo "Removed TronBrowser. (Profile data kept; delete ~/.tronbrowser to wipe it.)" ;;
+    rm -f "$PREFIX/bin/tron" "$PREFIX/bin/tronbrowser" "$PREFIX/share/applications/tronbrowser.desktop"
+    echo "Removed TronBrowser. (Profile data kept; delete ~/.tronbrowser and ~/TronBrowser to wipe it.)" ;;
   version|--version|-v)
     cat "$VERSION_FILE" 2>/dev/null || echo "not installed" ;;
   help|--help|-h)
@@ -139,8 +139,28 @@ do_install() {
 
   write_cli
 
+  # Desktop app-menu entry (KDE/GNOME) so TronBrowser shows up as an app.
+  icon="$(dirname "$bin")/tronbrowser.svg"
+  apps_dir="$PREFIX/share/applications"
+  mkdir -p "$apps_dir"
+  cat > "$apps_dir/tronbrowser.desktop" <<DESKTOP
+[Desktop Entry]
+Type=Application
+Name=TronBrowser
+GenericName=Web Browser
+Comment=Privacy-first, AI-native browser (Ungoogled Chromium fork)
+Exec=$TRON_CLI %U
+Icon=$icon
+Terminal=false
+Categories=Network;WebBrowser;
+MimeType=text/html;x-scheme-handler/http;x-scheme-handler/https;
+StartupWMClass=TronBrowser
+StartupNotify=true
+DESKTOP
+  command -v update-desktop-database >/dev/null 2>&1 && update-desktop-database "$apps_dir" 2>/dev/null || true
+
   info "Installed TronBrowser $tag to $APP_DIR"
-  say  "    launch:  tron"
+  say  "    launch:  tron   (or find 'TronBrowser' in your app menu)"
   say  "    manage:  tron upgrade | tron remove | tron version"
   case ":$PATH:" in
     *":$PREFIX/bin:"*) : ;;
@@ -169,8 +189,9 @@ do_upgrade() {
 do_remove() {
   info "Removing TronBrowser"
   rm -rf "$APP_DIR"
-  rm -f "$TRON_CLI" "$ALIAS_CLI"
-  say "Removed. (Profile/bookmarks/history kept; delete ~/.tronbrowser to wipe data.)"
+  rm -f "$TRON_CLI" "$ALIAS_CLI" "$PREFIX/share/applications/tronbrowser.desktop"
+  command -v update-desktop-database >/dev/null 2>&1 && update-desktop-database "$PREFIX/share/applications" 2>/dev/null || true
+  say "Removed. (Profile/bookmarks/history kept; delete ~/.tronbrowser and ~/TronBrowser to wipe data.)"
 }
 
 do_version() {

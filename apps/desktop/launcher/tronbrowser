@@ -2,9 +2,9 @@
 # TronBrowser launcher.
 #
 # Until the native Ungoogled-Chromium fork binary is bundled, this shim runs a
-# Chromium-family browser found on the system with TronBrowser's privacy flags
-# and the AI sidebar extension loaded. Same flags as
-# apps/desktop/src/chromium-flags.ts. `tron <url>` passes URLs straight through.
+# Chromium-family browser found on the system in an ISOLATED TronBrowser profile
+# with the AI sidebar extension and TronBrowser's privacy flags. `tron <url>`
+# passes URLs through. Same flags as apps/desktop/src/chromium-flags.ts.
 set -eu
 
 # Resolve our own real directory (we're usually invoked via a symlink).
@@ -18,17 +18,28 @@ while [ -L "$SELF" ]; do
 done
 DIR="$(CDPATH= cd -- "$(dirname -- "$SELF")" && pwd)"
 
-EXT="$DIR/extensions/ai-sidebar"
-DATA="${TRONBROWSER_DATA:-$HOME/.tronbrowser}"
+EXT_SRC="$DIR/extensions/ai-sidebar"
 
 # A bundled native binary (future) takes priority.
 BROWSER=""
-if [ -x "$DIR/chrome" ]; then BROWSER="$DIR/chrome"; fi
-
-if [ -z "$BROWSER" ]; then
-  for c in ungoogled-chromium chromium chromium-browser google-chrome-stable google-chrome brave-browser; do
-    if command -v "$c" >/dev/null 2>&1; then BROWSER="$(command -v "$c")"; break; fi
+IS_SNAP=0
+if [ -x "$DIR/chrome" ]; then
+  BROWSER="$DIR/chrome"
+else
+  # Prefer a NON-snap browser: snap confinement can't read ~/.tronbrowser or the
+  # extension under a hidden dir, so it would ignore our profile and just open
+  # the default session. Remember a snap as a last resort.
+  snap_fallback=""
+  for c in ungoogled-chromium chromium chromium-browser google-chrome-stable google-chrome brave-browser brave; do
+    p="$(command -v "$c" 2>/dev/null)" || continue
+    case "$p" in
+      /snap/*) [ -z "$snap_fallback" ] && snap_fallback="$p" ;;
+      *) BROWSER="$p"; break ;;
+    esac
   done
+  if [ -z "$BROWSER" ] && [ -n "$snap_fallback" ]; then
+    BROWSER="$snap_fallback"; IS_SNAP=1
+  fi
 fi
 
 # macOS app bundles.
@@ -48,8 +59,24 @@ if [ -z "$BROWSER" ]; then
   exit 1
 fi
 
+# Profile + extension paths. Snap-confined browsers can only read NON-hidden
+# files in $HOME, so under snap we use a visible profile dir and stage the
+# extension there; otherwise we keep the hidden ~/.tronbrowser.
+if [ "$IS_SNAP" = "1" ]; then
+  DATA="${TRONBROWSER_DATA:-$HOME/TronBrowser}"
+  mkdir -p "$DATA"
+  rm -rf "$DATA/ai-sidebar"
+  cp -R "$EXT_SRC" "$DATA/ai-sidebar"
+  EXT="$DATA/ai-sidebar"
+else
+  DATA="${TRONBROWSER_DATA:-$HOME/.tronbrowser}"
+  EXT="$EXT_SRC"
+fi
+
 exec "$BROWSER" \
   --user-data-dir="$DATA" \
+  --class=TronBrowser \
+  --no-first-run \
   --no-default-browser-check \
   --no-pings \
   --disable-background-networking \

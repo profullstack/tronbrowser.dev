@@ -20,6 +20,7 @@ stage() { # dest dir
   cp "$DESKTOP/launcher/tronbrowser.cmd" "$s/tronbrowser.cmd"
   cp -R "$DESKTOP/extensions/ai-sidebar" "$s/extensions/ai-sidebar"
   cp "$REPO_ROOT/LICENSE" "$s/LICENSE"
+  cp "$REPO_ROOT/apps/web/public/favicon.svg" "$s/tronbrowser.svg"
   printf '%s\n' "$VERSION" > "$s/VERSION"
 }
 
