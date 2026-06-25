@@ -43,21 +43,11 @@ stage() { # dest dir
   cp "$REPO_ROOT/apps/web/public/favicon.svg" "$s/tronbrowser.svg"
   printf '%s\n' "$VERSION" > "$s/VERSION"
 
-  # Bundle chromium-web-store so Chrome Web Store installs work on Ungoogled
-  # Chromium (which disables them by default). Preserves extension compatibility.
-  # Non-fatal: a download hiccup must not fail the release. Use the stable
-  # latest/download URL (no GitHub API → no rate limit).
-  local crx; crx="$(mktemp)"
-  local url="https://github.com/NeverDecaf/chromium-web-store/releases/latest/download/Chromium.Web.Store.crx"
-  if curl -fsSL "$url" -o "$crx" 2>/dev/null; then
-    mkdir -p "$s/extensions/chromium-web-store"
-    unzip -q -o "$crx" -d "$s/extensions/chromium-web-store" 2>/dev/null || true
-    [ -f "$s/extensions/chromium-web-store/manifest.json" ] && echo "  + bundled chromium-web-store" \
-      || rm -rf "$s/extensions/chromium-web-store"
-  else
-    echo "  ! chromium-web-store download skipped (non-fatal)"
-  fi
-  rm -f "$crx"
+  # NOTE: we no longer bundle NeverDecaf's chromium-web-store. Its manifest's
+  # web_accessible_resources is rejected by some Chromium builds (macOS), which
+  # aborts startup when loaded unpacked via --load-extension. Chrome Web Store
+  # installs are instead handled by the AI sidebar's install-helper.js content
+  # script (adds a working "Add to TronBrowser" button → CRX install prompt).
 
   # Default ad/tracker blocker: uBlock Origin (fetched once into $UBO_SRC).
   if [ -n "$UBO_SRC" ] && [ -d "$UBO_SRC" ]; then

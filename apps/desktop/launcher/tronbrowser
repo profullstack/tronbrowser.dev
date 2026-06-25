@@ -47,12 +47,17 @@ else
   [ -z "$BROWSER" ] && [ -n "$snap_fallback" ] && { BROWSER="$snap_fallback"; IS_SNAP=1; }
 fi
 
-# macOS app bundles (de-googled only).
+# macOS app bundles (de-googled only). Capture the .app path too — on macOS we
+# launch via `open -na` (LaunchServices), NOT the inner binary directly, which
+# SIGABRTs when run from a shell.
+MAC_APP=""
 if [ -z "$BROWSER" ]; then
   for app in \
     "/Applications/Ungoogled Chromium.app/Contents/MacOS/Chromium" \
-    "/Applications/Chromium.app/Contents/MacOS/Chromium"; do
-    if [ -x "$app" ]; then BROWSER="$app"; break; fi
+    "/Applications/Chromium.app/Contents/MacOS/Chromium" \
+    "$HOME/Applications/Ungoogled Chromium.app/Contents/MacOS/Chromium" \
+    "$HOME/Applications/Chromium.app/Contents/MacOS/Chromium"; do
+    if [ -x "$app" ]; then BROWSER="$app"; MAC_APP="${app%/Contents/MacOS/*}"; break; fi
   done
 fi
 
@@ -132,7 +137,7 @@ fi
 
 # Warn loudly when the chosen browser isn't a de-googled Ungoogled Chromium.
 case "$BROWSER" in
-  *ungoogled*) ;;                      # ideal
+  *[Uu]ngoogled*) ;;                   # ideal (matches "Ungoogled Chromium.app" too)
   flatpak) ;;                          # flatpak ungoogled
   *)
     echo "TronBrowser: running '$BROWSER' — this is regular Chromium, NOT de-googled." >&2
@@ -150,7 +155,13 @@ FLAGS="--user-data-dir=$DATA --class=TronBrowser --no-first-run --no-default-bro
 LOG="${TRONBROWSER_LOG:-$DATA/tron.log}"
 FLAGS="$FLAGS --log-level=2"
 
-if [ "$BROWSER" = "flatpak" ]; then
+if [ -n "$MAC_APP" ]; then
+  # macOS: launch the .app via LaunchServices (`open`). Running the inner binary
+  # directly SIGABRTs, and `-n` gives a separate instance from any running
+  # Chromium. `open` detaches, so stderr noise never hits the terminal.
+  # shellcheck disable=SC2086
+  exec open -na "$MAC_APP" --args $FLAGS "$@"
+elif [ "$BROWSER" = "flatpak" ]; then
   # shellcheck disable=SC2086
   [ "${TRONBROWSER_VERBOSE:-0}" = "1" ] \
     && exec flatpak run --filesystem="$DATA" --filesystem="$EXTBASE_SRC" "$FLATPAK_APP" $FLAGS "$@" \
