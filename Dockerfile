@@ -14,9 +14,14 @@ RUN printf '%s' '{"compilerOptions":{"target":"ES2023","module":"NodeNext","modu
 
 # --- final: caddy + node ---
 FROM caddy:2-alpine
-RUN apk add --no-cache nodejs
+# openssh-client: the store provisions BBS publisher accounts and generates
+# ed25519 keypairs via `ssh`/`ssh-keygen` (services/api/src/store/fileshost.ts).
+RUN apk add --no-cache nodejs openssh-client
 COPY Caddyfile /etc/caddy/Caddyfile
 COPY apps/web/public/ /srv/
+# Extension store (tronbrowser.dev/store) — static frontend; dynamic bits hit
+# /api/store on the bundled API.
+COPY apps/extensions/public/ /srv/store/
 # Branding lives at the repo root (single source of truth). apps/web/public has
 # symlinks to them for local dev, but Docker COPY won't follow symlinks pointing
 # outside the copied dir — so copy the real files in (these override the links).

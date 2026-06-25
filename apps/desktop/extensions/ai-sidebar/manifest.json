@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "TronBrowser",
-  "version": "0.2.6",
+  "version": "0.2.7",
   "description": "TronBrowser — privacy-first, AI-native. Branded new tab, private search, CoinPay login, and a bring-your-own-keys AI sidebar.",
   "icons": {
     "16": "icons/icon-16.png",

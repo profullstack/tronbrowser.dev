@@ -299,7 +299,15 @@ el('btr').addEventListener('click', (e) => {
   if (a) { e.preventDefault(); openPlayer(a.getAttribute('data-player')); }
 });
 el('player-close').addEventListener('click', closePlayer);
-el('player-modal').addEventListener('click', (e) => { if (e.target === el('player-modal')) closePlayer(); });
+// Backdrop click closes video/TV, but NOT the docked audio bar — that stays put
+// (like a now-playing bar) while you keep browsing. Use ✕ or Esc to dismiss it.
+el('player-modal').addEventListener('click', (e) => {
+  if (e.target === el('player-modal') && !el('player-modal').classList.contains('audio')) closePlayer();
+});
+// The player iframe has its own ✕ button; it asks the parent to close via postMessage.
+window.addEventListener('message', (e) => {
+  if (e.data && e.data.type === 'tron-player-close') closePlayer();
+});
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closePlayer(); });
 
 renderMotd();

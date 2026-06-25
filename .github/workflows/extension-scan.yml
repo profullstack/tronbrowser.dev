@@ -1,0 +1,60 @@
+# vu1nz.com security scan for extensions submitted via PR.
+#
+# Runs on PRs that add/modify a registry listing. This is the PR half of the
+# store's "scan + community flagging" model — the upload-form half runs the same
+# scan asynchronously inside the API (services/api/src/store/vu1nz.ts).
+name: extension-scan
+
+on:
+  pull_request:
+    paths:
+      - 'apps/extensions/registry/**/listing.json'
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Find changed listings
+        id: changed
+        run: |
+          git fetch origin "${{ github.base_ref }}" --depth=1
+          files=$(git diff --name-only "origin/${{ github.base_ref }}"...HEAD -- 'apps/extensions/registry/**/listing.json')
+          echo "files<<EOF" >> "$GITHUB_OUTPUT"
+          echo "$files" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+
+      # vu1nz publishes a composite action; we invoke it per changed listing.
+      # Configure VU1NZ_API_URL / VU1NZ_API_KEY as repo secrets to enable.
+      - name: vu1nz scan
+        if: ${{ steps.changed.outputs.files != '' }}
+        env:
+          VU1NZ_API_URL: ${{ secrets.VU1NZ_API_URL }}
+          VU1NZ_API_KEY: ${{ secrets.VU1NZ_API_KEY }}
+        run: |
+          if [ -z "$VU1NZ_API_URL" ]; then
+            echo "::warning::VU1NZ_API_URL not set — skipping scan (set it to enable the gate)"
+            exit 0
+          fi
+          fail=0
+          while IFS= read -r f; do
+            [ -z "$f" ] && continue
+            echo "Scanning $f"
+            payload=$(cat "$f")
+            resp=$(curl -sS -X POST "$VU1NZ_API_URL/scan/extension" \
+              -H "content-type: application/json" \
+              ${VU1NZ_API_KEY:+-H "authorization: Bearer $VU1NZ_API_KEY"} \
+              -d "{\"target\":\"browser-extension\",\"listing\":$payload}")
+            echo "$resp"
+            sev=$(echo "$resp" | python3 -c "import sys,json;print(json.load(sys.stdin).get('severity',''))" 2>/dev/null || echo "")
+            if [ "$sev" = "critical" ] || [ "$sev" = "high" ]; then
+              echo "::error::$f flagged $sev by vu1nz"
+              fail=1
+            fi
+          done <<< "${{ steps.changed.outputs.files }}"
+          exit $fail
