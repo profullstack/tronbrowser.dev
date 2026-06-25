@@ -80,6 +80,18 @@ else
   EXT="$EXT_SRC"
 fi
 
+# Warn loudly when the chosen browser isn't a de-googled Ungoogled Chromium.
+case "$BROWSER" in
+  *ungoogled*) ;;                      # ideal
+  flatpak) ;;                          # flatpak ungoogled
+  *)
+    echo "TronBrowser: running '$BROWSER' — this is regular Chromium, NOT de-googled." >&2
+    echo "  For a fully de-googled browser, install Ungoogled Chromium:" >&2
+    echo "    flatpak install -y flathub io.github.ungoogled_software.ungoogled_chromium" >&2
+    [ "$IS_SNAP" = "1" ] && echo "  (snap confinement also blocks an isolated TronBrowser profile — a non-snap browser is recommended.)" >&2
+    ;;
+esac
+
 FLAGS="--user-data-dir=$DATA --class=TronBrowser --no-first-run --no-default-browser-check --no-pings --disable-background-networking --disable-breakpad --disable-domain-reliability --disable-sync --disable-features=Translate,OptimizationHints,InterestFeedContentSuggestions --load-extension=$EXT"
 
 if [ "$BROWSER" = "flatpak" ]; then

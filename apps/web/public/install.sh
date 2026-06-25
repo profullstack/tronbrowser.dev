@@ -112,6 +112,30 @@ TRON
   ln -sf "$TRON_CLI" "$ALIAS_CLI"
 }
 
+# TronBrowser is de-googled, so it runs Ungoogled Chromium. Make sure a
+# de-googled engine exists; offer to install the Flatpak Ungoogled Chromium.
+# Skip with TB_NO_BROWSER_INSTALL=1.
+ensure_browser() {
+  for c in ungoogled-chromium ungoogled-chromium-stable; do
+    command -v "$c" >/dev/null 2>&1 && return 0
+  done
+  if command -v flatpak >/dev/null 2>&1 && flatpak info io.github.ungoogled_software.ungoogled_chromium >/dev/null 2>&1; then
+    return 0
+  fi
+  if [ "${TB_NO_BROWSER_INSTALL:-0}" = "1" ]; then return 0; fi
+
+  info "TronBrowser is de-googled and runs Ungoogled Chromium."
+  if command -v flatpak >/dev/null 2>&1; then
+    info "Installing Ungoogled Chromium via Flatpak (skip with TB_NO_BROWSER_INSTALL=1)…"
+    flatpak install -y flathub io.github.ungoogled_software.ungoogled_chromium 2>/dev/null \
+      || warn "Flatpak install failed — install Ungoogled Chromium manually."
+  else
+    warn "No de-googled browser found. Install Ungoogled Chromium for the full experience:"
+    say  "    flatpak install -y flathub io.github.ungoogled_software.ungoogled_chromium"
+    say  "  (regular Chromium/Chrome still phones Google; the snap can't be isolated.)"
+  fi
+}
+
 do_install() {
   need uname
   asset="$(detect_asset)"
@@ -158,6 +182,8 @@ StartupWMClass=TronBrowser
 StartupNotify=true
 DESKTOP
   command -v update-desktop-database >/dev/null 2>&1 && update-desktop-database "$apps_dir" 2>/dev/null || true
+
+  ensure_browser
 
   info "Installed TronBrowser $tag to $APP_DIR"
   say  "    launch:  tron   (or find 'TronBrowser' in your app menu)"
