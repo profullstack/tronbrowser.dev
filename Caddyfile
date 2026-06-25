@@ -12,6 +12,13 @@
 
 	root * /srv
 
+	# API lives at tronbrowser.dev/api — reverse-proxy to the API service
+	# (one monorepo, one domain). Keep this before file_server.
+	@api path /api/* /api
+	reverse_proxy @api https://tronbrowser-api-production.up.railway.app {
+		header_up Host tronbrowser-api-production.up.railway.app
+	}
+
 	# Security headers on every response.
 	header {
 		Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
@@ -38,9 +45,11 @@
 
 	encode gzip zstd
 
-	# Pretty URL: /privacy -> /privacy.html
+	# Pretty URLs.
 	@privacy path /privacy
 	rewrite @privacy /privacy.html
+	@login path /login
+	rewrite @login /login.html
 
 	file_server
 

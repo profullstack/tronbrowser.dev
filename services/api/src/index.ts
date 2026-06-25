@@ -9,7 +9,6 @@ import {
 } from './db.js';
 import { token, uuid, hashPassword, verifyPassword, SESSION_TTL, EMAIL_TOKEN_TTL } from './auth.js';
 import { sendEmail } from './email.js';
-import { loginPage } from './login-page.js';
 
 const CP = {
   clientId: process.env.COINPAY_CLIENT_ID || '',
@@ -44,9 +43,7 @@ async function startSession(c: any, userId: string, redirect?: string) {
   return sess;
 }
 
-app.get('/healthz', (c) => c.json({ ok: true }));
-app.get('/', (c) => c.redirect('/login'));
-app.get('/login', (c) => c.html(loginPage()));
+app.get('/api/healthz', (c) => c.json({ ok: true }));
 
 /* ---------- CoinPay OAuth (preferred) ---------- */
 app.get('/api/auth/coinpay/login', (c) => {
@@ -145,12 +142,12 @@ app.get('/api/auth/me', async (c) => {
 });
 
 /* ---------- Settings sync ---------- */
-app.get('/v1/settings', async (c) => {
+app.get('/api/settings', async (c) => {
   const user = await currentUser(c);
   if (!user) return c.json({ error: 'unauthorized' }, 401);
   return c.json(await getSettings(user.id));
 });
-app.put('/v1/settings', async (c) => {
+app.put('/api/settings', async (c) => {
   const user = await currentUser(c);
   if (!user) return c.json({ error: 'unauthorized' }, 401);
   await putSettings(user.id, await c.req.json().catch(() => ({})));

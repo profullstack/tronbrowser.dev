@@ -3,7 +3,7 @@
 // login URL through chrome.identity; the backend does the CoinPay OAuth dance
 // and redirects back with a TronBrowser session token. This is the login —
 // never Google. Override the API base in Settings (self-hosted backend).
-const DEFAULT_API = 'https://api.tronbrowser.dev';
+const DEFAULT_API = 'https://tronbrowser.dev';
 
 async function apiBase() {
   const { syncConfig } = await chrome.storage.local.get('syncConfig');
