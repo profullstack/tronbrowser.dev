@@ -1,6 +1,6 @@
 {
   "name": "@tronbrowser/payments",
-  "version": "0.1.20",
+  "version": "0.1.21",
   "private": true,
   "description": "x402 payment processing over the user's CoinPay global wallet addresses",
   "type": "module",
