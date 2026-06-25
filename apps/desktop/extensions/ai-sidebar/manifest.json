@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "TronBrowser",
-  "version": "0.1.29",
+  "version": "0.1.30",
   "description": "TronBrowser — privacy-first, AI-native. Branded new tab, DuckDuckGo search, CoinPay login, and a bring-your-own-keys AI sidebar.",
   "icons": {
     "16": "icons/icon-16.png",
