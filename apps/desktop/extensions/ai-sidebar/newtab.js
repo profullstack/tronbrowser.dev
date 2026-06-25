@@ -253,28 +253,53 @@ async function renderBtr() {
   sec.hidden = false;
 
   // Playable tiles carry data-player (open in a modal); the rest link out.
-  const tile = (player, url, img, ph, label, sub) =>
-    `<a class="btr-item" ${player ? `href="#" data-player="${escAttr(player)}"` : `href="${escAttr(url)}" target="_blank"`}>` +
+  // data-label drives the live filter below. ✓ marks already-played items.
+  const tile = (player, url, img, ph, label, sub, played) =>
+    `<a class="btr-item" data-label="${escAttr(String(label || '').toLowerCase())}" ${player ? `href="#" data-player="${escAttr(player)}"` : `href="${escAttr(url)}" target="_blank"`}>` +
     (img ? `<img src="${escAttr(img)}" alt="" loading="lazy" referrerpolicy="no-referrer" />` : `<span class="btr-ph">${ph}</span>`) +
+    (played ? '<span class="btr-played" title="Played">✓</span>' : '') +
     `<span class="btr-label">${escapeHtml(label)}</span>` +
     (sub ? `<span class="btr-sub">${escapeHtml(sub)}</span>` : '') + `</a>`;
   const group = (title, items) => items.length
-    ? `<div class="btr-group"><h3>${title}</h3><div class="btr-items">${items.join('')}</div></div>` : '';
+    ? `<div class="btr-group" data-group><h3>${title} <span class="btr-count">${items.length}</span></h3><div class="btr-items">${items.join('')}</div></div>` : '';
 
   if (!tv.length && !radio.length && !pods.length && !movies.length) {
     el('btr').innerHTML = '<p class="muted">Connected — add Live TV, radio, podcast or movie favorites on bittorrented.com and they’ll show up here.</p>';
     return;
   }
+  const music = movies.filter((m) => m.contentType === 'music');
+  const books = movies.filter((m) => m.contentType === 'book');
+  const shows = movies.filter((m) => !['music', 'book'].includes(m.contentType));
+  // Full list (no caps) + a live client-side filter across every section.
   el('btr').innerHTML =
-    group('Live TV', tv.slice(0, 12).map((c) => tile(c.player, c.url, c.logo, '📺', c.name))) +
-    group('Podcasts', pods.slice(0, 12).map((p) => {
+    `<input id="btr-filter" class="btr-filter" type="search" placeholder="Filter favorites…" autocomplete="off" />` +
+    `<div id="btr-groups">` +
+    group('Live TV', tv.map((c) => tile(c.player, c.url, c.logo, '📺', c.name))) +
+    group('Podcasts', pods.map((p) => {
       const ep = (p.episodes || [])[0];
-      return tile(ep?.player, p.url, p.image, '🎙', p.title, ep ? `▶ ${ep.title}` : 'no recent episodes');
+      const played = !!(ep && ep.progress && ep.progress.completed);
+      const sub = ep ? (played ? `✓ ${ep.title}` : `▶ ${ep.title}`) : 'no recent episodes';
+      return tile(ep?.player, p.url, p.image, '🎙', p.title, sub, played);
     })) +
-    group('Radio', radio.slice(0, 12).map((s) => tile(s.player, s.url, s.logo, '📻', s.name))) +
-    group('Music', movies.filter((m) => m.contentType === 'music').slice(0, 12).map((m) => tile(m.player, m.url, m.poster, '🎵', m.title))) +
-    group('Books', movies.filter((m) => m.contentType === 'book').slice(0, 12).map((m) => tile(m.player, m.url, m.poster, '📖', m.title))) +
-    group('Movies & Shows', movies.filter((m) => !['music', 'book'].includes(m.contentType)).slice(0, 12).map((m) => tile(m.player, m.url, m.poster, '🎬', m.title)));
+    group('Radio', radio.map((s) => tile(s.player, s.url, s.logo, '📻', s.name))) +
+    group('Music', music.map((m) => tile(m.player, m.url, m.poster, '🎵', m.title))) +
+    group('Books', books.map((m) => tile(m.player, m.url, m.poster, '📖', m.title))) +
+    group('Movies & Shows', shows.map((m) => tile(m.player, m.url, m.poster, '🎬', m.title))) +
+    `</div>`;
+
+  const fi = el('btr-filter');
+  if (fi) fi.addEventListener('input', () => {
+    const q = fi.value.trim().toLowerCase();
+    document.querySelectorAll('#btr-groups [data-group]').forEach((g) => {
+      let any = false;
+      g.querySelectorAll('.btr-item').forEach((it) => {
+        const show = !q || (it.getAttribute('data-label') || '').includes(q);
+        it.style.display = show ? '' : 'none';
+        if (show) any = true;
+      });
+      g.style.display = any ? '' : 'none';
+    });
+  });
 }
 
 // Open a bittorrented /api/player URL in a themed modal iframe. Append the
