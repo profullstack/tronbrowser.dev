@@ -14,10 +14,9 @@ body {
   padding: 7px 14px; font: inherit; font-weight: 700; cursor: pointer; }
 .signin.out { background: transparent; color: var(--fg); border: 1px solid var(--line); }
 .center { text-align: center; padding: 24px 16px 8px; }
-.logo { filter: drop-shadow(0 0 16px rgba(52,231,255,.5)); }
-.brand { font-size: 34px; font-weight: 800; letter-spacing: 2px; margin: 10px 0 2px; color: #fff; }
-.brand span { color: var(--cyan); }
-.tag { color: var(--muted); margin: 0 0 18px; }
+/* Big centered lockup logo — matches the tronbrowser.dev homepage hero. */
+.logo { width: min(380px, 70vw); height: auto; display: block; margin: 0 auto 18px;
+  filter: drop-shadow(0 0 40px rgba(52,231,255,.22)); }
 .search { margin: 0 auto; max-width: 620px; }
 .modes { display: flex; gap: 6px; justify-content: center; margin-bottom: 10px; }
 .mode { background: transparent; color: var(--muted); border: 1px solid var(--line);
