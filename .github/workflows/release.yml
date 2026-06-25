@@ -29,6 +29,10 @@ jobs:
           echo "version=$V" >> "$GITHUB_OUTPUT"
           echo "tag=v$V" >> "$GITHUB_OUTPUT"
 
+      # The tag is the single source of truth — sync every app/package to it.
+      - name: Sync versions
+        run: node scripts/set-version.mjs "${{ steps.v.outputs.version }}"
+
       - name: Build release archives
         run: bash apps/desktop/scripts/build-release.sh "v${{ steps.v.outputs.version }}" dist
 

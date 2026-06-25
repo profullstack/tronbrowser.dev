@@ -3,7 +3,13 @@
   "name": "TronBrowser AI Sidebar",
   "version": "0.1.0",
   "description": "Privacy-first AI sidebar — bring your own keys (Claude, GPT, Gemini, DeepSeek, Perplexity, Kimi, Qwen) or run local.",
-  "permissions": ["storage", "sidePanel", "tabs", "activeTab", "scripting"],
+  "permissions": [
+    "storage",
+    "sidePanel",
+    "tabs",
+    "activeTab",
+    "scripting"
+  ],
   "host_permissions": [
     "https://api.openai.com/*",
     "https://api.anthropic.com/*",
@@ -16,8 +22,14 @@
     "http://localhost/*",
     "http://127.0.0.1/*"
   ],
-  "background": { "service_worker": "background.js" },
-  "action": { "default_title": "TronBrowser AI" },
-  "side_panel": { "default_path": "sidepanel.html" },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "TronBrowser AI"
+  },
+  "side_panel": {
+    "default_path": "sidepanel.html"
+  },
   "options_page": "options.html"
 }
