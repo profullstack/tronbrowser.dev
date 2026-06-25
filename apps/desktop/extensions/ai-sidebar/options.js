@@ -1,6 +1,6 @@
 import { PROVIDERS, KNOWN_MODELS, listModels } from './providers.js';
 import { DEFAULT_FEEDS, parseOpml, toOpml, loadFeeds, saveFeeds } from './feeds.js';
-import { coinpaySignIn, coinpayState, coinpaySignOut } from './coinpay-auth.js';
+import { coinpaySignIn, coinpayState, coinpaySignOut, emailSignIn, emailSignUp } from './coinpay-auth.js';
 import { pushSettings, pullSettings } from './settings-store.js';
 import { encryptVault, decryptVault } from './vault.js';
 import { connect as btrConnect, disconnect as btrDisconnect, verify as btrVerify } from './bittorrented.js';
@@ -160,22 +160,57 @@ el('saveMarkets').addEventListener('click', async () => {
   flash('savedMarkets', 'saved ✓');
 });
 
-/* ---------- CoinPay account + sync ---------- */
+/* ---------- Account + sync (CoinPay or email — same as the website) ---------- */
 async function renderAccount() {
   const st = await coinpayState();
+  const how = st.method === 'email' ? 'email' : 'CoinPay';
   el('account').textContent = st.signedIn
-    ? `Signed in with CoinPay${st.label ? ' (' + st.label + ')' : ''} — settings sync to the cloud.`
+    ? `Signed in with ${how}${st.label ? ' (' + st.label + ')' : ''} — settings sync to the cloud.`
     : 'Not signed in. (Settings stay on this device until you sign in.)';
   el('coinpay').textContent = st.signedIn ? 'Sign out' : 'Sign in with CoinPay';
+  // The email form is only for signing in; hide it once signed in.
+  el('emailAuth').style.display = st.signedIn ? 'none' : '';
 }
+
+// After any successful sign-in, pull cloud settings down and re-render.
+async function afterSignIn() {
+  await pullSettings();
+  await loadAll();
+}
+
 el('coinpay').addEventListener('click', async () => {
   const st = await coinpayState();
   if (st.signedIn) { await coinpaySignOut(); }
   else {
-    try { await coinpaySignIn(); await pullSettings(); await loadAll(); }
+    try { await coinpaySignIn(); await afterSignIn(); }
     catch (e) { el('account').textContent = 'Sign-in failed: ' + e.message; return; }
   }
   renderAccount();
+});
+
+el('emailLogin').addEventListener('click', async () => {
+  const email = el('authEmail').value.trim();
+  const password = el('authPassword').value;
+  if (!email || !password) { flash('emailMsg', 'email and password required'); return; }
+  el('emailMsg').textContent = 'signing in…';
+  try {
+    const { emailVerified } = await emailSignIn(email, password);
+    el('authPassword').value = '';
+    await afterSignIn();
+    await renderAccount();
+    if (!emailVerified) flash('emailMsg', 'signed in — check your inbox to verify your email');
+  } catch (e) { flash('emailMsg', e.message); }
+});
+
+el('emailSignup').addEventListener('click', async () => {
+  const email = el('authEmail').value.trim();
+  const password = el('authPassword').value;
+  if (!email || password.length < 8) { flash('emailMsg', 'email and 8+ char password required'); return; }
+  el('emailMsg').textContent = 'creating account…';
+  try {
+    const { message } = await emailSignUp(email, password);
+    el('emailMsg').textContent = message; // persistent — user needs to go verify
+  } catch (e) { flash('emailMsg', e.message); }
 });
 
 /* ---------- Feeds ---------- */
