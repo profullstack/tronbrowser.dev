@@ -1,17 +1,18 @@
-# TronBrowser auth/sync API. Built from the monorepo root context.
+# TronBrowser auth/sync API. Self-contained build (context = services/api), so
+# it doesn't pick up the repo-root Caddy Dockerfile. Railway: set this service's
+# Root Directory to "services/api". Migrations are applied separately
+# (`doppler run -- pnpm db:migrate`); the container just serves.
 FROM node:24-slim
-RUN corepack enable
 WORKDIR /app
 
-# Workspace manifests first for cached installs.
-COPY pnpm-workspace.yaml package.json pnpm-lock.yaml .npmrc ./
-COPY services/api/package.json services/api/package.json
-RUN pnpm install --frozen-lockfile --filter @tronbrowser/api...
+COPY package.json ./
+RUN npm install --no-audit --no-fund
 
-COPY . .
-RUN pnpm --filter @tronbrowser/api build
+COPY src ./src
+# Standalone tsconfig (the repo one extends ../../tsconfig.base.json).
+RUN printf '%s' '{"compilerOptions":{"target":"ES2023","module":"NodeNext","moduleResolution":"NodeNext","outDir":"dist","rootDir":"src","strict":true,"skipLibCheck":true,"esModuleInterop":true},"include":["src"]}' > tsconfig.build.json \
+  && npx tsc -p tsconfig.build.json
 
 ENV PORT=8080
 EXPOSE 8080
-# Apply migrations, then start the server.
-CMD ["sh", "-c", "node scripts/db-migrate.mjs && node services/api/dist/index.js"]
+CMD ["node", "dist/index.js"]
