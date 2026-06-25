@@ -27,6 +27,7 @@ jobs:
     name: Submit (Linux)
     steps:
       - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v5
         with:
           node-version: lts/*
@@ -69,6 +70,7 @@ jobs:
       contains(github.event.inputs.package_managers, 'chocolatey')
     steps:
       - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v5
         with:
           node-version: lts/*

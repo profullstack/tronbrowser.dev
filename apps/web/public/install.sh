@@ -32,9 +32,12 @@ detect_asset() {
   os="$(uname -s)"; arch="$(uname -m)"
   case "$os" in
     Linux)
+      # The launcher is a shell script (arch-independent) — it runs the device's
+      # own Chromium. So x86_64 desktops AND arm64 Linux phones (Librem 5,
+      # PinePhone, Ubuntu Touch / PureOS / Mobian) use the same package.
       case "$arch" in
-        x86_64|amd64) echo "tronbrowser-linux-x64.tar.gz" ;;
-        *) err "unsupported Linux arch: $arch (x86_64 only for now)" ;;
+        x86_64|amd64|aarch64|arm64|armv7l|armhf) echo "tronbrowser-linux-x64.tar.gz" ;;
+        *) err "unsupported Linux arch: $arch" ;;
       esac ;;
     Darwin) echo "tronbrowser-macos.zip" ;;
     *) err "unsupported OS: $os. On Windows use the .zip from the releases page." ;;
