@@ -18,7 +18,7 @@ while [ -L "$SELF" ]; do
   esac
 done
 DIR="$(CDPATH= cd -- "$(dirname -- "$SELF")" && pwd)"
-EXT_SRC="$DIR/extensions/ai-sidebar"
+EXTBASE_SRC="$DIR/extensions"   # holds ai-sidebar + chromium-web-store
 
 BROWSER=""        # a binary path, or "flatpak"
 FLATPAK_APP=""
@@ -68,17 +68,22 @@ MSG
 fi
 
 # Profile + extension paths. Snap-confined browsers can only read NON-hidden
-# files in \$HOME, so under snap use a visible profile dir and stage the
-# extension there.
+# files in \$HOME, so under snap use a visible profile dir and stage extensions.
 if [ "$IS_SNAP" = "1" ]; then
   DATA="${TRONBROWSER_DATA:-$HOME/TronBrowser}"
   mkdir -p "$DATA"
-  rm -rf "$DATA/ai-sidebar"; cp -R "$EXT_SRC" "$DATA/ai-sidebar"
-  EXT="$DATA/ai-sidebar"
+  rm -rf "$DATA/extensions"; cp -R "$EXTBASE_SRC" "$DATA/extensions"
+  EXTBASE="$DATA/extensions"
 else
   DATA="${TRONBROWSER_DATA:-$HOME/.tronbrowser}"
-  EXT="$EXT_SRC"
+  EXTBASE="$EXTBASE_SRC"
 fi
+
+# Load every bundled extension (each subdir with a manifest.json).
+EXT=""
+for d in "$EXTBASE"/*/; do
+  [ -f "${d}manifest.json" ] && EXT="${EXT:+$EXT,}${d%/}"
+done
 
 # Warn loudly when the chosen browser isn't a de-googled Ungoogled Chromium.
 case "$BROWSER" in

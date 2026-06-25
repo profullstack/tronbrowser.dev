@@ -22,6 +22,19 @@ stage() { # dest dir
   cp "$REPO_ROOT/LICENSE" "$s/LICENSE"
   cp "$REPO_ROOT/apps/web/public/favicon.svg" "$s/tronbrowser.svg"
   printf '%s\n' "$VERSION" > "$s/VERSION"
+
+  # Bundle chromium-web-store so Chrome Web Store installs work on Ungoogled
+  # Chromium (which disables them by default). Preserves extension compatibility.
+  local crx; crx="$(mktemp)"
+  local url
+  url="$(curl -fsSL https://api.github.com/repos/NeverDecaf/chromium-web-store/releases/latest \
+    | grep -oE '"browser_download_url": *"[^"]+\.crx"' | head -1 | sed 's/.*"http/http/;s/"$//')"
+  if [ -n "$url" ] && curl -fsSL "$url" -o "$crx"; then
+    mkdir -p "$s/extensions/chromium-web-store"
+    unzip -q -o "$crx" -d "$s/extensions/chromium-web-store" 2>/dev/null || true
+    [ -f "$s/extensions/chromium-web-store/manifest.json" ] && echo "  + bundled chromium-web-store"
+  fi
+  rm -f "$crx"
 }
 
 build_archive() { # ext-type
