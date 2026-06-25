@@ -259,10 +259,45 @@ function initTabs() {
   });
 }
 
+/* ---------- global header: Sign in vs account dropdown (all pages) ---------- */
+async function initHeaderAuth() {
+  const bar = document.getElementById('acctbar');
+  if (!bar) return;
+  let me;
+  try { me = await fetch('/api/auth/me', { credentials: 'include' }).then((r) => r.json()); }
+  catch { return; }
+  if (!me || !me.signedIn) return; // default "Sign in" link stays
+  const label = me.email || (me.id ? me.id.slice(0, 8) : 'Account');
+  bar.innerHTML =
+    `<div class="account">
+       <button class="acct-btn" id="acctBtn" aria-haspopup="true" aria-expanded="false">${esc(label)} ▾</button>
+       <div class="acct-menu" id="acctMenu" hidden>
+         <a href="/store/submit.html">Publish</a>
+         <a href="/settings">Settings</a>
+         <a href="#" id="signout">Sign out</a>
+       </div>
+     </div>`;
+  const btn = document.getElementById('acctBtn');
+  const menu = document.getElementById('acctMenu');
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const open = menu.hasAttribute('hidden');
+    menu.toggleAttribute('hidden', !open);
+    btn.setAttribute('aria-expanded', String(open));
+  });
+  document.addEventListener('click', () => menu.setAttribute('hidden', ''));
+  document.getElementById('signout').addEventListener('click', async (e) => {
+    e.preventDefault();
+    await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' });
+    location.reload();
+  });
+}
+
 document.addEventListener('DOMContentLoaded', () => {
   const page = document.body.getAttribute('data-page');
   if (page === 'browse') initBrowse();
   else if (page === 'detail') initDetail();
   else if (page === 'submit') initSubmit();
   initTabs();
+  initHeaderAuth();
 });
