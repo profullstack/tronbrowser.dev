@@ -51,8 +51,8 @@ stage() { # dest dir
 
   # Default ad/tracker blocker: uBlock Origin (fetched once into $UBO_SRC).
   if [ -n "$UBO_SRC" ] && [ -d "$UBO_SRC" ]; then
-    mkdir -p "$s/extensions/ublock"
-    cp -R "$UBO_SRC/." "$s/extensions/ublock/"
+    mkdir -p "$s/extensions/ublock-origin"
+    cp -R "$UBO_SRC/." "$s/extensions/ublock-origin/"
   fi
 }
 

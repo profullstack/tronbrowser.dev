@@ -18,7 +18,7 @@ while [ -L "$SELF" ]; do
   esac
 done
 DIR="$(CDPATH= cd -- "$(dirname -- "$SELF")" && pwd)"
-EXTBASE_SRC="$DIR/extensions"   # holds ai-sidebar + chromium-web-store
+EXTBASE_SRC="$DIR/extensions"   # holds ai-sidebar + ublock-origin (uBlock Origin)
 
 BROWSER=""        # a binary path, or "flatpak"
 FLATPAK_APP=""

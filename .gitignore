@@ -19,4 +19,4 @@ coverage/
 *.orig
 
 # Bundled at build time (fetched, GPL — not vendored)
-apps/desktop/extensions/ublock/
+apps/desktop/extensions/ublock-origin/
