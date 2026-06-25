@@ -25,14 +25,17 @@ stage() { # dest dir
 
   # Bundle chromium-web-store so Chrome Web Store installs work on Ungoogled
   # Chromium (which disables them by default). Preserves extension compatibility.
+  # Non-fatal: a download hiccup must not fail the release. Use the stable
+  # latest/download URL (no GitHub API → no rate limit).
   local crx; crx="$(mktemp)"
-  local url
-  url="$(curl -fsSL https://api.github.com/repos/NeverDecaf/chromium-web-store/releases/latest \
-    | grep -oE '"browser_download_url": *"[^"]+\.crx"' | head -1 | sed 's/.*"http/http/;s/"$//')"
-  if [ -n "$url" ] && curl -fsSL "$url" -o "$crx"; then
+  local url="https://github.com/NeverDecaf/chromium-web-store/releases/latest/download/Chromium.Web.Store.crx"
+  if curl -fsSL "$url" -o "$crx" 2>/dev/null; then
     mkdir -p "$s/extensions/chromium-web-store"
     unzip -q -o "$crx" -d "$s/extensions/chromium-web-store" 2>/dev/null || true
-    [ -f "$s/extensions/chromium-web-store/manifest.json" ] && echo "  + bundled chromium-web-store"
+    [ -f "$s/extensions/chromium-web-store/manifest.json" ] && echo "  + bundled chromium-web-store" \
+      || rm -rf "$s/extensions/chromium-web-store"
+  else
+    echo "  ! chromium-web-store download skipped (non-fatal)"
   fi
   rm -f "$crx"
 }
