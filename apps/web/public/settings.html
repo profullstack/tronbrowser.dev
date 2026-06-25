@@ -39,9 +39,10 @@
   </div>
   <div class="grid">
     <span class="lab">Model</span>
-    <input id="model" placeholder="e.g. claude-opus-4-8, gpt-5.5, deepseek-chat" />
-    <span></span>
+    <input id="model" list="modelList" placeholder="pick from the list, or type a model id" />
+    <span id="modelHint" class="hint" style="margin:0"></span>
   </div>
+  <datalist id="modelList"></datalist>
 
   <h2>API keys (bring your own)</h2>
   <p class="hint">Add keys for as many providers as you want. They are

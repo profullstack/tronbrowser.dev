@@ -159,6 +159,41 @@ app.put('/api/settings', async (c) => {
   return c.json({ ok: true });
 });
 
+// List a provider's models. Browsers can't hit provider APIs (CORS/CSP), so we
+// proxy server-side with the supplied key. The key is used transiently and
+// NOT stored (only key STORAGE is E2E-encrypted).
+const PROVIDER_BASE: Record<string, string> = {
+  anthropic: 'https://api.anthropic.com/v1',
+  openai: 'https://api.openai.com/v1',
+  google: 'https://generativelanguage.googleapis.com/v1beta/openai',
+  deepseek: 'https://api.deepseek.com/v1',
+  perplexity: 'https://api.perplexity.ai',
+  huggingface: 'https://router.huggingface.co/v1',
+  kimi: 'https://api.moonshot.ai/v1',
+  qwen: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+};
+app.post('/api/models', async (c) => {
+  const user = await currentUser(c);
+  if (!user) return c.json({ error: 'unauthorized' }, 401);
+  const { provider, apiKey, baseUrl } = await c.req.json().catch(() => ({}));
+  const base = String(baseUrl || PROVIDER_BASE[provider] || '').replace(/\/$/, '');
+  if (!base || /localhost|127\.0\.0\.1/.test(base)) return c.json({ models: [] });
+  try {
+    const headers: Record<string, string> = provider === 'anthropic'
+      ? { 'x-api-key': apiKey || '', 'anthropic-version': '2023-06-01' }
+      : (apiKey ? { authorization: `Bearer ${apiKey}` } : {});
+    const r = await fetch(`${base}/models`, { headers });
+    if (!r.ok) return c.json({ models: [], error: `provider ${r.status}` });
+    const data: any = await r.json();
+    const models = (data.data || data.models || [])
+      .map((m: any) => (typeof m === 'string' ? m : m.id || m.name))
+      .filter(Boolean);
+    return c.json({ models });
+  } catch (e: any) {
+    return c.json({ models: [], error: e.message });
+  }
+});
+
 function baseUrl(c: any): string {
   return process.env.PUBLIC_URL || new URL(c.req.url).origin;
 }

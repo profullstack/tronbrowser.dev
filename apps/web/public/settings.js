@@ -62,7 +62,32 @@ function buildProviderRows() {
     inp.type = show ? 'text' : 'password';
     b.textContent = show ? 'hide' : 'show';
   }));
+  fetchModels();
 }
+
+// Fetch the selected provider's models (server-side proxy) into the datalist.
+async function fetchModels() {
+  const provider = $('default').value;
+  const keyInput = document.querySelector(`[data-key="${provider}"]`);
+  const apiKey = keyInput ? keyInput.value.trim() : '';
+  const dl = $('modelList'); dl.innerHTML = '';
+  const meta = PROVIDERS.find((p) => p.id === provider) || {};
+  if (meta.keyless) { $('modelHint').textContent = 'local provider — type your model id'; return; }
+  if (!apiKey) { $('modelHint').textContent = 'enter the API key above to load models'; return; }
+  $('modelHint').textContent = 'loading models…';
+  try {
+    const r = await api('/api/models', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ provider, apiKey }),
+    });
+    const d = await r.json();
+    (d.models || []).forEach((m) => { const o = document.createElement('option'); o.value = m; dl.appendChild(o); });
+    $('modelHint').textContent = d.models?.length ? `${d.models.length} models — pick or type` : (d.error || 'no models returned');
+  } catch {
+    $('modelHint').textContent = 'could not load models';
+  }
+}
+$('default').addEventListener('change', fetchModels);
 
 async function load() {
   if (!(await requireAuth())) return;
