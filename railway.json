@@ -2,7 +2,18 @@
   "$schema": "https://railway.com/railway.schema.json",
   "build": {
     "builder": "DOCKERFILE",
-    "dockerfilePath": "Dockerfile"
+    "dockerfilePath": "Dockerfile",
+    "watchPatterns": [
+      "apps/web/**",
+      "apps/extensions/**",
+      "services/api/**",
+      "Dockerfile",
+      "Caddyfile",
+      "start.sh",
+      "*.svg",
+      "*.png",
+      "railway.json"
+    ]
   },
   "deploy": {
     "restartPolicyType": "ON_FAILURE",
