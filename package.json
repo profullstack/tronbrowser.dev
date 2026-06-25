@@ -14,11 +14,14 @@
     "lint": "pnpm -r lint",
     "typecheck": "pnpm -r typecheck",
     "version:set": "node scripts/set-version.mjs",
-    "clean": "pnpm -r exec rm -rf dist"
+    "clean": "pnpm -r exec rm -rf dist",
+    "db:migrate": "node scripts/db-migrate.mjs",
+    "db:status": "node scripts/db-migrate.mjs --status"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
     "typescript": "^5.6.3",
-    "vitest": "^2.1.4"
+    "vitest": "^2.1.4",
+    "@libsql/client": "^0.14.0"
   }
 }

@@ -27,4 +27,21 @@ if (!supportsManagedBackups(cfg)) {
 local file always wins. The cloud tier (`*.turso.io`) is the only one with managed
 backups/replication; everything else is self-hosted and user-managed.
 
+## Migrations
+
+Schema lives in [`migrations/`](migrations/) as ordered `NNNN_name.sql` files,
+applied by a forward-only runner that tracks applied files in a
+`schema_migrations` table (idempotent).
+
+```bash
+doppler run -- pnpm db:migrate    # apply pending migrations to the configured DB
+pnpm db:status                    # show applied vs pending (no changes)
+```
+
+The runner ([`scripts/db-migrate.mjs`](../../scripts/db-migrate.mjs)) reads the
+same `TRONBROWSER_DB_URL`/`_AUTH_TOKEN`/`_PATH` env, so it targets Turso, your
+own libSQL server, or a local SQLite file. Current migrations:
+`0001_ai_provider_keys`, `0002_accounts_settings` (anonymous CoinPay + email/
+password accounts, sessions, synced settings).
+
 See [`.env.example`](../../.env.example) and the [PRD](../../docs/tronbrowser-prd.md).
