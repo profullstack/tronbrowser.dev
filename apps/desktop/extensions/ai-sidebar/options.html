@@ -42,10 +42,24 @@
   <h1>Settings</h1>
 
   <h2>Account</h2>
-  <p class="hint">Sign in with <strong>CoinPay</strong> (fully anonymous — email optional). Your
-  settings &amp; feeds then sync to the cloud SQLite database, or your own self-hosted backend.</p>
+  <p class="hint">Sign in to sync your settings &amp; feeds to the cloud SQLite database (or your own
+  self-hosted backend). <strong>CoinPay</strong> is fully anonymous; email is optional. Use the
+  <em>same</em> account here and on tronbrowser.dev so both stay in sync.</p>
   <div id="account" class="hint">Not signed in.</div>
   <button id="coinpay" class="ghost">Sign in with CoinPay</button>
+
+  <div id="emailAuth">
+    <div class="hint" style="margin:12px 0 2px">or email</div>
+    <label for="authEmail">Email</label>
+    <input id="authEmail" type="email" autocomplete="email" placeholder="you@example.com" />
+    <label for="authPassword">Password</label>
+    <input id="authPassword" type="password" autocomplete="current-password" placeholder="8+ characters" />
+    <div class="row">
+      <button id="emailLogin" class="ghost">Sign in</button>
+      <button id="emailSignup" class="ghost">Create account</button>
+    </div>
+    <div id="emailMsg" class="hint"></div>
+  </div>
 
   <label for="cpClient">CoinPay client id (advanced)</label>
   <input id="cpClient" placeholder="tronbrowser" />
