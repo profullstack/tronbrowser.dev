@@ -6,6 +6,10 @@
 }
 
 :{$PORT:80} {
+	# Redirect www -> apex (Railway routes both hosts to this container).
+	@www host www.tronbrowser.dev
+	redir @www https://tronbrowser.dev{uri} permanent
+
 	root * /srv
 	encode gzip
 	file_server
