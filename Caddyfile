@@ -48,6 +48,8 @@
 	rewrite @privacy /privacy.html
 	@login path /login
 	rewrite @login /login.html
+	@settings path /settings
+	rewrite @settings /settings.html
 
 	file_server
 

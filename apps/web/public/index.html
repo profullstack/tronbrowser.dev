@@ -108,6 +108,13 @@
   .topbar .signin { background: var(--cyan); color: #04060c; font-weight: 700; text-decoration: none;
     padding: 8px 16px; border-radius: 8px; font-size: 14px; }
   .topbar .signin:hover { filter: brightness(1.1); }
+  .account { position: relative; }
+  .acct-btn { background: var(--panel); color: var(--fg); border: 1px solid var(--line);
+    border-radius: 8px; padding: 8px 14px; font: inherit; font-size: 14px; cursor: pointer; }
+  .acct-menu { position: absolute; right: 0; margin-top: 6px; background: var(--panel);
+    border: 1px solid var(--line); border-radius: 8px; min-width: 150px; overflow: hidden; z-index: 10; }
+  .acct-menu a { display: block; padding: 10px 14px; color: var(--fg); text-decoration: none; font-size: 14px; }
+  .acct-menu a:hover { background: #04060c; color: var(--cyan); }
   .wrap { max-width: 860px; margin: 0 auto; padding: 32px 20px 96px; }
   header { text-align: center; margin-bottom: 40px; }
   .logo { font-size: 44px; font-weight: 800; letter-spacing: 2px; margin: 0;
