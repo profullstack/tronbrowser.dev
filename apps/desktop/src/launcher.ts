@@ -16,12 +16,13 @@ export interface LaunchConfig extends LaunchOptions {
 }
 
 /**
- * The page shown on a fresh launch when no URLs are given: the extension-
- * overridden New Tab page (the TronBrowser feed). Without an explicit startup
- * URL, Chromium opens a blank/default page, so the `chrome_url_overrides` newtab
- * feed only appears once the user opens a *new* tab — we open it on startup.
+ * The page shown on a fresh launch when no URLs are given: the TronBrowser feed
+ * (the ai-sidebar new-tab page). chrome://newtab/ from the command line shows
+ * Chromium's DEFAULT NTP — the `chrome_url_overrides` newtab override only applies
+ * to UI-created tabs — so we open the extension's page directly. The extension ID
+ * is fixed by the manifest "key".
  */
-export const DEFAULT_START_URL = 'chrome://newtab/';
+export const DEFAULT_START_URL = 'chrome-extension://blkabajacljkbmjnffffobbnoipcckah/newtab.html';
 
 /** Resolves the URLs to open, defaulting to the feed when none are supplied. */
 export function resolveStartUrls(urls?: string[]): string[] {

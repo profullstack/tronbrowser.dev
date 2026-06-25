@@ -175,6 +175,15 @@ FLAGS="--user-data-dir=$DATA --class=TronBrowser --no-first-run --no-default-bro
 LOG="${TRONBROWSER_LOG:-$DATA/tron.log}"
 FLAGS="$FLAGS --log-level=2"
 
+# On a fresh launch with no URL, open the TronBrowser feed (the ai-sidebar new-tab
+# page) instead of a blank/default page. chrome://newtab/ shows Chromium's DEFAULT
+# NTP from the command line — the chrome_url_overrides newtab only applies to
+# UI-created tabs — so open the extension's page directly. The ID is fixed by the
+# manifest "key" (blkabajacljkbmjnffffobbnoipcckah).
+if [ "$#" -eq 0 ]; then
+  set -- "chrome-extension://blkabajacljkbmjnffffobbnoipcckah/newtab.html"
+fi
+
 if [ -n "$MAC_APP" ]; then
   # macOS: launch the .app via LaunchServices (`open`). Running the inner binary
   # directly SIGABRTs, and `-n` gives a separate instance from any running

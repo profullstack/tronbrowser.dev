@@ -15,7 +15,7 @@ describe('resolveStartUrls', () => {
     ]);
   });
 
-  it('defaults to the extension-overridden new tab page', () => {
-    expect(DEFAULT_START_URL).toBe('chrome://newtab/');
+  it('defaults to the ai-sidebar new-tab feed (fixed extension id)', () => {
+    expect(DEFAULT_START_URL).toBe('chrome-extension://blkabajacljkbmjnffffobbnoipcckah/newtab.html');
   });
 });

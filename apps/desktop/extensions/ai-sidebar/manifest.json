@@ -1,7 +1,8 @@
 {
   "manifest_version": 3,
   "name": "TronBrowser",
-  "version": "0.2.11",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAtiZowpoE0HPpGEHjHLb1jsfa/G49HQGizDxZDbUbuIle96BxBD0KWZ54u1bMFgHi3RxYrmmMmhvvRfV3z6FSfTDlZjB7ydrkcrx4wFXLp9gWd/ec3VuNFy+qgob9Hmn77AH7NV58tf3G2u92vi3FA0b+Jte9+ZzuhabX5sseJY5IPvgL1ZdIALTVqb6dGdEz6O/yaID7BOusDbmewgDY2jANDZtiazL48oWiARM0TRNAvtvl3nWIK4dIVHnYOXdyGixKSr1lc/e8HkSoGkLp5O9zP9DT0DYPwSg/EZjlfoC1NDlwVNgxX0tw2r6BIiiXrhaUFfdUap5Jm6k582z1ZQIDAQAB",
+  "version": "0.2.12",
   "description": "TronBrowser — privacy-first, AI-native. Branded new tab, private search, CoinPay login, and a bring-your-own-keys AI sidebar.",
   "icons": {
     "16": "icons/icon-16.png",
