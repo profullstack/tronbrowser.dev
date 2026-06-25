@@ -14,9 +14,9 @@ const CP = {
   clientId: process.env.COINPAY_CLIENT_ID || '',
   clientSecret: process.env.COINPAY_CLIENT_SECRET || '',
   redirectUri: process.env.COINPAY_REDIRECT_URI || 'https://tronbrowser.com/api/auth/coinpay/callback',
-  authorizeUrl: process.env.COINPAY_AUTHORIZE_URL || 'https://coinpay.profullstack.com/oauth/authorize',
-  tokenUrl: process.env.COINPAY_TOKEN_URL || 'https://coinpay.profullstack.com/oauth/token',
-  userinfoUrl: process.env.COINPAY_USERINFO_URL || 'https://coinpay.profullstack.com/oauth/userinfo',
+  authorizeUrl: process.env.COINPAY_AUTHORIZE_URL || 'https://coinpayportal.com/oauth/authorize',
+  tokenUrl: process.env.COINPAY_TOKEN_URL || 'https://coinpayportal.com/oauth/token',
+  userinfoUrl: process.env.COINPAY_USERINFO_URL || 'https://coinpayportal.com/oauth/userinfo',
   scopes: ['wallet:read', 'payments:x402'],
 };
 const APP_URL = process.env.APP_URL || 'https://tronbrowser.dev';

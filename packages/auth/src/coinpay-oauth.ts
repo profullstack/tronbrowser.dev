@@ -15,8 +15,8 @@ import {
 } from './oauth.js';
 
 export const COINPAY_DEFAULTS = {
-  authorizeUrl: 'https://coinpay.profullstack.com/oauth/authorize',
-  tokenUrl: 'https://coinpay.profullstack.com/oauth/token',
+  authorizeUrl: 'https://coinpayportal.com/oauth/authorize',
+  tokenUrl: 'https://coinpayportal.com/oauth/token',
   /** Scopes needed to read wallet addresses and authorize x402 payments. */
   scopes: ['wallet:read', 'payments:x402'],
 } as const;
