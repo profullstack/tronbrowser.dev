@@ -14,6 +14,8 @@ const splitList = (s) => String(s || '').split(',').map((x) => x.trim()).filter(
 const SEARCH_ENGINES = {
   xprivo: { name: 'Xprivo', url: 'https://www.xprivo.com/search/?q=' },
   ddg: { name: 'DuckDuckGo', url: 'https://duckduckgo.com/?q=' },
+  // Altpower is a Google Programmable Search — query lives in the URL fragment.
+  altpower: { name: 'Altpower', url: 'https://altpower.app/#open-source&gsc.tab=0&gsc.q=', suffix: '&gsc.sort=' },
 };
 let searchMode = 'web';
 let searchEngine = 'xprivo';
@@ -48,7 +50,7 @@ el('search').addEventListener('submit', async (e) => {
     el('q').value = '';
   } else {
     const eng = SEARCH_ENGINES[searchEngine] || SEARCH_ENGINES.xprivo;
-    location.href = eng.url + encodeURIComponent(q);
+    location.href = eng.url + encodeURIComponent(q) + (eng.suffix || '');
   }
 });
 
