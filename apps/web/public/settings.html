@@ -23,6 +23,14 @@
   .row{display:flex;gap:10px;align-items:center;margin-top:18px}
   button{background:var(--cyan);color:#04060c;border:0;border-radius:8px;padding:10px 18px;font:inherit;font-weight:700;cursor:pointer}
   .saved{color:var(--cyan)} .err{color:#ff8a9b}
+  /* Native <dialog> for the masked vault passphrase prompt. */
+  .pw-dialog{background:var(--panel);color:var(--fg);border:1px solid var(--line);border-radius:12px;padding:20px;max-width:420px;width:92%;font:inherit}
+  .pw-dialog::backdrop{background:rgba(0,0,0,.6)}
+  .pw-dialog .pw-msg{margin:0 0 12px}
+  .pw-dialog input{width:100%;padding:10px;background:#04060c;color:var(--fg);border:1px solid var(--line);border-radius:8px;font:inherit}
+  .pw-dialog menu{display:flex;gap:10px;justify-content:flex-end;margin:14px 0 0;padding:0}
+  .pw-dialog button{border-radius:8px;padding:8px 14px;font:inherit;cursor:pointer;background:transparent;color:var(--fg);border:1px solid var(--line)}
+  .pw-dialog button.primary{background:var(--cyan);color:#04060c;border:0;font-weight:700}
   a{color:var(--cyan)}
 </style></head>
 <body>

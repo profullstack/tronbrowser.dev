@@ -143,12 +143,40 @@ async function fetchModels() {
 $('default').addEventListener('change', () => { $('model').value = ''; fetchModels(); });
 $('providers').addEventListener('input', (e) => { if (e.target.matches(`[data-key="${$('default').value}"]`)) fetchModels(); });
 
+// Masked passphrase prompt — native <dialog> (prompt() always shows plaintext).
+function promptPassword(message) {
+  return new Promise((resolve) => {
+    const dlg = document.createElement('dialog');
+    dlg.className = 'pw-dialog';
+    dlg.innerHTML =
+      `<form method="dialog">
+         <p class="pw-msg"></p>
+         <input type="password" autocomplete="current-password" spellcheck="false" />
+         <menu>
+           <button type="button" data-cancel>Cancel</button>
+           <button value="ok" class="primary">Unlock</button>
+         </menu>
+       </form>`;
+    dlg.querySelector('.pw-msg').textContent = message; // text node — no HTML injection
+    const input = dlg.querySelector('input');
+    dlg.querySelector('[data-cancel]').addEventListener('click', () => dlg.close(''));
+    dlg.addEventListener('close', () => {
+      const v = dlg.returnValue === 'ok' ? input.value : '';
+      dlg.remove();
+      resolve(v);
+    });
+    document.body.appendChild(dlg);
+    dlg.showModal();
+    input.focus();
+  });
+}
+
 async function load() {
   if (!(await requireAuth())) return;
   settings = await api('/api/settings').then((r) => (r.ok ? r.json() : {})).catch(() => ({}));
   // Decrypt the E2E vault into editable keys if present.
   if (settings.aiVault && !settings.aiProviders) {
-    let pass = sessionStorage.getItem('tb_vault_pass') || prompt('Enter your vault passphrase to decrypt your AI keys:') || '';
+    let pass = sessionStorage.getItem('tb_vault_pass') || await promptPassword('Enter your vault passphrase to decrypt your AI keys:') || '';
     if (pass) {
       try { settings.aiProviders = await decryptVault(pass, settings.aiVault); sessionStorage.setItem('tb_vault_pass', pass); }
       catch { $('msg').textContent = 'wrong vault passphrase'; $('msg').className = 'err'; }
