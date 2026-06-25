@@ -1,10 +1,11 @@
 #!/bin/sh
 # TronBrowser launcher.
 #
-# Until the native Ungoogled-Chromium fork binary is bundled, this shim runs a
-# Chromium-family browser found on the system in an ISOLATED TronBrowser profile
-# with the AI sidebar extension and TronBrowser's privacy flags. `tron <url>`
-# passes URLs through. Same flags as apps/desktop/src/chromium-flags.ts.
+# TronBrowser is de-googled. Until the native Ungoogled-Chromium fork binary is
+# bundled, this shim runs an Ungoogled Chromium / Chromium on the system (NEVER
+# Google Chrome) in an ISOLATED TronBrowser profile with the AI sidebar and
+# privacy flags. `tron <url>` passes URLs through.
+# Override the browser with $TRONBROWSER_BROWSER=/path/to/binary.
 set -eu
 
 # Resolve our own real directory (we're usually invoked via a symlink).
@@ -17,72 +18,74 @@ while [ -L "$SELF" ]; do
   esac
 done
 DIR="$(CDPATH= cd -- "$(dirname -- "$SELF")" && pwd)"
-
 EXT_SRC="$DIR/extensions/ai-sidebar"
 
-# A bundled native binary (future) takes priority.
-BROWSER=""
+BROWSER=""        # a binary path, or "flatpak"
+FLATPAK_APP=""
 IS_SNAP=0
-if [ -x "$DIR/chrome" ]; then
-  BROWSER="$DIR/chrome"
+
+if [ -n "${TRONBROWSER_BROWSER:-}" ]; then
+  BROWSER="$TRONBROWSER_BROWSER"
+elif [ -x "$DIR/chrome" ]; then
+  BROWSER="$DIR/chrome"            # future: bundled native fork binary
 else
-  # Prefer a NON-snap browser: snap confinement can't read ~/.tronbrowser or the
-  # extension under a hidden dir, so it would ignore our profile and just open
-  # the default session. Remember a snap as a last resort.
+  # De-googled binaries only — NO google-chrome. Prefer non-snap.
   snap_fallback=""
-  for c in ungoogled-chromium chromium chromium-browser google-chrome-stable google-chrome brave-browser brave; do
+  for c in ungoogled-chromium ungoogled-chromium-stable chromium chromium-browser; do
     p="$(command -v "$c" 2>/dev/null)" || continue
     case "$p" in
       /snap/*) [ -z "$snap_fallback" ] && snap_fallback="$p" ;;
       *) BROWSER="$p"; break ;;
     esac
   done
-  if [ -z "$BROWSER" ] && [ -n "$snap_fallback" ]; then
-    BROWSER="$snap_fallback"; IS_SNAP=1
+  # Flatpak Ungoogled Chromium (Flathub) — a fully de-googled option.
+  if [ -z "$BROWSER" ] && command -v flatpak >/dev/null 2>&1; then
+    for app in io.github.ungoogled_software.ungoogled_chromium com.github.Eloston.UngoogledChromium; do
+      if flatpak info "$app" >/dev/null 2>&1; then BROWSER="flatpak"; FLATPAK_APP="$app"; break; fi
+    done
   fi
+  [ -z "$BROWSER" ] && [ -n "$snap_fallback" ] && { BROWSER="$snap_fallback"; IS_SNAP=1; }
 fi
 
-# macOS app bundles.
+# macOS app bundles (de-googled only).
 if [ -z "$BROWSER" ]; then
   for app in \
     "/Applications/Ungoogled Chromium.app/Contents/MacOS/Chromium" \
-    "/Applications/Chromium.app/Contents/MacOS/Chromium" \
-    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
-    "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser"; do
+    "/Applications/Chromium.app/Contents/MacOS/Chromium"; do
     if [ -x "$app" ]; then BROWSER="$app"; break; fi
   done
 fi
 
 if [ -z "$BROWSER" ]; then
-  echo "TronBrowser: no Chromium-family browser found." >&2
-  echo "Install ungoogled-chromium (preferred) or chromium and retry." >&2
+  cat >&2 <<MSG
+TronBrowser is de-googled and needs Ungoogled Chromium (it will NOT run Google Chrome).
+Install one of:
+  flatpak install -y flathub io.github.ungoogled_software.ungoogled_chromium
+  # or your distro's 'ungoogled-chromium' / 'chromium' package
+Then run 'tron' again. (Force a specific binary with TRONBROWSER_BROWSER=/path/to/browser.)
+MSG
   exit 1
 fi
 
 # Profile + extension paths. Snap-confined browsers can only read NON-hidden
-# files in $HOME, so under snap we use a visible profile dir and stage the
-# extension there; otherwise we keep the hidden ~/.tronbrowser.
+# files in \$HOME, so under snap use a visible profile dir and stage the
+# extension there.
 if [ "$IS_SNAP" = "1" ]; then
   DATA="${TRONBROWSER_DATA:-$HOME/TronBrowser}"
   mkdir -p "$DATA"
-  rm -rf "$DATA/ai-sidebar"
-  cp -R "$EXT_SRC" "$DATA/ai-sidebar"
+  rm -rf "$DATA/ai-sidebar"; cp -R "$EXT_SRC" "$DATA/ai-sidebar"
   EXT="$DATA/ai-sidebar"
 else
   DATA="${TRONBROWSER_DATA:-$HOME/.tronbrowser}"
   EXT="$EXT_SRC"
 fi
 
-exec "$BROWSER" \
-  --user-data-dir="$DATA" \
-  --class=TronBrowser \
-  --no-first-run \
-  --no-default-browser-check \
-  --no-pings \
-  --disable-background-networking \
-  --disable-breakpad \
-  --disable-domain-reliability \
-  --disable-sync \
-  --disable-features=Translate,OptimizationHints,InterestFeedContentSuggestions \
-  --load-extension="$EXT" \
-  "$@"
+FLAGS="--user-data-dir=$DATA --class=TronBrowser --no-first-run --no-default-browser-check --no-pings --disable-background-networking --disable-breakpad --disable-domain-reliability --disable-sync --disable-features=Translate,OptimizationHints,InterestFeedContentSuggestions --load-extension=$EXT"
+
+if [ "$BROWSER" = "flatpak" ]; then
+  # shellcheck disable=SC2086
+  exec flatpak run --filesystem="$DATA" --filesystem="$EXT_SRC" "$FLATPAK_APP" $FLAGS "$@"
+else
+  # shellcheck disable=SC2086
+  exec "$BROWSER" $FLAGS "$@"
+fi

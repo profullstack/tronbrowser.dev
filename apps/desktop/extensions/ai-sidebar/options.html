@@ -3,40 +3,78 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>TronBrowser AI — Settings</title>
+<title>TronBrowser — Settings</title>
 <style>
   :root { --bg:#05070d; --panel:#0b1020; --line:#1b2540; --cyan:#34e7ff; --fg:#cfe8ff; --muted:#6f86b3; }
   body { background:var(--bg); color:var(--fg); font:14px/1.6 ui-monospace,Menlo,monospace;
-    max-width:560px; margin:0 auto; padding:32px 20px; }
-  h1 { font-size:20px; } .accent{color:var(--cyan);}
-  label { display:block; margin:16px 0 6px; color:var(--muted); }
-  input, select { width:100%; padding:10px; background:#04060c; color:var(--fg);
+    max-width:640px; margin:0 auto; padding:32px 20px 64px; }
+  h1 { font-size:22px; } h2 { font-size:16px; color:var(--cyan); margin-top:36px;
+    border-bottom:1px solid var(--line); padding-bottom:6px; }
+  .accent{color:var(--cyan);}
+  label { display:block; margin:14px 0 6px; color:var(--muted); }
+  input, select, textarea { width:100%; padding:10px; background:#04060c; color:var(--fg);
     border:1px solid var(--line); border-radius:8px; font:inherit; }
-  button { margin-top:20px; background:var(--cyan); color:#04060c; border:0; border-radius:8px;
-    padding:10px 18px; font-weight:700; cursor:pointer; }
+  textarea { min-height:120px; resize:vertical; }
+  button { margin-top:14px; background:var(--cyan); color:#04060c; border:0; border-radius:8px;
+    padding:9px 16px; font-weight:700; cursor:pointer; }
+  button.ghost { background:transparent; color:var(--fg); border:1px solid var(--line); }
+  .row { display:flex; gap:10px; align-items:flex-end; flex-wrap:wrap; }
+  .row > div { flex:1; min-width:120px; }
   .hint { color:var(--muted); font-size:12px; margin-top:6px; }
   .saved { color:var(--cyan); margin-left:10px; }
+  ul.feedlist { list-style:none; padding:0; margin:12px 0; }
+  ul.feedlist li { display:flex; justify-content:space-between; gap:8px; padding:6px 8px;
+    border:1px solid var(--line); border-radius:8px; margin-bottom:6px; }
+  ul.feedlist .x { color:#ff8a9b; cursor:pointer; background:none; border:0; margin:0; padding:0; }
+  .cat { color:var(--muted); font-size:12px; }
 </style>
 </head>
 <body>
-  <h1>Tron<span class="accent">AI</span> settings</h1>
-  <p class="hint">Bring your own key (free) — keys are stored locally in this browser
-    via <code>chrome.storage.local</code> and never sent anywhere but the provider.</p>
+  <h1>Tron<span class="accent">Browser</span> settings</h1>
 
+  <h2>Account</h2>
+  <p class="hint">Sign in with <strong>CoinPay</strong> (fully anonymous — email optional). Your
+  settings &amp; feeds then sync to the cloud SQLite database, or your own self-hosted backend.</p>
+  <div id="account" class="hint">Not signed in.</div>
+  <button id="coinpay" class="ghost">Sign in with CoinPay</button>
+
+  <label for="cpClient">CoinPay client id (advanced)</label>
+  <input id="cpClient" placeholder="tronbrowser" />
+  <label for="syncUrl">Self-hosted sync backend URL (optional)</label>
+  <input id="syncUrl" placeholder="leave blank to use the managed cloud" />
+
+  <h2>AI provider (bring your own key)</h2>
+  <p class="hint">Keys are stored locally and only ever sent to the provider you choose.</p>
   <label for="provider">Provider</label>
   <select id="provider"></select>
-
   <label for="model">Model</label>
   <input id="model" placeholder="e.g. claude-opus-4-8, gpt-4o, deepseek-chat" />
-
   <label for="apiKey">API key</label>
   <input id="apiKey" type="password" placeholder="sk-…" />
   <div class="hint" id="keyhint"></div>
-
   <label for="baseUrl">Base URL (optional override)</label>
   <input id="baseUrl" placeholder="leave blank for default / self-hosted endpoint" />
+  <div><button id="saveAi">Save AI settings</button><span id="savedAi" class="saved"></span></div>
 
-  <div><button id="save">Save</button><span id="saved" class="saved"></span></div>
+  <h2>RSS feeds</h2>
+  <ul id="feedlist" class="feedlist"></ul>
+  <div class="row">
+    <div><label for="fTitle">Title</label><input id="fTitle" placeholder="My Blog" /></div>
+    <div><label for="fCat">Category</label><input id="fCat" placeholder="Feeds" /></div>
+  </div>
+  <label for="fUrl">Feed URL (RSS/Atom)</label>
+  <input id="fUrl" placeholder="https://example.com/rss.xml" />
+  <button id="addFeed">Add feed</button>
+
+  <h3 style="color:var(--muted);font-size:13px;margin-top:24px;">Import / export OPML</h3>
+  <input id="opmlFile" type="file" accept=".opml,.xml,text/xml" />
+  <textarea id="opmlText" placeholder="…or paste OPML here"></textarea>
+  <div class="row">
+    <button id="importOpml">Import OPML</button>
+    <button id="exportOpml" class="ghost">Export OPML</button>
+    <button id="resetFeeds" class="ghost">Reset to defaults</button>
+  </div>
+  <span id="feedMsg" class="saved"></span>
 
   <script type="module" src="options.js"></script>
 </body>

@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="stylesheet" href="newtab.css" />
+<title>TronBrowser</title>
+</head>
+<body>
+  <header class="top">
+    <span id="account" class="account"></span>
+    <button id="signin" class="signin">Sign in with CoinPay</button>
+  </header>
+
+  <main class="center">
+    <img src="icons/logo.svg" alt="TronBrowser" class="logo" width="84" height="84" />
+    <h1 class="brand">Tron<span>Browser</span></h1>
+    <p class="tag">privacy-first · de-googled · AI-native</p>
+
+    <form id="search" class="search">
+      <input id="q" type="text" placeholder="Search DuckDuckGo…" autocomplete="off" autofocus />
+    </form>
+
+    <nav class="links">
+      <a href="https://duckduckgo.com">DuckDuckGo</a>
+      <a href="https://github.com/profullstack/tronbrowser.dev">GitHub</a>
+      <a href="https://tronbrowser.dev">tronbrowser.dev</a>
+      <a href="#" id="ai">AI Sidebar</a>
+      <a href="#" id="settings">Settings</a>
+    </nav>
+  </main>
+
+  <section class="feeds">
+    <div class="feeds-head">
+      <h2>Feeds</h2>
+      <button id="edit-feeds" title="Edit feeds">edit</button>
+    </div>
+    <div id="feeds" class="feedgrid"><p class="muted">Loading feeds…</p></div>
+  </section>
+
+  <script type="module" src="newtab.js"></script>
+</body>
+</html>
