@@ -228,6 +228,35 @@ el('exportOpml').addEventListener('click', async () => {
 });
 el('resetFeeds').addEventListener('click', async () => { await persistFeeds(DEFAULT_FEEDS.slice()); flash('feedMsg', 'reset ✓'); });
 
+/* ---------- masked passphrase dialog (prompt() can't hide input) ---------- */
+function promptPassword(message) {
+  return new Promise((resolve) => {
+    const dlg = document.createElement('dialog');
+    dlg.className = 'pw-dialog';
+    dlg.innerHTML =
+      `<form method="dialog">
+         <p class="pw-msg"></p>
+         <input type="password" autocomplete="current-password" spellcheck="false" />
+         <menu>
+           <button type="button" data-cancel>Cancel</button>
+           <button value="ok" class="primary">Unlock</button>
+         </menu>
+       </form>`;
+    dlg.querySelector('.pw-msg').textContent = message; // text node — no HTML injection
+    const input = dlg.querySelector('input');
+    dlg.querySelector('[data-cancel]').addEventListener('click', () => dlg.close(''));
+    // Enter submits ("ok"); Esc/backdrop fire 'cancel' → returnValue stays ''.
+    dlg.addEventListener('close', () => {
+      const val = dlg.returnValue === 'ok' ? input.value : '';
+      dlg.remove();
+      resolve(val);
+    });
+    document.body.appendChild(dlg);
+    dlg.showModal();
+    input.focus();
+  });
+}
+
 /* ---------- load ---------- */
 async function loadAll() {
   const { aiProviders, aiDefault, aiModel, aiVault, coinpayConfig, syncConfig } =
@@ -236,7 +265,7 @@ async function loadAll() {
   // Cross-device: only an encrypted vault present → decrypt with the passphrase.
   if (!Object.keys(provs).length && aiVault) {
     let pass = sessionStorage.getItem('tb_vault_pass');
-    if (!pass) pass = prompt('Enter your TronBrowser vault passphrase to decrypt your AI keys:') || '';
+    if (!pass) pass = await promptPassword('Enter your TronBrowser vault passphrase to decrypt your AI keys:');
     if (pass) {
       try { provs = (await decryptVault(pass, aiVault)) || {}; sessionStorage.setItem('tb_vault_pass', pass); }
       catch { provs = {}; flash('savedAi', 'wrong vault passphrase'); }
