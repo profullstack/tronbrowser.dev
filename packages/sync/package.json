@@ -1,6 +1,6 @@
 {
   "name": "@tronbrowser/sync",
-  "version": "0.1.9",
+  "version": "0.1.10",
   "private": true,
   "description": "Cross-device sync of user-owned objects",
   "type": "module",
