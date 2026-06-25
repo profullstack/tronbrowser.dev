@@ -1,6 +1,25 @@
-# Deploy target for the tronbrowser.dev Railway service: the static marketing
-# site (homepage + install.sh) under apps/web/public. The rest of the monorepo
-# (desktop, services, packages) deploys separately as it lands.
+# Single container for tronbrowser.dev: Caddy serves the static site and
+# reverse-proxies /api to the bundled Hono API (one service, one domain).
+# Built from the monorepo root context.
+
+# --- build the API ---
+FROM node:24-slim AS api
+WORKDIR /api
+COPY services/api/package.json ./
+RUN npm install --no-audit --no-fund
+COPY services/api/src ./src
+RUN printf '%s' '{"compilerOptions":{"target":"ES2023","module":"NodeNext","moduleResolution":"NodeNext","outDir":"dist","rootDir":"src","strict":true,"skipLibCheck":true,"esModuleInterop":true},"include":["src"]}' > tsconfig.build.json \
+  && npx tsc -p tsconfig.build.json \
+  && npm prune --omit=dev
+
+# --- final: caddy + node ---
 FROM caddy:2-alpine
+RUN apk add --no-cache nodejs
 COPY Caddyfile /etc/caddy/Caddyfile
 COPY apps/web/public/ /srv/
+COPY --from=api /api/dist /api/dist
+COPY --from=api /api/node_modules /api/node_modules
+COPY --from=api /api/package.json /api/package.json
+COPY start.sh /start.sh
+RUN chmod +x /start.sh
+CMD ["/start.sh"]

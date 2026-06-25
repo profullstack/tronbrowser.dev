@@ -12,12 +12,10 @@
 
 	root * /srv
 
-	# API lives at tronbrowser.dev/api — reverse-proxy to the API service
-	# (one monorepo, one domain). Keep this before file_server.
+	# API lives at tronbrowser.dev/api — reverse-proxy to the bundled API process
+	# in this same container (one service, one domain). Keep before file_server.
 	@api path /api/* /api
-	reverse_proxy @api https://tronbrowser-api-production.up.railway.app {
-		header_up Host tronbrowser-api-production.up.railway.app
-	}
+	reverse_proxy @api localhost:8090
 
 	# Security headers on every response.
 	header {
