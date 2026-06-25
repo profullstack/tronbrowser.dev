@@ -11,6 +11,7 @@ import {
   setExtensionStatus, addVersion, latestVersion, createPayment, setPaymentRef,
   markPaidByRef, hasPaidListing, latestScan, addFlag, openFlagCount,
   publisherKey, handleTaken, upsertPublisherKey,
+  createPublisherToken, userByPublisherToken, listPublisherTokens, revokePublisherToken,
 } from './db.js';
 import { validateManifest, slugify } from './manifest.js';
 import {
@@ -27,8 +28,18 @@ const APP_URL = process.env.APP_URL || 'https://tronbrowser.dev';
 
 async function currentUser(c: any): Promise<User | null> {
   const bearer = c.req.header('authorization')?.replace(/^Bearer\s+/i, '');
+  // Long-lived publisher API tokens (CI) are distinguishable by prefix; anything
+  // else in the bearer position is treated as a normal session token.
+  if (bearer?.startsWith('tbpub_')) return userByPublisherToken(bearer);
   const sess = bearer || getCookie(c, 'tb_session');
   return sess ? userBySession(sess) : null;
+}
+
+/** A user resolved from a browser SESSION only (not an API token). */
+async function sessionUser(c: any): Promise<User | null> {
+  const bearer = c.req.header('authorization')?.replace(/^Bearer\s+/i, '');
+  if (bearer?.startsWith('tbpub_')) return null;
+  return currentUser(c);
 }
 
 function xmlEscape(s: string): string {
@@ -178,6 +189,38 @@ store.post('/publisher/key', async (c) => {
       ? 'Account ready — scp your bundle to /public/extensions/<slug>/'
       : 'Key saved; an operator will finish provisioning shortly.',
   });
+});
+
+/* ---------- publisher API tokens (headless / CI publishing) ----------
+   A token authenticates CI as the publisher so it can push new versions without
+   a browser session. Minting requires a real session (so a leaked CI token
+   can't mint more). The raw token is returned ONCE; only its hash is stored. */
+store.post('/publisher/tokens', async (c) => {
+  const user = await sessionUser(c);
+  if (!user) return c.json({ error: 'mint tokens from a signed-in browser session' }, 401);
+  const body = await c.req.json().catch(() => ({}));
+  const name = String(body.name || 'ci').trim().slice(0, 40) || 'ci';
+  const { token, id } = await createPublisherToken(user.id, name);
+  return c.json({
+    ok: true,
+    token,
+    id,
+    name,
+    note: 'Shown once — store it as the CI secret TRONBROWSER_STORE_TOKEN.',
+  });
+});
+
+store.get('/publisher/tokens', async (c) => {
+  const user = await currentUser(c);
+  if (!user) return c.json({ error: 'unauthorized' }, 401);
+  return c.json({ tokens: await listPublisherTokens(user.id) });
+});
+
+store.delete('/publisher/tokens/:id', async (c) => {
+  const user = await sessionUser(c);
+  if (!user) return c.json({ error: 'unauthorized' }, 401);
+  const ok = await revokePublisherToken(user.id, c.req.param('id'));
+  return c.json({ ok }, ok ? 200 : 404);
 });
 
 /* ---------- publisher: submit an MV3 version (upload or PR) ----------

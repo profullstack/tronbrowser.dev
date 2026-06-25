@@ -1,6 +1,7 @@
 // Data access for the extension store. Mirrors the style of ../db.ts (raw
 // libSQL via the shared db() client).
-import { db } from '../db.js';
+import { createHash, randomBytes } from 'node:crypto';
+import { db, type User } from '../db.js';
 import { uuid } from '../auth.js';
 
 export interface Extension {
@@ -275,4 +276,56 @@ export async function upsertPublisherKey(k: {
             fingerprint = excluded.fingerprint, provisioned_at = excluded.provisioned_at`,
     args: [k.userId, k.handle, k.pubkey, k.fingerprint, k.provisioned ? new Date().toISOString() : null],
   });
+}
+
+/* ---------- publisher API tokens (headless / CI publishing) ---------- */
+
+export interface PublisherToken {
+  id: string;
+  user_id: string;
+  name: string | null;
+  created_at: string;
+  last_used_at: string | null;
+}
+
+const TOKEN_PREFIX = 'tbpub_';
+const hashToken = (raw: string): string => createHash('sha256').update(raw).digest('hex');
+
+/** Mint a long-lived publisher token. Returns the RAW token (shown once). */
+export async function createPublisherToken(
+  userId: string,
+  name?: string | null,
+): Promise<{ token: string; id: string; name: string | null }> {
+  const token = TOKEN_PREFIX + randomBytes(24).toString('base64url');
+  const id = uuid();
+  await db().execute({
+    sql: 'INSERT INTO publisher_tokens (id, user_id, token_hash, name) VALUES (?, ?, ?, ?)',
+    args: [id, userId, hashToken(token), name ?? null],
+  });
+  return { token, id, name: name ?? null };
+}
+
+/** Resolve a raw `tbpub_…` token to its user, stamping last_used_at. */
+export async function userByPublisherToken(raw: string): Promise<User | null> {
+  if (!raw.startsWith(TOKEN_PREFIX)) return null;
+  const hash = hashToken(raw);
+  const r = await db().execute({ sql: 'SELECT user_id FROM publisher_tokens WHERE token_hash = ?', args: [hash] });
+  const row = r.rows[0];
+  if (!row) return null;
+  await db().execute({ sql: "UPDATE publisher_tokens SET last_used_at = datetime('now') WHERE token_hash = ?", args: [hash] });
+  const u = await db().execute({ sql: 'SELECT * FROM users WHERE id = ?', args: [String(row.user_id)] });
+  return (u.rows[0] as unknown as User) ?? null;
+}
+
+export async function listPublisherTokens(userId: string): Promise<PublisherToken[]> {
+  const r = await db().execute({
+    sql: 'SELECT id, user_id, name, created_at, last_used_at FROM publisher_tokens WHERE user_id = ? ORDER BY created_at DESC',
+    args: [userId],
+  });
+  return r.rows as unknown as PublisherToken[];
+}
+
+export async function revokePublisherToken(userId: string, id: string): Promise<boolean> {
+  const r = await db().execute({ sql: 'DELETE FROM publisher_tokens WHERE id = ? AND user_id = ?', args: [id, userId] });
+  return (r.rowsAffected ?? 0) > 0;
 }
