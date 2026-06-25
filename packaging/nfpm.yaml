@@ -1,0 +1,24 @@
+# nfpm config — builds .deb and .rpm from the staged TronBrowser tree.
+# Driven by packaging/build-deb-rpm.sh (sets TB_VERSION + TB_ROOT).
+name: tronbrowser
+arch: amd64
+platform: linux
+version: ${TB_VERSION}
+section: web
+priority: optional
+maintainer: Profullstack, Inc. <security@profullstack.com>
+description: Open-source, privacy-first, AI-native browser (Ungoogled Chromium fork)
+vendor: Profullstack, Inc.
+homepage: https://tronbrowser.dev
+license: MIT
+depends:
+  - chromium
+contents:
+  - src: ${TB_ROOT}/
+    dst: /usr/lib/tronbrowser
+  - src: /usr/lib/tronbrowser/tronbrowser
+    dst: /usr/bin/tron
+    type: symlink
+  - src: /usr/lib/tronbrowser/tronbrowser
+    dst: /usr/bin/tronbrowser
+    type: symlink

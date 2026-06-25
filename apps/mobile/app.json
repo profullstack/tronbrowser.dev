@@ -1,7 +1,8 @@
 {
   "expo": {
     "name": "TronBrowser",
-    "slug": "tronbrowser",
+    "slug": "tronbrowserdev",
+    "owner": "profullstack",
     "scheme": "tronbrowser",
     "version": "0.1.0",
     "orientation": "portrait",
@@ -18,7 +19,10 @@
       "package": "dev.tronbrowser.app"
     },
     "extra": {
-      "note": "Phase 2 mobile (PRD §Mobile): AI chat, sync, voice, push, agent dashboard."
+      "note": "Phase 2 mobile (PRD §Mobile): AI chat, sync, voice, push, agent dashboard.",
+      "eas": {
+        "projectId": "d8bd3b92-f0e1-492e-bf3f-b972d7afec4f"
+      }
     }
   }
 }

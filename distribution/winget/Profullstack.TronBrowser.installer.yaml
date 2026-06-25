@@ -1,0 +1,16 @@
+# winget manifest (installer). Submit to microsoft/winget-pkgs as
+# manifests/p/Profullstack/TronBrowser/<version>/. Needs a Windows installer
+# (.exe/.msi) or a portable zip artifact — pending the Windows build.
+PackageIdentifier: Profullstack.TronBrowser
+PackageVersion: 0.1.0
+InstallerType: zip
+Installers:
+  - Architecture: x64
+    InstallerUrl: https://github.com/profullstack/tronbrowser.dev/releases/download/v0.1.0/tronbrowser-win-x64.zip
+    InstallerSha256: TODO-NEEDS-WINDOWS-BUILD
+    NestedInstallerType: portable
+    NestedInstallerFiles:
+      - RelativeFilePath: tronbrowser\tronbrowser.exe
+        PortableCommandAlias: tron
+ManifestType: installer
+ManifestVersion: 1.6.0

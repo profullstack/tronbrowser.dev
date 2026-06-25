@@ -1,27 +1,85 @@
 name: Submit to Package Managers
 
-# Refreshes downstream package managers after a release. Stubbed channels
-# (mirrors pairux.com's submit-packages). Wire each as the tap/manifest repos
-# and secrets land.
+# Refresh + submit downstream package managers after a release. Mirrors
+# pairux.com's submit-packages workflow but stays in this monorepo. Each channel
+# is gated on its secret; without the secret it dry-runs (no-op), so this never
+# fails for missing credentials.
 on:
+  release:
+    types: [published]
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version to submit (e.g. 0.1.0)'
+        description: 'Version without v prefix (e.g. 0.1.0)'
         required: true
+      dry_run:
+        description: 'Generate manifests without submitting'
+        type: boolean
+        default: true
+      package_managers:
+        description: 'Comma-separated, or "all"'
+        default: all
 
 jobs:
-  homebrew:
+  # Everything except Chocolatey runs on Linux.
+  submit-linux:
     runs-on: ubuntu-latest
+    name: Submit (Linux)
     steps:
-      - run: echo "stub - bump profullstack/homebrew-tap tronbrowser to ${{ github.event.inputs.version }} (url + sha256 from the release)"
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
 
-  scoop:
-    runs-on: ubuntu-latest
-    steps:
-      - run: echo "stub - update Scoop manifest for ${{ github.event.inputs.version }}"
+      - name: Resolve version
+        id: v
+        run: |
+          if [ -n "${{ github.event.inputs.version }}" ]; then V="${{ github.event.inputs.version }}"; else V="${{ github.event.release.tag_name }}"; fi
+          echo "version=${V#v}" >> "$GITHUB_OUTPUT"
 
-  aur:
-    runs-on: ubuntu-latest
+      - name: Resolve package managers
+        id: pms
+        run: |
+          PMS="${{ github.event.inputs.package_managers }}"
+          [ -z "$PMS" ] && PMS="all"
+          if [ "$PMS" = "all" ]; then PMS="homebrew,scoop,winget,aur,apt,rpm,gentoo,nix"; fi
+          echo "list=$(echo "$PMS" | sed 's/chocolatey,*//g')" >> "$GITHUB_OUTPUT"
+
+      - name: Refresh + submit manifests
+        env:
+          DRY_RUN: ${{ github.event.inputs.dry_run }}
+          GH_TOKEN: ${{ github.token }}
+          AUR_SSH_KEY: ${{ secrets.AUR_SSH_KEY }}
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+        run: |
+          ARGS="-v ${{ steps.v.outputs.version }}"
+          for PM in $(echo "${{ steps.pms.outputs.list }}" | tr ',' ' '); do ARGS="$ARGS -p $PM"; done
+          # Default to dry-run unless explicitly disabled AND submit secrets exist.
+          if [ "$DRY_RUN" != "false" ]; then ARGS="$ARGS --dry-run"; fi
+          node scripts/submit-packages.mjs $ARGS
+
+  # Chocolatey publishes from Windows.
+  submit-chocolatey:
+    runs-on: windows-latest
+    name: Submit (Chocolatey)
+    if: >-
+      github.event.inputs.package_managers == 'all' ||
+      github.event.inputs.package_managers == '' ||
+      github.event_name == 'release' ||
+      contains(github.event.inputs.package_managers, 'chocolatey')
     steps:
-      - run: echo "stub - push AUR PKGBUILD for ${{ github.event.inputs.version }}"
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Resolve version
+        id: v
+        shell: bash
+        run: |
+          if [ -n "${{ github.event.inputs.version }}" ]; then V="${{ github.event.inputs.version }}"; else V="${{ github.event.release.tag_name }}"; fi
+          echo "version=${V#v}" >> "$GITHUB_OUTPUT"
+      - name: Refresh chocolatey manifest
+        shell: bash
+        env:
+          CHOCOLATEY_API_KEY: ${{ secrets.CHOCOLATEY_API_KEY }}
+        run: node scripts/submit-packages.mjs -v ${{ steps.v.outputs.version }} -p chocolatey --dry-run

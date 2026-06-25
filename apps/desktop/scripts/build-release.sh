@@ -1,30 +1,44 @@
 #!/usr/bin/env bash
-# Assemble TronBrowser release archives (launcher shim + AI sidebar extension).
-# Until the native fork binary is built, this packages the launcher; the asset
-# names are stable so install.sh works unchanged when the real binary lands.
+# Assemble TronBrowser release archives (launcher shim + AI sidebar extension)
+# for a given platform. Until the native fork binary is built, this packages the
+# launcher; asset names are stable so install.sh / package managers are unchanged.
 #
-# Usage: build-release.sh <version> [outDir]
+# Usage: build-release.sh <version> [linux|macos|windows|all]
 set -euo pipefail
 
-VERSION="${1:?usage: build-release.sh <version> [outDir]}"
-OUT="${2:-dist}"
+VERSION="${1:?usage: build-release.sh <version> [platform]}"
+PLATFORM="${2:-all}"
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 DESKTOP="$REPO_ROOT/apps/desktop"
+OUT="$REPO_ROOT/dist"
+mkdir -p "$OUT"
 
-stage="$(mktemp -d)/tronbrowser"
-mkdir -p "$stage/extensions"
-install -m 0755 "$DESKTOP/launcher/tronbrowser" "$stage/tronbrowser"
-cp -R "$DESKTOP/extensions/ai-sidebar" "$stage/extensions/ai-sidebar"
-cp "$REPO_ROOT/LICENSE" "$stage/LICENSE"
-printf '%s\n' "$VERSION" > "$stage/VERSION"
+stage() { # dest dir
+  local s="$1"
+  mkdir -p "$s/extensions"
+  install -m 0755 "$DESKTOP/launcher/tronbrowser" "$s/tronbrowser"
+  cp "$DESKTOP/launcher/tronbrowser.cmd" "$s/tronbrowser.cmd"
+  cp -R "$DESKTOP/extensions/ai-sidebar" "$s/extensions/ai-sidebar"
+  cp "$REPO_ROOT/LICENSE" "$s/LICENSE"
+  printf '%s\n' "$VERSION" > "$s/VERSION"
+}
 
-case "$OUT" in /*) out_dir="$OUT" ;; *) out_dir="$REPO_ROOT/$OUT" ;; esac
-mkdir -p "$out_dir"
-abs_out="$(cd "$out_dir" && pwd)"
+build_archive() { # ext-type
+  local t; t="$(mktemp -d)"
+  stage "$t/tronbrowser"
+  case "$1" in
+    linux)   ( cd "$t" && tar -czf "$OUT/tronbrowser-linux-x64.tar.gz" tronbrowser ) ;;
+    macos)   ( cd "$t" && zip -qr "$OUT/tronbrowser-macos.zip" tronbrowser ) ;;
+    windows) ( cd "$t" && zip -qr "$OUT/tronbrowser-win-x64.zip" tronbrowser ) ;;
+  esac
+  rm -rf "$t"
+}
 
-# The launcher is POSIX sh, so the same staging works for Linux and macOS.
-( cd "$stage/.." && tar -czf "$abs_out/tronbrowser-linux-x64.tar.gz" tronbrowser )
-( cd "$stage/.." && zip -qr "$abs_out/tronbrowser-macos.zip" tronbrowser )
+case "$PLATFORM" in
+  linux|macos|windows) build_archive "$PLATFORM" ;;
+  all) build_archive linux; build_archive macos; build_archive windows ;;
+  *) echo "unknown platform: $PLATFORM (linux|macos|windows|all)" >&2; exit 1 ;;
+esac
 
-echo "built:"
-ls -lh "$abs_out"/tronbrowser-* | awk '{print "  "$9" ("$5")"}'
+echo "built ($PLATFORM):"
+ls -lh "$OUT"/tronbrowser-* 2>/dev/null | awk '{print "  "$9" ("$5")"}'

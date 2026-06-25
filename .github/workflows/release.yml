@@ -13,47 +13,91 @@ permissions:
   contents: write
 
 jobs:
-  release:
+  # 1) Create the GitHub Release (draft) up front so each per-platform build job
+  #    uploads straight to it via the Releases API (pattern from pairux.com).
+  create-release:
     runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.v.outputs.tag }}
+      version: ${{ steps.v.outputs.version }}
     steps:
       - uses: actions/checkout@v4
-
-      - name: Resolve version
-        id: v
+      - id: v
         run: |
-          if [ -n "${{ github.event.inputs.version }}" ]; then
-            V="${{ github.event.inputs.version }}"
-          else
-            V="${GITHUB_REF_NAME#v}"
-          fi
+          if [ -n "${{ github.event.inputs.version }}" ]; then V="${{ github.event.inputs.version }}"; else V="${GITHUB_REF_NAME#v}"; fi
           echo "version=$V" >> "$GITHUB_OUTPUT"
           echo "tag=v$V" >> "$GITHUB_OUTPUT"
-
-      # The tag is the single source of truth — sync every app/package to it.
-      - name: Sync versions
-        run: node scripts/set-version.mjs "${{ steps.v.outputs.version }}"
-
-      - name: Build release archives
-        run: bash apps/desktop/scripts/build-release.sh "v${{ steps.v.outputs.version }}" dist
-
-      # Create the release first, then upload assets via the Releases API — the
-      # same reliable path users download from (pattern borrowed from pairux.com,
-      # which hit upload-artifact corruption). Re-runs reuse/clobber.
-      - name: Publish release
+      - name: Create draft release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           TAG="${{ steps.v.outputs.tag }}"
           if gh release view "$TAG" >/dev/null 2>&1; then
-            echo "Release $TAG exists — clobbering assets."
-            gh release upload "$TAG" dist/* --clobber
+            gh release edit "$TAG" --draft
           else
-            gh release create "$TAG" dist/* \
-              --title "TronBrowser $TAG" \
-              --generate-notes
+            gh release create "$TAG" --draft --title "TronBrowser $TAG" --generate-notes
           fi
 
-      - name: Summary
+  # 2) Build each platform's artifacts on its own runner and upload them.
+  build:
+    needs: create-release
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest, platform: linux }
+          - { os: macos-latest, platform: macos }
+          - { os: windows-latest, platform: windows }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Sync version
+        run: node scripts/set-version.mjs "${{ needs.create-release.outputs.version }}"
+
+      - name: Package (linux/macos)
+        if: matrix.platform != 'windows'
+        run: bash apps/desktop/scripts/build-release.sh "v${{ needs.create-release.outputs.version }}" ${{ matrix.platform }}
+
+      - name: Package (linux deb + rpm)
+        if: matrix.platform == 'linux'
         run: |
-          echo "Released ${{ steps.v.outputs.tag }} with:" >> "$GITHUB_STEP_SUMMARY"
-          ls dist | sed 's/^/- /' >> "$GITHUB_STEP_SUMMARY"
+          curl -sSfL "https://github.com/goreleaser/nfpm/releases/download/v2.41.0/nfpm_2.41.0_amd64.deb" -o /tmp/nfpm.deb
+          sudo dpkg -i /tmp/nfpm.deb
+          bash packaging/build-deb-rpm.sh "v${{ needs.create-release.outputs.version }}"
+
+      - name: Package (windows)
+        if: matrix.platform == 'windows'
+        shell: pwsh
+        run: |
+          $stage = "dist/stage/tronbrowser"
+          New-Item -ItemType Directory -Force -Path "$stage/extensions" | Out-Null
+          Copy-Item apps/desktop/launcher/tronbrowser "$stage/tronbrowser"
+          Copy-Item apps/desktop/launcher/tronbrowser.cmd "$stage/tronbrowser.cmd"
+          Copy-Item -Recurse apps/desktop/extensions/ai-sidebar "$stage/extensions/ai-sidebar"
+          Copy-Item LICENSE "$stage/LICENSE"
+          "v${{ needs.create-release.outputs.version }}" | Out-File -Encoding ascii "$stage/VERSION"
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          Compress-Archive -Path "dist/stage/tronbrowser" -DestinationPath "dist/tronbrowser-win-x64.zip" -Force
+
+      - name: Upload to release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          shopt -s nullglob
+          assets=(dist/tronbrowser-*.tar.gz dist/tronbrowser-*.zip dist/*.deb dist/*.rpm)
+          gh release upload "${{ needs.create-release.outputs.tag }}" "${assets[@]}" --clobber
+
+  # 3) Publish (un-draft) once every platform has uploaded.
+  publish:
+    needs: [create-release, build]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Un-draft the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release edit "${{ needs.create-release.outputs.tag }}" --draft=false --repo "${{ github.repository }}"

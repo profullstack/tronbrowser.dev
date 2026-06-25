@@ -24,5 +24,18 @@ Bundle ids: `dev.tronbrowser.app` (iOS + Android).
 
 AI chat · sync · voice · push notifications · agent dashboard.
 
-Builds/submission will go through EAS (`eas build` / `eas submit`); a CI
-workflow lands when Phase 2 starts.
+## EAS (builds & submission)
+
+Linked to the EAS project **profullstack/tronbrowserdev**
+(`projectId d8bd3b92-f0e1-492e-bf3f-b972d7afec4f`, see `app.json` → `extra.eas`).
+Profiles are in [`eas.json`](eas.json).
+
+```bash
+eas build --platform android --profile preview
+eas build --platform ios --profile production
+eas submit --platform android
+```
+
+**Monorepo note:** in the EAS GitHub integration
+(expo.dev → project → GitHub), set the **Base directory** to `apps/mobile` for
+both Android and iOS — that's where this Expo app lives.
