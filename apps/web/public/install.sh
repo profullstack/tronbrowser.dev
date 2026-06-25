@@ -179,7 +179,8 @@ do_install() {
   write_cli
 
   # Desktop app-menu entry (KDE/GNOME) so TronBrowser shows up as an app.
-  icon="$(dirname "$bin")/tronbrowser.svg"
+  # Prefer the PNG app icon (KDE renders SVG app icons inconsistently); fall back to SVG.
+  icon="$(dirname "$bin")/tronbrowser.png"; [ -f "$icon" ] || icon="$(dirname "$bin")/tronbrowser.svg"
   apps_dir="$PREFIX/share/applications"
   mkdir -p "$apps_dir"
   cat > "$apps_dir/tronbrowser.desktop" <<DESKTOP

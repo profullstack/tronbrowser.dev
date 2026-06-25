@@ -46,6 +46,8 @@ stage() { # dest dir
   cp -L "$REPO_ROOT/favicon.svg" "$s/tronbrowser.svg"
   cp -L "$REPO_ROOT/logo.svg" "$s/logo.svg"
   cp -L "$REPO_ROOT/banner.png" "$s/banner.png"
+  # PNG app icon (favicon-sourced) for desktops that render SVG icons poorly (KDE).
+  cp -L "$REPO_ROOT/apps/web/public/icons/icon-512x512.png" "$s/tronbrowser.png" 2>/dev/null || true
   printf '%s\n' "$VERSION" > "$s/VERSION"
 
   # NOTE: we no longer bundle NeverDecaf's chromium-web-store. Its manifest's
