@@ -1,10 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { resolveStartUrls, DEFAULT_START_URL } from './launcher.js';
+import { resolveStartUrls } from './launcher.js';
 
 describe('resolveStartUrls', () => {
-  it('opens the feed (new tab page) when no URLs are given', () => {
-    expect(resolveStartUrls()).toEqual([DEFAULT_START_URL]);
-    expect(resolveStartUrls([])).toEqual([DEFAULT_START_URL]);
+  it('injects no URL on a bare launch (NTP feed comes from the startup pref)', () => {
+    expect(resolveStartUrls()).toEqual([]);
+    expect(resolveStartUrls([])).toEqual([]);
   });
 
   it('respects explicit URLs when provided', () => {
@@ -13,9 +13,5 @@ describe('resolveStartUrls', () => {
       'https://a.com',
       'https://b.com',
     ]);
-  });
-
-  it('defaults to the ai-sidebar new-tab feed (fixed extension id)', () => {
-    expect(DEFAULT_START_URL).toBe('chrome-extension://blkabajacljkbmjnffffobbnoipcckah/newtab.html');
   });
 });

@@ -16,17 +16,14 @@ export interface LaunchConfig extends LaunchOptions {
 }
 
 /**
- * The page shown on a fresh launch when no URLs are given: the TronBrowser feed
- * (the ai-sidebar new-tab page). chrome://newtab/ from the command line shows
- * Chromium's DEFAULT NTP — the `chrome_url_overrides` newtab override only applies
- * to UI-created tabs — so we open the extension's page directly. The extension ID
- * is fixed by the manifest "key".
+ * Resolves the URLs to open. No forced startup URL — a fresh launch opens the
+ * New Tab page (the ai-sidebar feed) via the browser's startup preference, which
+ * goes through the new-tab path that honors `chrome_url_overrides`. Navigating to
+ * chrome://newtab/ or a chrome-extension:// page from the command line does NOT
+ * (default NTP / blocked by Chromium), so we never inject one here.
  */
-export const DEFAULT_START_URL = 'chrome-extension://blkabajacljkbmjnffffobbnoipcckah/newtab.html';
-
-/** Resolves the URLs to open, defaulting to the feed when none are supplied. */
 export function resolveStartUrls(urls?: string[]): string[] {
-  return urls && urls.length > 0 ? urls : [DEFAULT_START_URL];
+  return urls && urls.length > 0 ? urls : [];
 }
 
 /** Launches the browser process with privacy flags enforced. */

@@ -131,6 +131,26 @@ PY
   mkdir -p "$DATA"; : > "$DATA/.tron-search-xprivo"
 fi
 
+# Show the feed (ai-sidebar New Tab page) on startup. We can't pass a startup URL —
+# chrome://newtab/ opens Chromium's DEFAULT NTP and chrome-extension:// pages are
+# blocked from the command line — but restore_on_startup=5 ("Open the New Tab page")
+# goes through the new-tab path, which honors the chrome_url_overrides feed. Once
+# per profile, then respect the user's chrome://settings/onStartup choice.
+if command -v python3 >/dev/null 2>&1 && [ ! -f "$DATA/.tron-startup-ntp" ]; then
+  TB_PREFS="$DATA/Default/Preferences" python3 - <<'PY' 2>/dev/null || true
+import json, os
+p = os.environ["TB_PREFS"]
+os.makedirs(os.path.dirname(p), exist_ok=True)
+try:
+    d = json.load(open(p)) if os.path.exists(p) else {}
+except Exception:
+    d = {}
+d.setdefault("session", {})["restore_on_startup"] = 5  # 5 = open the New Tab page
+json.dump(d, open(p, "w"))
+PY
+  mkdir -p "$DATA"; : > "$DATA/.tron-startup-ntp"
+fi
+
 # Auto-detection only ever selects Ungoogled Chromium / flatpak ungoogled / the
 # macOS Ungoogled cask (which installs as Chromium.app). The only way to reach a
 # non-ungoogled binary is an explicit TRONBROWSER_BROWSER override — warn there,
@@ -174,15 +194,6 @@ FLAGS="--user-data-dir=$DATA --class=TronBrowser --no-first-run --no-default-bro
 # set TRONBROWSER_VERBOSE=1 to see it inline. --log-level=2 trims the rest.
 LOG="${TRONBROWSER_LOG:-$DATA/tron.log}"
 FLAGS="$FLAGS --log-level=2"
-
-# On a fresh launch with no URL, open the TronBrowser feed (the ai-sidebar new-tab
-# page) instead of a blank/default page. chrome://newtab/ shows Chromium's DEFAULT
-# NTP from the command line — the chrome_url_overrides newtab only applies to
-# UI-created tabs — so open the extension's page directly. The ID is fixed by the
-# manifest "key" (blkabajacljkbmjnffffobbnoipcckah).
-if [ "$#" -eq 0 ]; then
-  set -- "chrome-extension://blkabajacljkbmjnffffobbnoipcckah/newtab.html"
-fi
 
 if [ -n "$MAC_APP" ]; then
   # macOS: launch the .app via LaunchServices (`open`). Running the inner binary
