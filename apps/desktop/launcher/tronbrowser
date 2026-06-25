@@ -147,25 +147,19 @@ case "$BROWSER" in
     ;;
 esac
 
-# macOS: the Ungoogled cask installs as Chromium.app — but a pre-existing
-# Chromium.app may be REGULAR and/or too old (our bundled uBlock Origin needs
-# Chromium >= 93). Refuse rather than silently run regular/old Chromium.
+# macOS: Ungoogled Chromium's official package installs as "Chromium.app" (there
+# is no "Ungoogled Chromium.app"), so the path name alone can't prove it's
+# de-googled. REQUIRE the Homebrew ungoogled-chromium cask as positive proof —
+# if we can't confirm it, refuse. We never run a plain/unverified Chromium.app.
+# (Advanced users with a manual Ungoogled build can set TRONBROWSER_BROWSER.)
 if [ -n "$MAC_APP" ] && [ -z "${TRONBROWSER_BROWSER:-}" ]; then
-  if command -v brew >/dev/null 2>&1 && ! brew list --cask ungoogled-chromium >/dev/null 2>&1; then
+  if ! { command -v brew >/dev/null 2>&1 && brew list --cask ungoogled-chromium >/dev/null 2>&1; }; then
     cat >&2 <<MSG
-TronBrowser: '$MAC_APP' is not the Ungoogled Chromium cask (likely regular Chromium).
-Install/replace it with Ungoogled Chromium:
+TronBrowser runs Ungoogled Chromium ONLY — it won't run plain/regular Chromium.
+Couldn't confirm '$MAC_APP' is the Ungoogled Chromium cask. Install it:
   brew install --cask ungoogled-chromium --force
-MSG
-    exit 1
-  fi
-  _ver="$(defaults read "$MAC_APP/Contents/Info" CFBundleShortVersionString 2>/dev/null || echo 0)"
-  _maj="${_ver%%.*}"; case "$_maj" in ''|*[!0-9]*) _maj=0 ;; esac
-  if [ "$_maj" -lt 93 ]; then
-    cat >&2 <<MSG
-TronBrowser: '$MAC_APP' is Chromium $_ver — too old (and likely regular Chromium).
-Install current Ungoogled Chromium (replaces it):
-  brew install --cask ungoogled-chromium --force
+(Note: the Ungoogled cask installs as "Chromium.app" — that IS Ungoogled Chromium.)
+Advanced: point at a manual Ungoogled build with TRONBROWSER_BROWSER=/path/to/Chromium
 MSG
     exit 1
   fi
