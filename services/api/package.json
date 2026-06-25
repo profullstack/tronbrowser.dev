@@ -15,7 +15,12 @@
   },
   "dependencies": {
     "@hono/node-server": "^1.13.7",
+    "@langchain/anthropic": "^1.5.1",
+    "@langchain/langgraph": "^1.4.6",
+    "@langchain/openai": "^1.5.3",
     "@libsql/client": "^0.14.0",
+    "@logicsrc/agentswarm": "^0.1.0",
+    "deepagents": "^1.10.5",
     "hono": "^4.6.14"
   },
   "devDependencies": {
