@@ -2,32 +2,64 @@ import { PROVIDERS } from './providers.js';
 import { DEFAULT_FEEDS, parseOpml, toOpml, loadFeeds, saveFeeds } from './feeds.js';
 import { coinpaySignIn, coinpayState, coinpaySignOut } from './coinpay-auth.js';
 import { pushSettings, pullSettings } from './settings-store.js';
+import { encryptVault, decryptVault } from './vault.js';
 
 const el = (id) => document.getElementById(id);
+const PROV_LIST = Object.entries(PROVIDERS);
 
-/* ---------- AI providers ---------- */
-const providerSel = el('provider');
-for (const [id, meta] of Object.entries(PROVIDERS)) {
-  const o = document.createElement('option');
-  o.value = id; o.textContent = meta.label; providerSel.appendChild(o);
+/* ---------- AI providers (multiple, with reveal + E2E vault) ---------- */
+function buildProviders(aiProviders, aiDefault) {
+  const sel = el('default'); sel.innerHTML = '';
+  const box = el('providers'); box.innerHTML = '';
+  for (const [id, meta] of PROV_LIST) {
+    const o = document.createElement('option'); o.value = id; o.textContent = meta.label; sel.appendChild(o);
+    const cur = aiProviders[id] || {};
+    const val = meta.keyless ? (cur.baseUrl || '') : (cur.apiKey || '');
+    const row = document.createElement('div'); row.className = 'prow';
+    row.innerHTML =
+      `<span class="plabel">${escape(meta.label)}</span>
+       <input data-prov="${id}" type="password" placeholder="${meta.keyless ? 'base URL (optional)' : 'API key'}" value="${escape(val)}" />
+       <button type="button" class="reveal" data-reveal="${id}">show</button>`;
+    box.appendChild(row);
+  }
+  sel.value = aiDefault || 'anthropic';
+  box.querySelectorAll('[data-reveal]').forEach((b) => b.addEventListener('click', () => {
+    const inp = box.querySelector(`[data-prov="${b.getAttribute('data-reveal')}"]`);
+    const show = inp.type === 'password';
+    inp.type = show ? 'text' : 'password';
+    b.textContent = show ? 'hide' : 'show';
+  }));
 }
-function updateKeyHint() {
-  const meta = PROVIDERS[providerSel.value];
-  el('keyhint').textContent = meta?.keyless ? 'Local provider — no API key needed.' : 'Required for this provider.';
-  el('apiKey').disabled = !!meta?.keyless;
+
+function collectProviders() {
+  const aiProviders = {};
+  el('providers').querySelectorAll('[data-prov]').forEach((inp) => {
+    const id = inp.getAttribute('data-prov'); const v = inp.value.trim();
+    if (!v) return;
+    aiProviders[id] = PROVIDERS[id].keyless ? { baseUrl: v } : { apiKey: v };
+  });
+  return aiProviders;
 }
-providerSel.addEventListener('change', updateKeyHint);
 
 el('saveAi').addEventListener('click', async () => {
-  const aiConfig = {
-    provider: providerSel.value,
-    model: el('model').value.trim(),
-    apiKey: el('apiKey').value.trim(),
-    baseUrl: el('baseUrl').value.trim(),
-  };
-  await chrome.storage.local.set({ aiConfig });
+  const aiProviders = collectProviders();
+  const aiDefault = el('default').value;
+  const model = el('model').value.trim();
+  const def = aiProviders[aiDefault] || {};
+  // aiConfig is the active provider; stays LOCAL (never synced in plaintext).
+  const aiConfig = { provider: aiDefault, model, apiKey: def.apiKey || '', baseUrl: def.baseUrl || '' };
+  await chrome.storage.local.set({ aiProviders, aiDefault, aiModel: model, aiConfig });
+
+  // E2E: with a vault passphrase, encrypt the keys so only ciphertext syncs.
+  const pass = el('vault').value;
+  if (pass) {
+    await chrome.storage.local.set({ aiVault: await encryptVault(pass, aiProviders) });
+    sessionStorage.setItem('tb_vault_pass', pass);
+  } else {
+    await chrome.storage.local.remove('aiVault');
+  }
   await pushSettings();
-  flash('savedAi', 'saved ✓');
+  flash('savedAi', el('vault').value ? 'saved (encrypted) ✓' : 'saved ✓ — set a vault passphrase to sync keys');
 });
 
 /* ---------- CoinPay account + sync ---------- */
@@ -100,16 +132,22 @@ el('resetFeeds').addEventListener('click', async () => { await persistFeeds(DEFA
 
 /* ---------- load ---------- */
 async function loadAll() {
-  const { aiConfig, coinpayConfig, syncConfig } = await chrome.storage.local.get(['aiConfig', 'coinpayConfig', 'syncConfig']);
-  if (aiConfig) {
-    providerSel.value = aiConfig.provider || 'anthropic';
-    el('model').value = aiConfig.model || '';
-    el('apiKey').value = aiConfig.apiKey || '';
-    el('baseUrl').value = aiConfig.baseUrl || '';
+  const { aiProviders, aiDefault, aiModel, aiVault, coinpayConfig, syncConfig } =
+    await chrome.storage.local.get(['aiProviders', 'aiDefault', 'aiModel', 'aiVault', 'coinpayConfig', 'syncConfig']);
+  let provs = aiProviders || {};
+  // Cross-device: only an encrypted vault present → decrypt with the passphrase.
+  if (!Object.keys(provs).length && aiVault) {
+    let pass = sessionStorage.getItem('tb_vault_pass');
+    if (!pass) pass = prompt('Enter your TronBrowser vault passphrase to decrypt your AI keys:') || '';
+    if (pass) {
+      try { provs = (await decryptVault(pass, aiVault)) || {}; sessionStorage.setItem('tb_vault_pass', pass); }
+      catch { provs = {}; flash('savedAi', 'wrong vault passphrase'); }
+    }
   }
+  el('model').value = aiModel || '';
+  buildProviders(provs, aiDefault);
   el('cpClient').value = coinpayConfig?.clientId || '';
   el('syncUrl').value = syncConfig?.url || '';
-  updateKeyHint();
   await renderAccount();
   await renderFeeds();
 }

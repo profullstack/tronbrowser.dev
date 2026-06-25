@@ -22,6 +22,11 @@
   .row > div { flex:1; min-width:120px; }
   .hint { color:var(--muted); font-size:12px; margin-top:6px; }
   .saved { color:var(--cyan); margin-left:10px; }
+  .providers { margin:14px 0; }
+  .prow { display:grid; grid-template-columns:130px 1fr auto; gap:8px; align-items:center; margin-bottom:8px; }
+  .prow .plabel { color:var(--muted); font-size:13px; }
+  .prow input { margin:0; }
+  .prow .reveal { margin:0; background:transparent; color:var(--muted); border:1px solid var(--line); font-weight:400; padding:8px 10px; }
   ul.feedlist { list-style:none; padding:0; margin:12px 0; }
   ul.feedlist li { display:flex; justify-content:space-between; gap:8px; padding:6px 8px;
     border:1px solid var(--line); border-radius:8px; margin-bottom:6px; }
@@ -43,17 +48,21 @@
   <label for="syncUrl">Self-hosted sync backend URL (optional)</label>
   <input id="syncUrl" placeholder="leave blank to use the managed cloud" />
 
-  <h2>AI provider (bring your own key)</h2>
-  <p class="hint">Keys are stored locally and only ever sent to the provider you choose.</p>
-  <label for="provider">Provider</label>
-  <select id="provider"></select>
-  <label for="model">Model</label>
-  <input id="model" placeholder="e.g. claude-opus-4-8, gpt-4o, deepseek-chat" />
-  <label for="apiKey">API key</label>
-  <input id="apiKey" type="password" placeholder="sk-…" />
-  <div class="hint" id="keyhint"></div>
-  <label for="baseUrl">Base URL (optional override)</label>
-  <input id="baseUrl" placeholder="leave blank for default / self-hosted endpoint" />
+  <h2>AI providers (bring your own keys)</h2>
+  <p class="hint">Add keys for as many providers as you like, then pick a default for
+  the sidebar. Keys are stored on your account (encrypted end-to-end when a vault
+  passphrase is set — see below) and only ever sent to the provider you choose.</p>
+  <label for="default">Default provider</label>
+  <select id="default"></select>
+  <label for="model">Default model</label>
+  <input id="model" placeholder="e.g. claude-opus-4-8, gpt-5.5, deepseek-chat" />
+
+  <div id="providers" class="providers"></div>
+
+  <label for="vault">Vault passphrase (optional, end-to-end encryption)</label>
+  <input id="vault" type="password" placeholder="encrypt keys before they sync; the server never sees it" />
+  <div class="hint">If set, keys are AES-256 encrypted in your browser before syncing — the cloud only stores ciphertext. You'll enter it to decrypt on other devices.</div>
+
   <div><button id="saveAi">Save AI settings</button><span id="savedAi" class="saved"></span></div>
 
   <h2>RSS feeds</h2>

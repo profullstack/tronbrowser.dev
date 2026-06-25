@@ -15,8 +15,9 @@
   .acct a{color:var(--cyan);margin-left:12px}
   h2{font-size:16px;color:#fff;margin:30px 0 6px}
   .hint{color:var(--muted);font-size:13px;margin:0 0 14px}
-  .grid{display:grid;grid-template-columns:130px 1fr 120px;gap:8px;align-items:center;margin-bottom:8px}
+  .grid{display:grid;grid-template-columns:130px 1fr auto;gap:8px;align-items:center;margin-bottom:8px}
   .grid .lab{color:var(--muted)}
+  .reveal{background:transparent;color:var(--muted);border:1px solid var(--line);border-radius:8px;padding:9px 12px;font:inherit;cursor:pointer}
   input,select{width:100%;padding:9px;background:#04060c;color:var(--fg);border:1px solid var(--line);border-radius:8px;font:inherit}
   .row{display:flex;gap:10px;align-items:center;margin-top:18px}
   button{background:var(--cyan);color:#04060c;border:0;border-radius:8px;padding:10px 18px;font:inherit;font-weight:700;cursor:pointer}
@@ -43,8 +44,14 @@
   </div>
 
   <h2>API keys (bring your own)</h2>
-  <p class="hint">Keys are stored on your TronBrowser account and only used to call the provider you choose. Local providers (Ollama/LM Studio/vLLM) need no key.</p>
+  <p class="hint">Add keys for as many providers as you want. They are
+  <strong>end-to-end encrypted</strong> in your browser before syncing — the
+  server only ever stores ciphertext. Local providers (Ollama/LM Studio/vLLM) need no key.</p>
   <div id="providers"></div>
+
+  <label for="vault" style="margin-top:24px">Vault passphrase (required to encrypt + save)</label>
+  <input id="vault" type="password" placeholder="encrypts your keys; the server never sees it" />
+  <p class="hint">Keep this safe — it's the only way to decrypt your keys. Lose it and you'll re-enter your keys.</p>
 
   <div class="row">
     <button id="save">Save</button>

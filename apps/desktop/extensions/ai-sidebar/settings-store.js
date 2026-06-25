@@ -9,8 +9,9 @@ import { coinpayState } from './coinpay-auth.js';
 // calls fail quietly (settings stay local) if unreachable.
 const CLOUD_BASE = 'https://tronbrowser.dev';
 
-// Keys that sync.
-const KEYS = ['aiConfig', 'feeds', 'coinpayConfig'];
+// Keys that sync. NOTE: plaintext API keys (aiConfig/aiProviders) are NEVER
+// synced — only the E2E-encrypted vault (aiVault) plus non-sensitive prefs.
+const KEYS = ['aiVault', 'aiDefault', 'aiModel', 'feeds', 'coinpayConfig'];
 
 async function endpoint() {
   const { syncConfig } = await chrome.storage.local.get('syncConfig');
