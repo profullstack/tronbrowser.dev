@@ -88,13 +88,23 @@ renderAccount();
 const TTL = 15 * 60 * 1000;
 
 async function fetchFeed(feed) {
-  const res = await fetch(feed.xmlUrl, { redirect: 'follow' });
-  if (!res.ok) throw new Error('HTTP ' + res.status);
-  const items = parseFeed(await res.text()).slice(0, 6);
-  return { ...feed, items };
+  // Per-feed timeout — without it, one dead/slow feed hangs Promise.all and the
+  // whole grid is stuck on "Loading feeds…" forever.
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), 8000);
+  try {
+    const res = await fetch(feed.xmlUrl, { redirect: 'follow', signal: ctrl.signal });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const items = parseFeed(await res.text()).slice(0, 6);
+    return { ...feed, items };
+  } catch (e) {
+    throw new Error(e.name === 'AbortError' ? 'timed out' : e.message);
+  } finally {
+    clearTimeout(t);
+  }
 }
 
-const CACHE_V = 2; // bump to invalidate caches when item shape changes (thumbnails)
+const CACHE_V = 3; // bump to invalidate caches when item shape changes / clear stale
 async function getFeedData(feeds) {
   const { feedCache } = await chrome.storage.local.get('feedCache');
   if (feedCache && feedCache.v === CACHE_V && Date.now() - feedCache.at < TTL && feedCache.count === feeds.length) {
@@ -114,9 +124,15 @@ function fmtDate(d) {
 }
 
 async function renderFeeds() {
-  const feeds = await loadFeeds();
-  const data = await getFeedData(feeds);
   const grid = el('feeds');
+  let feeds, data;
+  try {
+    feeds = await loadFeeds();
+    data = await getFeedData(feeds);
+  } catch (e) {
+    grid.innerHTML = `<p class="err">Couldn't load feeds: ${escapeHtml(e.message)}</p>`;
+    return;
+  }
   grid.innerHTML = '';
   for (const f of data) {
     const card = document.createElement('div');
