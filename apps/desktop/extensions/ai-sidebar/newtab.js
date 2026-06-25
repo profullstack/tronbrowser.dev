@@ -9,19 +9,32 @@ const DEFAULT_TICKERS = 'SPY, AAPL, NVDA, BTC-USD';
 const DEFAULT_LEAGUES = 'nfl, nba';
 const splitList = (s) => String(s || '').split(',').map((x) => x.trim()).filter(Boolean);
 
-// --- Search: Web (DuckDuckGo, default) or AI (our sidebar, BYO provider) ---
+// --- Search: Web (Xprivo by default, DuckDuckGo alternative) or AI (sidebar) ---
+const SEARCH_ENGINES = {
+  xprivo: { name: 'Xprivo', url: 'https://www.xprivo.com/search/?q=' },
+  ddg: { name: 'DuckDuckGo', url: 'https://duckduckgo.com/?q=' },
+};
 let searchMode = 'web';
+let searchEngine = 'xprivo';
+
 function setMode(mode) {
   searchMode = mode;
   el('mode-web').classList.toggle('active', mode === 'web');
   el('mode-ai').classList.toggle('active', mode === 'ai');
   el('mode-web').setAttribute('aria-selected', mode === 'web');
   el('mode-ai').setAttribute('aria-selected', mode === 'ai');
-  el('q').placeholder = mode === 'ai' ? 'Ask AI anything…' : 'Search DuckDuckGo…';
+  const eng = SEARCH_ENGINES[searchEngine] || SEARCH_ENGINES.xprivo;
+  el('q').placeholder = mode === 'ai' ? 'Ask AI anything…' : `Search ${eng.name}…`;
   el('q').focus();
 }
 el('mode-web').addEventListener('click', () => setMode('web'));
 el('mode-ai').addEventListener('click', () => setMode('ai'));
+
+// Load the chosen web search engine (default Xprivo).
+chrome.storage.local.get('searchEngine').then(({ searchEngine: se }) => {
+  if (se && SEARCH_ENGINES[se]) searchEngine = se;
+  if (searchMode === 'web') setMode('web');
+});
 
 el('search').addEventListener('submit', async (e) => {
   e.preventDefault();
@@ -33,7 +46,8 @@ el('search').addEventListener('submit', async (e) => {
     chrome.runtime.sendMessage({ type: 'open-sidepanel' });
     el('q').value = '';
   } else {
-    location.href = 'https://duckduckgo.com/?q=' + encodeURIComponent(q);
+    const eng = SEARCH_ENGINES[searchEngine] || SEARCH_ENGINES.xprivo;
+    location.href = eng.url + encodeURIComponent(q);
   }
 });
 

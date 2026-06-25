@@ -107,9 +107,9 @@ if flag not in exp:
 PY
 fi
 
-# Default the omnibox to DuckDuckGo (Ungoogled ships no default search engine,
-# so keyword input becomes http://<keyword>). Only seeds on first run; the user
-# can change it in chrome://settings/search afterward.
+# Default the omnibox to Xprivo (Ungoogled ships no default search engine, so
+# keyword input becomes http://<keyword>). DuckDuckGo is available as an
+# alternative. Only seeds on first run; change it in chrome://settings/search.
 if command -v python3 >/dev/null 2>&1; then
   TB_PREFS="$DATA/Default/Preferences" python3 - <<'PY' 2>/dev/null || true
 import json, os
@@ -121,11 +121,10 @@ except Exception:
     d = {}
 if not d.get("default_search_provider_data", {}).get("template_url_data"):
     d.setdefault("default_search_provider_data", {})["template_url_data"] = {
-        "short_name": "DuckDuckGo",
-        "keyword": "duckduckgo.com",
-        "url": "https://duckduckgo.com/?q={searchTerms}",
-        "suggestions_url": "https://duckduckgo.com/ac/?q={searchTerms}&type=list",
-        "favicon_url": "https://duckduckgo.com/favicon.ico",
+        "short_name": "Xprivo",
+        "keyword": "xprivo.com",
+        "url": "https://www.xprivo.com/search/?q={searchTerms}",
+        "favicon_url": "https://www.xprivo.com/favicon.ico",
         "safe_for_autoreplace": False,
     }
     json.dump(d, open(p, "w"))

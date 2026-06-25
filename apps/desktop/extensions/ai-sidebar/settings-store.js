@@ -11,7 +11,7 @@ const CLOUD_BASE = 'https://tronbrowser.dev';
 
 // Keys that sync. NOTE: plaintext API keys (aiConfig/aiProviders) are NEVER
 // synced — only the E2E-encrypted vault (aiVault) plus non-sensitive prefs.
-const KEYS = ['aiVault', 'aiDefault', 'aiModel', 'feeds', 'coinpayConfig', 'tickers', 'leagues'];
+const KEYS = ['aiVault', 'aiDefault', 'aiModel', 'feeds', 'coinpayConfig', 'tickers', 'leagues', 'searchEngine'];
 
 async function endpoint() {
   const { syncConfig } = await chrome.storage.local.get('syncConfig');

@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "TronBrowser",
-  "version": "0.1.32",
-  "description": "TronBrowser — privacy-first, AI-native. Branded new tab, DuckDuckGo search, CoinPay login, and a bring-your-own-keys AI sidebar.",
+  "version": "0.1.33",
+  "description": "TronBrowser — privacy-first, AI-native. Branded new tab, private search, CoinPay login, and a bring-your-own-keys AI sidebar.",
   "icons": {
     "16": "icons/icon-16.png",
     "32": "icons/icon-32.png",
@@ -65,10 +65,10 @@
   },
   "chrome_settings_overrides": {
     "search_provider": {
-      "name": "DuckDuckGo",
-      "keyword": "ddg",
-      "search_url": "https://duckduckgo.com/?q={searchTerms}",
-      "favicon_url": "https://duckduckgo.com/favicon.ico",
+      "name": "Xprivo",
+      "keyword": "xprivo",
+      "search_url": "https://www.xprivo.com/search/?q={searchTerms}",
+      "favicon_url": "https://www.xprivo.com/favicon.ico",
       "encoding": "UTF-8",
       "is_default": true
     }

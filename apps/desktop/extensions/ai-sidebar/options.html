@@ -78,6 +78,17 @@
   <button id="btrConnect" class="ghost">Connect bittorrented.com</button>
   <span id="btrMsg" class="saved"></span>
 
+  <h2>Search</h2>
+  <p class="hint">Default search engine for the new-tab search box. Xprivo is the
+  private default; DuckDuckGo is available as an alternative. (The omnibox default
+  is set separately in <code>chrome://settings/search</code>.)</p>
+  <label for="searchEngine">New-tab search engine</label>
+  <select id="searchEngine">
+    <option value="xprivo">Xprivo (private, default)</option>
+    <option value="ddg">DuckDuckGo</option>
+  </select>
+  <div><button id="saveSearch">Save search</button><span id="savedSearch" class="saved"></span></div>
+
   <h2>Markets &amp; Sports</h2>
   <p class="hint">Shown on the new-tab page. Free &amp; keyless — stock/crypto quotes from
   Yahoo Finance, scores from ESPN. Leave blank to hide a section.</p>

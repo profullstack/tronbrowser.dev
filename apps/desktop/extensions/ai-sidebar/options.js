@@ -142,6 +142,13 @@ el('btrConnect').addEventListener('click', async () => {
   await renderBtr();
 });
 
+/* ---------- Search engine ---------- */
+el('saveSearch').addEventListener('click', async () => {
+  await chrome.storage.local.set({ searchEngine: el('searchEngine').value });
+  await pushSettings();
+  flash('savedSearch', 'saved ✓');
+});
+
 /* ---------- Markets & Sports (new-tab widgets) ---------- */
 el('saveMarkets').addEventListener('click', async () => {
   const tickers = el('tickers').value.trim();
@@ -239,9 +246,10 @@ async function loadAll() {
   buildProviders(provs, aiDefault);
   el('cpClient').value = coinpayConfig?.clientId || '';
   el('syncUrl').value = syncConfig?.url || '';
-  const mkt = await chrome.storage.local.get(['tickers', 'leagues']);
+  const mkt = await chrome.storage.local.get(['tickers', 'leagues', 'searchEngine']);
   el('tickers').value = mkt.tickers ?? '';
   el('leagues').value = mkt.leagues ?? '';
+  el('searchEngine').value = mkt.searchEngine ?? 'xprivo';
   await renderAccount();
   await renderFeeds();
   await renderBtr();
