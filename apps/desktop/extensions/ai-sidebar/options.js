@@ -3,6 +3,7 @@ import { DEFAULT_FEEDS, parseOpml, toOpml, loadFeeds, saveFeeds } from './feeds.
 import { coinpaySignIn, coinpayState, coinpaySignOut } from './coinpay-auth.js';
 import { pushSettings, pullSettings } from './settings-store.js';
 import { encryptVault, decryptVault } from './vault.js';
+import { connect as btrConnect, disconnect as btrDisconnect, verify as btrVerify } from './bittorrented.js';
 
 const el = (id) => document.getElementById(id);
 const PROV_LIST = Object.entries(PROVIDERS);
@@ -120,6 +121,27 @@ el('saveAi').addEventListener('click', async () => {
   await loadAll(); // refresh so the default-provider menu reflects newly-added keys
 });
 
+/* ---------- bittorrented.com connect ---------- */
+async function renderBtr() {
+  const st = await btrVerify();
+  if (st.connected) {
+    el('btrAccount').textContent = `Connected${st.email ? ' as ' + st.email : ''} — your favorites sync to TronBrowser.`;
+    el('btrConnect').textContent = 'Disconnect';
+  } else {
+    el('btrAccount').textContent = 'Not connected.';
+    el('btrConnect').textContent = 'Connect bittorrented.com';
+  }
+}
+el('btrConnect').addEventListener('click', async () => {
+  const st = await btrVerify();
+  if (st.connected) { await btrDisconnect(); await renderBtr(); return; }
+  el('btrMsg').textContent = 'opening bittorrented.com…';
+  try { await btrConnect(); el('btrMsg').textContent = 'connected ✓'; }
+  catch (e) { el('btrMsg').textContent = 'connect failed: ' + e.message; }
+  setTimeout(() => (el('btrMsg').textContent = ''), 2500);
+  await renderBtr();
+});
+
 /* ---------- Markets & Sports (new-tab widgets) ---------- */
 el('saveMarkets').addEventListener('click', async () => {
   const tickers = el('tickers').value.trim();
@@ -222,6 +244,7 @@ async function loadAll() {
   el('leagues').value = mkt.leagues ?? '';
   await renderAccount();
   await renderFeeds();
+  await renderBtr();
 }
 el('cpClient').addEventListener('change', async () => {
   await chrome.storage.local.set({ coinpayConfig: { ...(await get('coinpayConfig')), clientId: el('cpClient').value.trim() } });
