@@ -67,16 +67,17 @@ async function fetchFeed(feed) {
   return { ...feed, items };
 }
 
+const CACHE_V = 2; // bump to invalidate caches when item shape changes (thumbnails)
 async function getFeedData(feeds) {
   const { feedCache } = await chrome.storage.local.get('feedCache');
-  if (feedCache && Date.now() - feedCache.at < TTL && feedCache.count === feeds.length) {
+  if (feedCache && feedCache.v === CACHE_V && Date.now() - feedCache.at < TTL && feedCache.count === feeds.length) {
     return feedCache.data;
   }
   const data = await Promise.all(feeds.map(async (f) => {
     try { return await fetchFeed(f); }
     catch (e) { return { ...f, items: [], error: e.message }; }
   }));
-  await chrome.storage.local.set({ feedCache: { at: Date.now(), count: feeds.length, data } });
+  await chrome.storage.local.set({ feedCache: { v: CACHE_V, at: Date.now(), count: feeds.length, data } });
   return data;
 }
 
@@ -93,18 +94,35 @@ async function renderFeeds() {
   for (const f of data) {
     const card = document.createElement('div');
     card.className = 'feedcard';
-    const items = (f.items || []).map((it) =>
-      `<li><a href="${it.link}">${escapeHtml(it.title)}</a> <span class="date">${fmtDate(it.date)}</span></li>`
-    ).join('');
+    const items = (f.items || []).map((it) => {
+      const thumb = it.image
+        ? `<img class="thumb" src="${escAttr(it.image)}" alt="" loading="lazy" referrerpolicy="no-referrer" />`
+        : '';
+      return `<li class="${it.image ? 'has-thumb' : ''}">${thumb}` +
+        `<span class="it"><a href="${escAttr(it.link)}">${escapeHtml(it.title)}</a> ` +
+        `<span class="date">${fmtDate(it.date)}</span></span></li>`;
+    }).join('');
     card.innerHTML =
-      `<h3><a href="${f.htmlUrl}">${escapeHtml(f.title)}</a></h3>` +
+      `<h3><a href="${escAttr(f.htmlUrl)}">${escapeHtml(f.title)}</a></h3>` +
       (f.error ? `<div class="err">${escapeHtml(f.error)}</div>` : `<ul>${items || '<li class="muted">no items</li>'}</ul>`);
     grid.appendChild(card);
   }
 }
 
+// Hide thumbnails that fail to load (error doesn't bubble → capture phase).
+el('feeds').addEventListener('error', (e) => {
+  const t = e.target;
+  if (t && t.classList && t.classList.contains('thumb')) {
+    const li = t.closest('li'); if (li) li.classList.remove('has-thumb');
+    t.remove();
+  }
+}, true);
+
 function escapeHtml(s) {
   const d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML;
+}
+function escAttr(s) {
+  return String(s || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
 renderFeeds();

@@ -38,7 +38,7 @@ export function parseOpml(xml) {
   return out;
 }
 
-/** Parse an RSS/Atom feed document into {title, link, date} items. */
+/** Parse an RSS/Atom feed document into {title, link, date, image} items. */
 export function parseFeed(xml) {
   const doc = new DOMParser().parseFromString(xml, 'text/xml');
   const items = [];
@@ -48,6 +48,7 @@ export function parseFeed(xml) {
       title: text(it, 'title'),
       link: text(it, 'link'),
       date: text(it, 'pubDate') || text(it, 'date'),
+      image: image(it),
     });
   }
   // Atom
@@ -58,6 +59,7 @@ export function parseFeed(xml) {
         title: text(e, 'title'),
         link: link ? link.getAttribute('href') : '',
         date: text(e, 'updated') || text(e, 'published'),
+        image: image(e),
       });
     }
   }
@@ -67,6 +69,37 @@ export function parseFeed(xml) {
 function text(parent, tag) {
   const el = parent.querySelector(tag);
   return el ? el.textContent.trim() : '';
+}
+
+const IMG_RE = /\.(jpe?g|png|gif|webp|avif)(\?|#|$)/i;
+function okUrl(u) { return /^https?:\/\//i.test(u || '') ? u : ''; }
+
+// Best-effort thumbnail for a feed item: Media RSS, image enclosure, podcast art,
+// or the first <img> embedded in the content. Returns '' when none is available.
+function image(it) {
+  const tag = (n) => it.getElementsByTagName(n)[0];
+  // Media RSS: <media:thumbnail url> / <media:content url medium="image">
+  const mt = tag('media:thumbnail');
+  if (mt && okUrl(mt.getAttribute('url'))) return mt.getAttribute('url');
+  for (const mc of it.getElementsByTagName('media:content')) {
+    const url = mc.getAttribute('url');
+    const medium = mc.getAttribute('medium') || mc.getAttribute('type') || '';
+    if (okUrl(url) && (/image/i.test(medium) || IMG_RE.test(url))) return url;
+  }
+  // <enclosure type="image/..."> or an image-looking url
+  for (const enc of it.getElementsByTagName('enclosure')) {
+    const url = enc.getAttribute('url');
+    const type = enc.getAttribute('type') || '';
+    if (okUrl(url) && (/^image\//i.test(type) || IMG_RE.test(url))) return url;
+  }
+  // Podcast/iTunes artwork
+  const ii = tag('itunes:image');
+  if (ii && okUrl(ii.getAttribute('href'))) return ii.getAttribute('href');
+  // First <img src> inside content:encoded or description HTML
+  const html = (tag('content:encoded')?.textContent) || text(it, 'description') || '';
+  const m = html.match(/<img[^>]+src=["']([^"']+)["']/i);
+  if (m && okUrl(m[1])) return m[1];
+  return '';
 }
 
 /** Serialize feeds back to OPML (grouped by category). */

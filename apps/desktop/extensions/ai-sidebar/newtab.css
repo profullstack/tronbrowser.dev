@@ -39,6 +39,10 @@ body {
 .feedcard h3 { margin: 0 0 8px; font-size: 13px; color: var(--cyan); }
 .feedcard ul { list-style: none; margin: 0; padding: 0; }
 .feedcard li { margin: 0 0 7px; }
+.feedcard li.has-thumb { display: flex; gap: 8px; align-items: flex-start; }
+.feedcard .thumb { width: 46px; height: 46px; flex: 0 0 auto; object-fit: cover;
+  border-radius: 6px; border: 1px solid var(--line); background: #04060c; }
+.feedcard .it { min-width: 0; }
 .feedcard a { color: var(--fg); text-decoration: none; font-size: 13px; }
 .feedcard a:hover { color: var(--cyan); }
 .feedcard .date { color: var(--muted); font-size: 11px; }
