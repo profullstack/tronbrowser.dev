@@ -14,7 +14,9 @@ RUN printf '%s' '{"compilerOptions":{"target":"ES2023","module":"NodeNext","modu
 
 # --- final: caddy + node ---
 FROM caddy:2-alpine
-RUN apk add --no-cache nodejs
+# openssh-client: the store provisions BBS publisher accounts and generates
+# ed25519 keypairs via `ssh`/`ssh-keygen` (services/api/src/store/fileshost.ts).
+RUN apk add --no-cache nodejs openssh-client
 COPY Caddyfile /etc/caddy/Caddyfile
 COPY apps/web/public/ /srv/
 # Extension store (tronbrowser.dev/store) — static frontend; dynamic bits hit

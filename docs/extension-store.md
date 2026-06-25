@@ -88,11 +88,36 @@ See `.env.example` (Extension store section): `APP_URL`, `STRIPE_SECRET_KEY`,
 `STRIPE_WEBHOOK_SECRET`, `STORE_X402_NETWORK`, `STORE_X402_PAY_TO`,
 `VU1NZ_API_URL`, `VU1NZ_API_KEY`, `STORE_REGISTRY_REPO`, `GITHUB_TOKEN`.
 
+## Bundle hosting — files.profullstack.com (AgentBBS Files)
+
+Instead of a cloud object store, bundles live on **files.profullstack.com** —
+the AgentBBS Files `/public` area (FOSS, self-hosted; replaces the lost Supabase
+storage). It's reached over SFTP and keyed by SSH public key.
+
+**Publisher identity (`0004_extension_publishers.sql`, `store/fileshost.ts`):**
+each publisher gets one AgentBBS member, provisioned from their SSH public key.
+The store either takes a pasted public key or generates an ed25519 keypair
+(private key shown once via `ssh-keygen`), then **SSHes the BBS host and runs
+`agentbbs provision-user`** (full-auto; see agentbbs PR #58). If
+`BBS_SSH_*` is unset the key is saved and an operator provisions later.
+
+**Upload + serve:**
+```
+scp dist.crx files@files.profullstack.com:/public/extensions/<slug>/
+        ->  https://files.profullstack.com/public/extensions/<slug>/dist.crx
+```
+The dev gives the store the filenames; we derive the URL from the slug
+convention (`publicUrlFor`) and **HEAD-check** the artifact is up before the
+version goes live. Anonymous public download is served by Caddy on the BBS host
+(`handle_path /public/*` → static `file_server`); the agentbbs PR adds it.
+
+Requires `openssh-client` in the API image (for `ssh`/`ssh-keygen`) — added to
+the Dockerfile.
+
 ## Not yet wired (follow-ups)
 
-- **Direct bundle upload** to Cloudflare R2 (per CLAUDE.md stack) — today
-  publishers host the `.crx`/`.zip` and link it; an `/upload` endpoint that
-  pushes to R2 and returns the URL is the next step.
+- **Browser file upload** (multipart straight through the API to files) so devs
+  don't need an SCP client at all — today they `scp` (or use FileZilla).
 - **Server-side CRX3 signing** from an uploaded `.zip`.
 - **Real CoinPay settlement verification** + Stripe live keys.
 - **TronBrowser one-click** deep-link handler in the desktop app.

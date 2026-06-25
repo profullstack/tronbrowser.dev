@@ -111,15 +111,69 @@ async function initDetail() {
 }
 
 /* ---------- submit (submit.html) ---------- */
+let SCP_TARGET = 'files@files.profullstack.com';
+
+async function renderPublisher() {
+  const box = document.getElementById('pubStatus');
+  const form = document.getElementById('submitForm');
+  const { publisher, scpTarget } = await api('/publisher');
+  if (scpTarget) { SCP_TARGET = scpTarget; document.getElementById('scpTarget').textContent = scpTarget; }
+  if (publisher && publisher.provisioned) {
+    box.innerHTML = `<p class="success">Upload key ready ✓ — member <b>${esc(publisher.handle)}</b> (${esc(publisher.fingerprint || '')})</p>
+      <p class="hint">Upload to <code>${esc(SCP_TARGET)}:/public/extensions/&lt;slug&gt;/</code> with your key.</p>`;
+    form.classList.remove('hidden');
+    return;
+  }
+  if (publisher && !publisher.provisioned) {
+    box.innerHTML = `<p class="hint">Key saved for <b>${esc(publisher.handle)}</b> — provisioning is finishing. You can fill out the listing below.</p>`;
+    form.classList.remove('hidden');
+    return;
+  }
+  box.innerHTML = `
+    <p class="hint">Register an SSH key so you can upload bundles. Paste your public key, or have one generated.</p>
+    <div class="field"><label>Handle (your member name)</label><input type="text" id="pubHandle" placeholder="acme" /></div>
+    <div class="field"><label>SSH public key</label><textarea id="pubKey" placeholder="ssh-ed25519 AAAA… you@host"></textarea></div>
+    <button class="btn" id="pubSave">Register key</button>
+    <button class="btn secondary" id="pubGen">Generate one for me</button>`;
+  document.getElementById('pubSave').addEventListener('click', () => savePublisher(false));
+  document.getElementById('pubGen').addEventListener('click', () => savePublisher(true));
+}
+
+async function savePublisher(generate) {
+  const box = document.getElementById('pubStatus');
+  const handle = document.getElementById('pubHandle')?.value.trim();
+  const pubkey = document.getElementById('pubKey')?.value.trim();
+  try {
+    const r = await api('/publisher/key', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ handle, pubkey: generate ? '' : pubkey, generate }),
+    });
+    if (r.privateKey) {
+      box.innerHTML = `<p class="success">Key generated for <b>${esc(r.handle)}</b>. Save this private key now — it is shown only once:</p>
+        <pre>${esc(r.privateKey)}</pre>
+        <p class="hint">Store it at <code>~/.ssh/id_ed25519</code> (chmod 600). Then upload with <code>scp -i ~/.ssh/id_ed25519 …</code></p>
+        <button class="btn" id="pubDone">Continue</button>`;
+      document.getElementById('pubDone').addEventListener('click', renderPublisher);
+      document.getElementById('submitForm').classList.remove('hidden');
+      return;
+    }
+    await renderPublisher();
+  } catch (e) {
+    box.innerHTML += `<p class="error">${esc(e.message)}</p>`;
+  }
+}
+
 async function initSubmit() {
   const form = document.getElementById('submitForm');
   const out = document.getElementById('submitOut');
   const me = await fetch('/api/auth/me', { credentials: 'include' }).then((r) => r.json()).catch(() => ({ signedIn: false }));
   if (!me.signedIn) {
     out.innerHTML = `<p class="error">You must <a href="/login?redirect=/store/submit.html">sign in</a> to publish.</p>`;
+    document.getElementById('pubPanel').classList.add('hidden');
     form.classList.add('hidden');
     return;
   }
+  await renderPublisher();
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
     out.innerHTML = '<p class="muted">Working…</p>';
@@ -128,43 +182,70 @@ async function initSubmit() {
     try { manifest = JSON.parse(fd.get('manifest')); }
     catch { out.innerHTML = '<p class="error">manifest.json is not valid JSON.</p>'; return; }
     const method = fd.get('method');
+    const files = {};
+    if (fd.get('crxFile')) files.crx = fd.get('crxFile').trim();
+    if (fd.get('zipFile')) files.zip = fd.get('zipFile').trim();
+    const urls = { bundleUrl: fd.get('bundleUrl') || null, crxUrl: fd.get('crxUrl') || null };
     try {
-      // 1) create draft
+      // 1) create draft (this assigns the slug we need for the upload path)
       const draft = await api('/extensions', {
         method: 'POST', headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ name: fd.get('name'), summary: fd.get('summary'), description: fd.get('description'), homepageUrl: fd.get('homepageUrl') }),
       });
-      // 2) submit MV3 version
-      const ver = await api(`/extensions/${draft.id}/versions`, {
-        method: 'POST', headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ manifest, bundleUrl: fd.get('bundleUrl') || null, crxUrl: fd.get('crxUrl') || null, source: 'upload' }),
-      });
-      const warn = (ver.warnings || []).length ? `<p class="hint">⚠ ${ver.warnings.map(esc).join('<br>⚠ ')}</p>` : '';
-      // 3) pay $1
-      out.innerHTML = `<p class="success">Validated MV3 ✓ (v${esc(ver.version)}). Redirecting to payment…</p>${warn}`;
-      const pay = await api(`/extensions/${draft.id}/checkout`, {
-        method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ method }),
-      }).catch((err) => err.data || {});
-      if (pay.checkoutUrl) { location.href = pay.checkoutUrl; return; }
-      if (pay.x402Version) {
-        out.innerHTML += `<p class="success">Pay 1 USDC via your CoinPay wallet, then confirm. Pay-to: <code>${esc(pay.accepts?.[0]?.payTo || '(configure STORE_X402_PAY_TO)')}</code></p>
-          <div class="field"><label>Settlement reference</label><input type="text" id="x402ref" placeholder="CoinPay reference" /></div>
-          <button class="btn" id="x402confirm">Confirm payment</button>`;
-        document.getElementById('x402confirm').addEventListener('click', async () => {
-          const reference = document.getElementById('x402ref').value.trim();
-          try {
-            await api(`/extensions/${draft.id}/confirm`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ paymentId: pay.paymentId, reference }) });
-            location.href = `/store/extension.html?slug=${encodeURIComponent(draft.slug)}&paid=1`;
-          } catch (err) { out.innerHTML += `<p class="error">${esc(err.message)}</p>`; }
-        });
+
+      // If uploading to files.profullstack.com, pause so they can scp to the
+      // real slug path first; then finish. If they linked URLs, go straight on.
+      if ((files.crx || files.zip) && !urls.crxUrl && !urls.bundleUrl) {
+        out.innerHTML = `<p class="success">Draft created: <b>${esc(draft.slug)}</b>. Upload your bundle, then finish:</p>
+          <pre>scp ${esc(files.crx || files.zip)} ${esc(SCP_TARGET)}:/public/extensions/${esc(draft.slug)}/</pre>
+          <button class="btn" id="finishBtn">I've uploaded — validate &amp; pay $1 →</button>`;
+        document.getElementById('finishBtn').addEventListener('click', () => finishPublish(draft, manifest, method, files, urls, out));
         return;
       }
-      out.innerHTML += `<p class="error">Payment could not be started: ${esc(pay.error || 'unknown')}</p>`;
+      await finishPublish(draft, manifest, method, files, urls, out);
     } catch (err) {
       const extra = err.data?.errors ? '<br>• ' + err.data.errors.map(esc).join('<br>• ') : '';
       out.innerHTML = `<p class="error">${esc(err.message)}${extra}</p>`;
     }
   });
+}
+
+// Submit the MV3 version (HEAD-checks uploaded files) then start payment.
+async function finishPublish(draft, manifest, method, files, urls, out) {
+  try {
+    out.innerHTML = '<p class="muted">Validating…</p>';
+    const ver = await api(`/extensions/${draft.id}/versions`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        manifest,
+        files: (files.crx || files.zip) ? files : undefined,
+        bundleUrl: urls.bundleUrl, crxUrl: urls.crxUrl, source: 'upload',
+      }),
+    });
+    const warn = (ver.warnings || []).length ? `<p class="hint">⚠ ${ver.warnings.map(esc).join('<br>⚠ ')}</p>` : '';
+    out.innerHTML = `<p class="success">Validated MV3 ✓ (v${esc(ver.version)}). Starting payment…</p>${warn}`;
+    const pay = await api(`/extensions/${draft.id}/checkout`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ method }),
+    }).catch((err) => err.data || {});
+    if (pay.checkoutUrl) { location.href = pay.checkoutUrl; return; }
+    if (pay.x402Version) {
+      out.innerHTML += `<p class="success">Pay 1 USDC via your CoinPay wallet, then confirm. Pay-to: <code>${esc(pay.accepts?.[0]?.payTo || '(configure STORE_X402_PAY_TO)')}</code></p>
+        <div class="field"><label>Settlement reference</label><input type="text" id="x402ref" placeholder="CoinPay reference" /></div>
+        <button class="btn" id="x402confirm">Confirm payment</button>`;
+      document.getElementById('x402confirm').addEventListener('click', async () => {
+        const reference = document.getElementById('x402ref').value.trim();
+        try {
+          await api(`/extensions/${draft.id}/confirm`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ paymentId: pay.paymentId, reference }) });
+          location.href = `/store/extension.html?slug=${encodeURIComponent(draft.slug)}&paid=1`;
+        } catch (err) { out.innerHTML += `<p class="error">${esc(err.message)}</p>`; }
+      });
+      return;
+    }
+    out.innerHTML += `<p class="error">Payment could not be started: ${esc(pay.error || 'unknown')}</p>`;
+  } catch (err) {
+    const extra = err.data?.errors ? '<br>• ' + err.data.errors.map(esc).join('<br>• ') : '';
+    out.innerHTML = `<p class="error">${esc(err.message)}${extra}</p>`;
+  }
 }
 
 /* ---------- tabs (install-guide.html) ---------- */

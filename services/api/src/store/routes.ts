@@ -10,8 +10,12 @@ import {
   createExtension, extensionById, extensionBySlug, slugTaken, listLiveExtensions,
   setExtensionStatus, addVersion, latestVersion, createPayment, setPaymentRef,
   markPaidByRef, hasPaidListing, latestScan, addFlag, openFlagCount,
+  publisherKey, handleTaken, upsertPublisherKey,
 } from './db.js';
 import { validateManifest, slugify } from './manifest.js';
+import {
+  provisionPublisher, generateKeypair, publicUrlFor, scpCommand, artifactExists, SCP_TARGET,
+} from './fileshost.js';
 import {
   createStripeCheckout, verifyStripeWebhook, listingPaymentRequirements,
   confirmCoinPaySettlement, LISTING_FEE_CENTS,
@@ -105,6 +109,77 @@ store.post('/extensions', async (c) => {
   return c.json({ ok: true, id: ext.id, slug: ext.slug });
 });
 
+/* ---------- publisher SSH identity (files.profullstack.com) ----------
+   Each publisher gets one AgentBBS member, provisioned from their SSH public
+   key, so they can `scp` bundles to /public/extensions/<slug>/. */
+function sanitizeHandle(raw: string): string {
+  return String(raw || '').toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '').slice(0, 20);
+}
+
+store.get('/publisher', async (c) => {
+  const user = await currentUser(c);
+  if (!user) return c.json({ error: 'unauthorized' }, 401);
+  const pk = await publisherKey(user.id);
+  if (!pk) return c.json({ publisher: null, scpTarget: SCP_TARGET });
+  return c.json({
+    publisher: { handle: pk.handle, fingerprint: pk.fingerprint, provisioned: !!pk.provisioned_at },
+    scpTarget: SCP_TARGET,
+  });
+});
+
+store.post('/publisher/key', async (c) => {
+  const user = await currentUser(c);
+  if (!user) return c.json({ error: 'unauthorized' }, 401);
+  const body = await c.req.json().catch(() => ({}));
+
+  const handle = sanitizeHandle(body.handle || (user.email ? user.email.split('@')[0] : '') || user.id.slice(0, 8));
+  if (handle.length < 3) return c.json({ error: 'handle must be 3-20 chars of a-z, 0-9, dash' }, 400);
+  if (await handleTaken(handle, user.id)) return c.json({ error: 'handle already taken' }, 409);
+
+  // Either the dev brings their own public key, or we generate a keypair and
+  // hand back the private key ONCE (never stored).
+  let pubkey: string = (body.pubkey || '').trim();
+  let privateKey: string | undefined;
+  if (!pubkey && body.generate) {
+    try {
+      const kp = await generateKeypair(`${handle}@tronbrowser-store`);
+      pubkey = kp.publicKey;
+      privateKey = kp.privateKey;
+    } catch (e: any) {
+      return c.json({ error: `keygen unavailable: ${e.message}` }, 503);
+    }
+  }
+  if (!pubkey) return c.json({ error: 'provide pubkey, or generate:true' }, 400);
+  if (!/^(ssh-(ed25519|rsa)|ecdsa-)/.test(pubkey)) return c.json({ error: 'not an SSH public key' }, 400);
+
+  // Provision the BBS member (full-auto SSH to the BBS host). If provisioning
+  // isn't configured, still save the key so the operator can provision later.
+  let fingerprint = '';
+  let provisioned = false;
+  try {
+    const r = await provisionPublisher(handle, pubkey);
+    fingerprint = r.fingerprint;
+    provisioned = true;
+  } catch (e: any) {
+    if (e.message !== 'provisioning not configured') {
+      return c.json({ error: `provisioning failed: ${e.message}` }, 502);
+    }
+  }
+  await upsertPublisherKey({ userId: user.id, handle, pubkey, fingerprint, provisioned });
+
+  return c.json({
+    ok: true,
+    handle,
+    fingerprint: fingerprint || null,
+    provisioned,
+    scpTarget: SCP_TARGET,
+    privateKey: privateKey ?? null, // shown ONCE; not stored
+    note: provisioned
+      ? 'Account ready — scp your bundle to /public/extensions/<slug>/'
+      : 'Key saved; an operator will finish provisioning shortly.',
+  });
+});
+
 /* ---------- publisher: submit an MV3 version (upload or PR) ----------
    Accepts JSON: { manifest, bundleUrl?, crxUrl?, bundleSha256?, sizeBytes?, source? }
    `manifest` may be the manifest.json string or object. We keep Chromium's
@@ -120,10 +195,37 @@ store.post('/extensions/:id/versions', async (c) => {
   const v = validateManifest(body.manifest);
   if (!v.ok || !v.manifest) return c.json({ error: 'invalid MV3 manifest', errors: v.errors }, 422);
 
-  // Need somewhere for Chromium to fetch the code from (hosted by the dev, or a
-  // bucket upload — see /upload). At least one artifact URL is required.
-  if (!body.bundleUrl && !body.crxUrl) {
-    return c.json({ error: 'bundleUrl or crxUrl required (host the .zip/.crx, or use the upload endpoint)' }, 400);
+  // Where does Chromium fetch the code from? Two ways:
+  //  (a) the publisher scp'd to files.profullstack.com and tells us the
+  //      filenames -> we derive the public URL from the slug convention and
+  //      HEAD-check it's actually up; or
+  //  (b) they host it elsewhere and pass bundleUrl/crxUrl directly.
+  let crxUrl: string | null = body.crxUrl ?? null;
+  let bundleUrl: string | null = body.bundleUrl ?? null;
+
+  const files = body.files || {};
+  if (files.crx || files.zip) {
+    if (files.crx) {
+      const url = publicUrlFor(ext.slug, String(files.crx));
+      if (!(await artifactExists(url))) {
+        return c.json({ error: `not found at ${url} — scp it first: ${scpCommand(ext.slug, String(files.crx))}` }, 400);
+      }
+      crxUrl = url;
+    }
+    if (files.zip) {
+      const url = publicUrlFor(ext.slug, String(files.zip));
+      if (!(await artifactExists(url))) {
+        return c.json({ error: `not found at ${url} — scp it first: ${scpCommand(ext.slug, String(files.zip))}` }, 400);
+      }
+      bundleUrl = url;
+    }
+  }
+
+  if (!bundleUrl && !crxUrl) {
+    return c.json({
+      error: 'no artifact — scp your .crx/.zip to files.profullstack.com and pass files:{crx,zip}, or pass bundleUrl/crxUrl',
+      scp: scpCommand(ext.slug),
+    }, 400);
   }
 
   const version = await addVersion({
@@ -132,8 +234,8 @@ store.post('/extensions/:id/versions', async (c) => {
     manifestVersion: v.manifest.manifest_version,
     manifestJson: typeof body.manifest === 'string' ? body.manifest : JSON.stringify(body.manifest),
     permissions: v.permissions,
-    bundleUrl: body.bundleUrl ?? null,
-    crxUrl: body.crxUrl ?? null,
+    bundleUrl,
+    crxUrl,
     bundleSha256: body.bundleSha256 ?? null,
     sizeBytes: body.sizeBytes ?? null,
     source: body.source === 'pr' ? 'pr' : 'upload',

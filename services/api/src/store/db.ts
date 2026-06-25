@@ -235,3 +235,44 @@ export async function openFlagCount(extensionId: string): Promise<number> {
   });
   return Number(r.rows[0]?.n ?? 0);
 }
+
+/* ---------- publisher SSH identity (files.profullstack.com) ---------- */
+
+export interface PublisherKey {
+  user_id: string;
+  handle: string;
+  pubkey: string;
+  fingerprint: string;
+  provisioned_at: string | null;
+  created_at: string;
+}
+
+export async function publisherKey(userId: string): Promise<PublisherKey | null> {
+  const r = await db().execute({ sql: 'SELECT * FROM publisher_keys WHERE user_id = ?', args: [userId] });
+  return (r.rows[0] as unknown as PublisherKey) ?? null;
+}
+
+export async function handleTaken(handle: string, exceptUserId: string): Promise<boolean> {
+  const r = await db().execute({
+    sql: 'SELECT 1 FROM publisher_keys WHERE handle = ? AND user_id != ?',
+    args: [handle, exceptUserId],
+  });
+  return r.rows.length > 0;
+}
+
+export async function upsertPublisherKey(k: {
+  userId: string;
+  handle: string;
+  pubkey: string;
+  fingerprint: string;
+  provisioned: boolean;
+}): Promise<void> {
+  await db().execute({
+    sql: `INSERT INTO publisher_keys (user_id, handle, pubkey, fingerprint, provisioned_at)
+          VALUES (?, ?, ?, ?, ?)
+          ON CONFLICT(user_id) DO UPDATE SET
+            handle = excluded.handle, pubkey = excluded.pubkey,
+            fingerprint = excluded.fingerprint, provisioned_at = excluded.provisioned_at`,
+    args: [k.userId, k.handle, k.pubkey, k.fingerprint, k.provisioned ? new Date().toISOString() : null],
+  });
+}
