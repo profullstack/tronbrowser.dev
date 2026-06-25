@@ -1,0 +1,61 @@
+#!/bin/sh
+# TronBrowser launcher.
+#
+# Until the native Ungoogled-Chromium fork binary is bundled, this shim runs a
+# Chromium-family browser found on the system with TronBrowser's privacy flags
+# and the AI sidebar extension loaded. Same flags as
+# apps/desktop/src/chromium-flags.ts. `tron <url>` passes URLs straight through.
+set -eu
+
+# Resolve our own real directory (we're usually invoked via a symlink).
+SELF="$0"
+while [ -L "$SELF" ]; do
+  link="$(readlink "$SELF")"
+  case "$link" in
+    /*) SELF="$link" ;;
+    *)  SELF="$(dirname "$SELF")/$link" ;;
+  esac
+done
+DIR="$(CDPATH= cd -- "$(dirname -- "$SELF")" && pwd)"
+
+EXT="$DIR/extensions/ai-sidebar"
+DATA="${TRONBROWSER_DATA:-$HOME/.tronbrowser}"
+
+# A bundled native binary (future) takes priority.
+BROWSER=""
+if [ -x "$DIR/chrome" ]; then BROWSER="$DIR/chrome"; fi
+
+if [ -z "$BROWSER" ]; then
+  for c in ungoogled-chromium chromium chromium-browser google-chrome-stable google-chrome brave-browser; do
+    if command -v "$c" >/dev/null 2>&1; then BROWSER="$(command -v "$c")"; break; fi
+  done
+fi
+
+# macOS app bundles.
+if [ -z "$BROWSER" ]; then
+  for app in \
+    "/Applications/Ungoogled Chromium.app/Contents/MacOS/Chromium" \
+    "/Applications/Chromium.app/Contents/MacOS/Chromium" \
+    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
+    "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser"; do
+    if [ -x "$app" ]; then BROWSER="$app"; break; fi
+  done
+fi
+
+if [ -z "$BROWSER" ]; then
+  echo "TronBrowser: no Chromium-family browser found." >&2
+  echo "Install ungoogled-chromium (preferred) or chromium and retry." >&2
+  exit 1
+fi
+
+exec "$BROWSER" \
+  --user-data-dir="$DATA" \
+  --no-default-browser-check \
+  --no-pings \
+  --disable-background-networking \
+  --disable-breakpad \
+  --disable-domain-reliability \
+  --disable-sync \
+  --disable-features=Translate,OptimizationHints,InterestFeedContentSuggestions \
+  --load-extension="$EXT" \
+  "$@"
