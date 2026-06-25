@@ -19,6 +19,23 @@ const PROVIDERS = [
   { id: 'vllm', label: 'vLLM (self-hosted)', keyless: true },
 ];
 
+// Common models per provider — shown immediately when you pick a provider, even
+// before a key is entered. The live list (/api/models) is merged in on top when
+// a key is available. You can always type a custom id.
+const KNOWN_MODELS = {
+  anthropic: ['claude-opus-4-8', 'claude-sonnet-4-6', 'claude-haiku-4-5', 'claude-fable-5'],
+  openai: ['gpt-5.5', 'gpt-5', 'gpt-4.1', 'o4-mini', 'gpt-4o'],
+  google: ['gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.0-flash'],
+  deepseek: ['deepseek-chat', 'deepseek-reasoner'],
+  perplexity: ['sonar-pro', 'sonar', 'sonar-reasoning-pro', 'sonar-reasoning'],
+  huggingface: ['meta-llama/Llama-3.3-70B-Instruct', 'Qwen/Qwen2.5-72B-Instruct'],
+  kimi: ['kimi-k2', 'kimi-latest', 'moonshot-v1-128k'],
+  qwen: ['qwen-max', 'qwen-plus', 'qwen-turbo'],
+  ollama: ['llama3.2', 'qwen2.5', 'mistral', 'phi4'],
+  lmstudio: [],
+  vllm: [],
+};
+
 let settings = {};
 
 async function api(path, opts = {}) {
@@ -65,15 +82,33 @@ function buildProviderRows() {
   fetchModels();
 }
 
-// Fetch the selected provider's models (server-side proxy) into the datalist.
+// Populate the model datalist for the selected provider. Always seeds known
+// models immediately (no key needed); merges the live provider list on top when
+// a key is present. Auto-fills a default model if the field is empty.
+function setModelOptions(models) {
+  const dl = $('modelList'); dl.innerHTML = '';
+  const seen = new Set();
+  for (const m of models) {
+    if (!m || seen.has(m)) continue;
+    seen.add(m);
+    const o = document.createElement('option'); o.value = m; dl.appendChild(o);
+  }
+  // If nothing chosen yet, prefill the top option so the user isn't stuck.
+  if (!$('model').value.trim() && models.length) $('model').value = models[0];
+  return [...seen];
+}
+
 async function fetchModels() {
   const provider = $('default').value;
+  const known = KNOWN_MODELS[provider] || [];
+  const merged = setModelOptions(known);
+  const meta = PROVIDERS.find((p) => p.id === provider) || {};
+  if (meta.keyless) { $('modelHint').textContent = 'local provider — pick a common model or type your own'; return; }
+
   const keyInput = document.querySelector(`[data-key="${provider}"]`);
   const apiKey = keyInput ? keyInput.value.trim() : '';
-  const dl = $('modelList'); dl.innerHTML = '';
-  const meta = PROVIDERS.find((p) => p.id === provider) || {};
-  if (meta.keyless) { $('modelHint').textContent = 'local provider — type your model id'; return; }
-  if (!apiKey) { $('modelHint').textContent = 'enter the API key above to load models'; return; }
+  if (!apiKey) { $('modelHint').textContent = `${merged.length} common models — add your key above to load the full list`; return; }
+
   $('modelHint').textContent = 'loading models…';
   try {
     const r = await api('/api/models', {
@@ -81,13 +116,19 @@ async function fetchModels() {
       body: JSON.stringify({ provider, apiKey }),
     });
     const d = await r.json();
-    (d.models || []).forEach((m) => { const o = document.createElement('option'); o.value = m; dl.appendChild(o); });
-    $('modelHint').textContent = d.models?.length ? `${d.models.length} models — pick or type` : (d.error || 'no models returned');
+    const live = (d.models || []);
+    if (live.length) {
+      const all = setModelOptions([...known, ...live]);
+      $('modelHint').textContent = `${all.length} models — pick or type`;
+    } else {
+      $('modelHint').textContent = d.error ? `${merged.length} common models (live list: ${d.error})` : `${merged.length} common models`;
+    }
   } catch {
-    $('modelHint').textContent = 'could not load models';
+    $('modelHint').textContent = `${merged.length} common models (couldn't reach provider)`;
   }
 }
-$('default').addEventListener('change', fetchModels);
+$('default').addEventListener('change', () => { $('model').value = ''; fetchModels(); });
+$('providers').addEventListener('input', (e) => { if (e.target.matches(`[data-key="${$('default').value}"]`)) fetchModels(); });
 
 async function load() {
   if (!(await requireAuth())) return;
