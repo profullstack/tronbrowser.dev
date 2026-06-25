@@ -14,10 +14,10 @@ const CP = {
   clientId: process.env.COINPAY_CLIENT_ID || '',
   clientSecret: process.env.COINPAY_CLIENT_SECRET || '',
   redirectUri: process.env.COINPAY_REDIRECT_URI || 'https://tronbrowser.com/api/auth/coinpay/callback',
-  authorizeUrl: process.env.COINPAY_AUTHORIZE_URL || 'https://coinpayportal.com/oauth/authorize',
-  tokenUrl: process.env.COINPAY_TOKEN_URL || 'https://coinpayportal.com/oauth/token',
-  userinfoUrl: process.env.COINPAY_USERINFO_URL || 'https://coinpayportal.com/oauth/userinfo',
-  scopes: ['wallet:read', 'payments:x402'],
+  authorizeUrl: process.env.COINPAY_AUTHORIZE_URL || 'https://coinpayportal.com/api/oauth/authorize',
+  tokenUrl: process.env.COINPAY_TOKEN_URL || 'https://coinpayportal.com/api/oauth/token',
+  userinfoUrl: process.env.COINPAY_USERINFO_URL || 'https://coinpayportal.com/api/oauth/userinfo',
+  scopes: (process.env.COINPAY_SCOPES || 'openid profile email did wallet:read').split(/\s+/).filter(Boolean),
 };
 const APP_URL = process.env.APP_URL || 'https://tronbrowser.dev';
 
@@ -67,9 +67,13 @@ app.get('/api/auth/coinpay/callback', async (c) => {
   if (!code || state !== getCookie(c, 'cp_state')) return c.text('invalid oauth state', 400);
   const redirect = getCookie(c, 'cp_redirect') || '';
 
+  const basic = Buffer.from(`${CP.clientId}:${CP.clientSecret}`).toString('base64');
   const tokRes = await fetch(CP.tokenUrl, {
     method: 'POST',
-    headers: { 'content-type': 'application/x-www-form-urlencoded' },
+    headers: {
+      'content-type': 'application/x-www-form-urlencoded',
+      authorization: `Basic ${basic}`,
+    },
     body: new URLSearchParams({
       grant_type: 'authorization_code', code, redirect_uri: CP.redirectUri,
       client_id: CP.clientId, client_secret: CP.clientSecret,
@@ -86,11 +90,12 @@ app.get('/api/auth/coinpay/callback', async (c) => {
   const sub = info.sub || info.id || tok.sub;
   if (!sub) return c.text('coinpay userinfo missing subject', 502);
 
+  const emailVerified = info.email_verified ?? !!info.email;
   let user = await userByCoinpaySub(String(sub));
   if (!user) {
     const id = uuid();
-    await createUser({ id, authMethod: 'coinpay', coinpaySub: String(sub), email: info.email ?? null, emailVerified: !!info.email });
-    user = { id, auth_method: 'coinpay', coinpay_sub: String(sub), email: info.email ?? null, email_verified: info.email ? 1 : 0 };
+    await createUser({ id, authMethod: 'coinpay', coinpaySub: String(sub), email: info.email ?? null, emailVerified });
+    user = { id, auth_method: 'coinpay', coinpay_sub: String(sub), email: info.email ?? null, email_verified: emailVerified ? 1 : 0 };
   }
   deleteCookie(c, 'cp_state'); deleteCookie(c, 'cp_redirect');
   const r = await startSession(c, user.id, redirect);

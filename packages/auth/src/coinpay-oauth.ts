@@ -15,10 +15,10 @@ import {
 } from './oauth.js';
 
 export const COINPAY_DEFAULTS = {
-  authorizeUrl: 'https://coinpayportal.com/oauth/authorize',
-  tokenUrl: 'https://coinpayportal.com/oauth/token',
+  authorizeUrl: 'https://coinpayportal.com/api/oauth/authorize',
+  tokenUrl: 'https://coinpayportal.com/api/oauth/token',
   /** Scopes needed to read wallet addresses and authorize x402 payments. */
-  scopes: ['wallet:read', 'payments:x402'],
+  scopes: ['openid', 'profile', 'email', 'did', 'wallet:read'],
 } as const;
 
 export interface CoinPayOAuthConfig {
