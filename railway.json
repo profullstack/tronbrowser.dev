@@ -4,9 +4,9 @@
     "builder": "DOCKERFILE",
     "dockerfilePath": "Dockerfile",
     "watchPatterns": [
-      "apps/web/**",
-      "apps/extensions/**",
-      "services/api/**",
+      "apps/web/**/*",
+      "apps/extensions/**/*",
+      "services/api/**/*",
       "Dockerfile",
       "Caddyfile",
       "start.sh",
