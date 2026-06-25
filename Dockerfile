@@ -17,6 +17,10 @@ FROM caddy:2-alpine
 RUN apk add --no-cache nodejs
 COPY Caddyfile /etc/caddy/Caddyfile
 COPY apps/web/public/ /srv/
+# Branding lives at the repo root (single source of truth). apps/web/public has
+# symlinks to them for local dev, but Docker COPY won't follow symlinks pointing
+# outside the copied dir — so copy the real files in (these override the links).
+COPY logo.svg favicon.svg banner.png /srv/
 COPY --from=api /api/dist /api/dist
 COPY --from=api /api/node_modules /api/node_modules
 COPY --from=api /api/package.json /api/package.json

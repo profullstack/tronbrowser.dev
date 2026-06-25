@@ -38,9 +38,14 @@ stage() { # dest dir
   mkdir -p "$s/extensions"
   install -m 0755 "$DESKTOP/launcher/tronbrowser" "$s/tronbrowser"
   cp "$DESKTOP/launcher/tronbrowser.cmd" "$s/tronbrowser.cmd"
-  cp -R "$DESKTOP/extensions/ai-sidebar" "$s/extensions/ai-sidebar"
+  # -L dereferences the branding symlinks (icons/logo.svg -> repo-root logo.svg)
+  # so the package contains real files, not dangling links.
+  cp -RL "$DESKTOP/extensions/ai-sidebar" "$s/extensions/ai-sidebar"
   cp "$REPO_ROOT/LICENSE" "$s/LICENSE"
-  cp "$REPO_ROOT/apps/web/public/favicon.svg" "$s/tronbrowser.svg"
+  # Branding from the repo-root single source of truth.
+  cp -L "$REPO_ROOT/favicon.svg" "$s/tronbrowser.svg"
+  cp -L "$REPO_ROOT/logo.svg" "$s/logo.svg"
+  cp -L "$REPO_ROOT/banner.png" "$s/banner.png"
   printf '%s\n' "$VERSION" > "$s/VERSION"
 
   # NOTE: we no longer bundle NeverDecaf's chromium-web-store. Its manifest's
