@@ -144,10 +144,20 @@ esac
 
 FLAGS="--user-data-dir=$DATA --class=TronBrowser --no-first-run --no-default-browser-check --no-pings --disable-background-networking --disable-breakpad --disable-domain-reliability --disable-sync --disable-features=Translate,OptimizationHints,InterestFeedContentSuggestions --load-extension=$EXT"
 
+# Chromium spews benign ERROR/WARNING noise to stderr (EV cert OID, mojo
+# WidgetHost, GPU, etc.). Route it to a log so `tron <url>` returns clean;
+# set TRONBROWSER_VERBOSE=1 to see it inline. --log-level=2 trims the rest.
+LOG="${TRONBROWSER_LOG:-$DATA/tron.log}"
+FLAGS="$FLAGS --log-level=2"
+
 if [ "$BROWSER" = "flatpak" ]; then
   # shellcheck disable=SC2086
-  exec flatpak run --filesystem="$DATA" --filesystem="$EXTBASE_SRC" "$FLATPAK_APP" $FLAGS "$@"
+  [ "${TRONBROWSER_VERBOSE:-0}" = "1" ] \
+    && exec flatpak run --filesystem="$DATA" --filesystem="$EXTBASE_SRC" "$FLATPAK_APP" $FLAGS "$@" \
+    || exec flatpak run --filesystem="$DATA" --filesystem="$EXTBASE_SRC" "$FLATPAK_APP" $FLAGS "$@" 2>>"$LOG"
 else
   # shellcheck disable=SC2086
-  exec "$BROWSER" $FLAGS "$@"
+  [ "${TRONBROWSER_VERBOSE:-0}" = "1" ] \
+    && exec "$BROWSER" $FLAGS "$@" \
+    || exec "$BROWSER" $FLAGS "$@" 2>>"$LOG"
 fi
