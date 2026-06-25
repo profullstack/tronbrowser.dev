@@ -29,22 +29,18 @@ if [ -n "${TRONBROWSER_BROWSER:-}" ]; then
 elif [ -x "$DIR/chrome" ]; then
   BROWSER="$DIR/chrome"            # future: bundled native fork binary
 else
-  # De-googled binaries only — NO google-chrome. Prefer non-snap.
-  snap_fallback=""
-  for c in ungoogled-chromium ungoogled-chromium-stable chromium chromium-browser; do
+  # Ungoogled Chromium ONLY. Never regular Chromium/Chrome, never snap (snap
+  # chromium is regular AND can't be isolated). No fallbacks.
+  for c in ungoogled-chromium ungoogled-chromium-stable; do
     p="$(command -v "$c" 2>/dev/null)" || continue
-    case "$p" in
-      /snap/*) [ -z "$snap_fallback" ] && snap_fallback="$p" ;;
-      *) BROWSER="$p"; break ;;
-    esac
+    BROWSER="$p"; break
   done
-  # Flatpak Ungoogled Chromium (Flathub) — a fully de-googled option.
+  # Flatpak Ungoogled Chromium (Flathub) — fully de-googled.
   if [ -z "$BROWSER" ] && command -v flatpak >/dev/null 2>&1; then
     for app in io.github.ungoogled_software.ungoogled_chromium com.github.Eloston.UngoogledChromium; do
       if flatpak info "$app" >/dev/null 2>&1; then BROWSER="flatpak"; FLATPAK_APP="$app"; break; fi
     done
   fi
-  [ -z "$BROWSER" ] && [ -n "$snap_fallback" ] && { BROWSER="$snap_fallback"; IS_SNAP=1; }
 fi
 
 # macOS app bundles (de-googled only). Capture the .app path too — on macOS we
@@ -63,11 +59,12 @@ fi
 
 if [ -z "$BROWSER" ]; then
   cat >&2 <<MSG
-TronBrowser is de-googled and needs Ungoogled Chromium (it will NOT run Google Chrome).
-Install one of:
-  flatpak install -y flathub io.github.ungoogled_software.ungoogled_chromium
-  # or your distro's 'ungoogled-chromium' / 'chromium' package
-Then run 'tron' again. (Force a specific binary with TRONBROWSER_BROWSER=/path/to/browser.)
+TronBrowser runs Ungoogled Chromium ONLY — never regular Chrome/Chromium.
+Install Ungoogled Chromium:
+  macOS:  brew install --cask ungoogled-chromium
+  Linux:  flatpak install -y flathub io.github.ungoogled_software.ungoogled_chromium
+  (or just re-run:  curl -fsSL https://tronbrowser.dev/install.sh | sh )
+Then run 'tron' again.  (Advanced override: TRONBROWSER_BROWSER=/path/to/ungoogled-chromium)
 MSG
   exit 1
 fi
@@ -135,15 +132,18 @@ if not d.get("default_search_provider_data", {}).get("template_url_data"):
 PY
 fi
 
-# Warn loudly when the chosen browser isn't a de-googled Ungoogled Chromium.
+# Auto-detection only ever selects Ungoogled Chromium / flatpak ungoogled / the
+# macOS Ungoogled cask (which installs as Chromium.app). The only way to reach a
+# non-ungoogled binary is an explicit TRONBROWSER_BROWSER override — warn there,
+# but don't block the user's deliberate choice.
 case "$BROWSER" in
   *[Uu]ngoogled*) ;;                   # ideal (matches "Ungoogled Chromium.app" too)
   flatpak) ;;                          # flatpak ungoogled
   *)
-    echo "TronBrowser: running '$BROWSER' — this is regular Chromium, NOT de-googled." >&2
-    echo "  For a fully de-googled browser, install Ungoogled Chromium:" >&2
-    echo "    flatpak install -y flathub io.github.ungoogled_software.ungoogled_chromium" >&2
-    [ "$IS_SNAP" = "1" ] && echo "  (snap confinement also blocks an isolated TronBrowser profile — a non-snap browser is recommended.)" >&2
+    if [ -z "$MAC_APP" ] && [ -n "${TRONBROWSER_BROWSER:-}" ]; then
+      echo "TronBrowser: TRONBROWSER_BROWSER='$BROWSER' may not be Ungoogled Chromium." >&2
+      echo "  TronBrowser is meant to run Ungoogled Chromium only." >&2
+    fi
     ;;
 esac
 

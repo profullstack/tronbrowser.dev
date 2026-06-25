@@ -112,27 +112,42 @@ TRON
   ln -sf "$TRON_CLI" "$ALIAS_CLI"
 }
 
-# TronBrowser is de-googled, so it runs Ungoogled Chromium. Make sure a
-# de-googled engine exists; offer to install the Flatpak Ungoogled Chromium.
-# Skip with TB_NO_BROWSER_INSTALL=1.
+# TronBrowser runs Ungoogled Chromium ONLY (never regular Chrome/Chromium), so
+# we install it as part of setup. Skip with TB_NO_BROWSER_INSTALL=1.
 ensure_browser() {
+  [ "${TB_NO_BROWSER_INSTALL:-0}" = "1" ] && return 0
+
+  if [ "$(uname -s)" = "Darwin" ]; then
+    # The ungoogled-chromium Homebrew cask installs Chromium.app (notarized).
+    # Check the CASK (authoritative) — a bare Chromium.app might be REGULAR.
+    if command -v brew >/dev/null 2>&1; then
+      if brew list --cask ungoogled-chromium >/dev/null 2>&1; then return 0; fi
+      info "Installing Ungoogled Chromium (brew cask)…"
+      if ! brew install --cask ungoogled-chromium; then
+        warn "brew install failed. If you already have a regular Chromium.app, replace it:"
+        say  "    brew install --cask ungoogled-chromium --force"
+      fi
+    else
+      warn "Homebrew not found — install it (https://brew.sh), then:"
+      say  "    brew install --cask ungoogled-chromium"
+      say  "  (or grab a notarized build from https://github.com/ungoogled-software/ungoogled-chromium-macos/releases)"
+    fi
+    return 0
+  fi
+
+  # Linux: an ungoogled-chromium binary, else Flatpak Ungoogled Chromium (Flathub).
   for c in ungoogled-chromium ungoogled-chromium-stable; do
     command -v "$c" >/dev/null 2>&1 && return 0
   done
-  if command -v flatpak >/dev/null 2>&1 && flatpak info io.github.ungoogled_software.ungoogled_chromium >/dev/null 2>&1; then
-    return 0
-  fi
-  if [ "${TB_NO_BROWSER_INSTALL:-0}" = "1" ]; then return 0; fi
-
-  info "TronBrowser is de-googled and runs Ungoogled Chromium."
   if command -v flatpak >/dev/null 2>&1; then
-    info "Installing Ungoogled Chromium via Flatpak (skip with TB_NO_BROWSER_INSTALL=1)…"
-    flatpak install -y flathub io.github.ungoogled_software.ungoogled_chromium 2>/dev/null \
-      || warn "Flatpak install failed — install Ungoogled Chromium manually."
+    flatpak info io.github.ungoogled_software.ungoogled_chromium >/dev/null 2>&1 && return 0
+    info "Installing Ungoogled Chromium via Flatpak…"
+    flatpak install -y flathub io.github.ungoogled_software.ungoogled_chromium \
+      || warn "Flatpak install failed — run it yourself: flatpak install -y flathub io.github.ungoogled_software.ungoogled_chromium"
   else
-    warn "No de-googled browser found. Install Ungoogled Chromium for the full experience:"
+    warn "No de-googled browser and no Flatpak found. Install Ungoogled Chromium:"
     say  "    flatpak install -y flathub io.github.ungoogled_software.ungoogled_chromium"
-    say  "  (regular Chromium/Chrome still phones Google; the snap can't be isolated.)"
+    say  "  (or your distro's 'ungoogled-chromium' package — NOT regular 'chromium')"
   fi
 }
 
