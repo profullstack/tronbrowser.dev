@@ -11,12 +11,44 @@
 	redir @www https://tronbrowser.dev{uri} permanent
 
 	root * /srv
-	encode gzip
+
+	# Security headers on every response.
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Permissions-Policy "camera=(), microphone=(), geolocation=(), browsing-topics=()"
+		Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
+		-Server
+	}
+
+	# Correct content types for machine-readable files.
+	@plain path /robots.txt /llms.txt /llms-full.txt /.well-known/security.txt
+	header @plain Content-Type "text/plain; charset=utf-8"
+	header /skill.md Content-Type "text/markdown; charset=utf-8"
+	header /install.sh Content-Type "text/x-shellscript; charset=utf-8"
+	header /sitemap.xml Content-Type "application/xml; charset=utf-8"
+
+	# Caching: longer for static assets, short for HTML.
+	@assets path *.svg *.png *.ico *.css *.js
+	header @assets Cache-Control "public, max-age=86400"
+	@pages path / *.html /privacy
+	header @pages Cache-Control "public, max-age=300, s-maxage=3600"
+
+	encode gzip zstd
+
+	# Pretty URL: /privacy -> /privacy.html
+	@privacy path /privacy
+	rewrite @privacy /privacy.html
+
 	file_server
 
-	# install.sh is a real file and is served directly; everything else falls
-	# back to the homepage.
-	try_files {path} {path}/ /index.html
-
-	header /install.sh Content-Type "text/x-shellscript; charset=utf-8"
+	# Real 404s (no SPA catch-all) with a branded page.
+	handle_errors {
+		@404 expression `{http.error.status_code} == 404`
+		rewrite @404 /404.html
+		header Content-Type "text/html; charset=utf-8"
+		file_server
+	}
 }

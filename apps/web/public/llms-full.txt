@@ -1,0 +1,53 @@
+# TronBrowser — full LLM context
+
+> Open-source, privacy-first, AI-native web browser built on Ungoogled Chromium by Profullstack, Inc. Free and open source (MIT).
+
+## What is TronBrowser?
+
+TronBrowser is a web browser forked from Ungoogled Chromium. It keeps full
+Chrome-extension, profile, bookmark, history, PWA, and DevTools compatibility
+while removing Google phone-home, telemetry, ads, sponsored tabs, and affiliate
+injection. It adds a built-in AI sidebar and an agent-friendly command-line
+interface (`tron`). It is published by Profullstack, Inc. (https://profullstack.com).
+
+## Who it is for
+
+Developers, power users, privacy advocates, and AI-agent builders who want full
+control of their browser and their data.
+
+## Principles
+
+1. No telemetry by default — nothing phones home.
+2. No ads.
+3. No sponsored tabs.
+4. No affiliate injection — your links stay your links.
+5. User-owned data — bring your own SQLite, or use the managed cloud.
+6. Chrome-compatible — extensions, profiles, bookmarks, history, PWAs, DevTools.
+7. Self-hostable — run the backend services yourself.
+8. Agent-friendly — drive it from the CLI (`tron <url>`).
+9. Ungoogled core — built on Ungoogled Chromium; zero Google phone-home.
+
+## AI: bring your own keys
+
+Use your own API keys for Anthropic (Claude), OpenAI (GPT), Google (Gemini),
+DeepSeek, Perplexity, Kimi (Moonshot), and Qwen (Alibaba) — or run local models
+with Ollama, LM Studio, or vLLM. Keys stay on your device; the paid cloud tier
+uses managed keys. Nothing is tracked.
+
+## Install and CLI
+
+- Install (macOS/Linux): `curl -fsSL https://tronbrowser.dev/install.sh | sh`
+- `tron <url>` — open URL(s) in TronBrowser
+- `tron upgrade` — update to the latest release
+- `tron remove` — uninstall (keeps your profile data)
+- `tron version` — print the installed version
+- Windows and manual downloads: GitHub Releases.
+
+## Links
+
+- Homepage: https://tronbrowser.dev/
+- Privacy: https://tronbrowser.dev/privacy
+- Source (MIT): https://github.com/profullstack/tronbrowser.dev
+- Engineering PRD: https://github.com/profullstack/tronbrowser.dev/blob/main/docs/tronbrowser-prd.md
+- Releases: https://github.com/profullstack/tronbrowser.dev/releases
+- Publisher: https://profullstack.com

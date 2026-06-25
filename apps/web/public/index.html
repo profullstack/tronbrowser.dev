@@ -4,7 +4,95 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>TronBrowser — privacy-first, AI-native browser</title>
-<meta name="description" content="Open-source, privacy-first, AI-native browser on a Chromium fork. No telemetry, no ads, no sponsored tabs." />
+<meta name="description" content="TronBrowser is an open-source, privacy-first, AI-native web browser built on Ungoogled Chromium by Profullstack, Inc. No telemetry, no ads, no sponsored tabs. Bring your own AI keys or run local." />
+<meta name="author" content="Profullstack, Inc." />
+<meta name="robots" content="index, follow" />
+<meta name="theme-color" content="#05070d" />
+<link rel="canonical" href="https://tronbrowser.dev/" />
+<link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+
+<!-- Open Graph -->
+<meta property="og:type" content="website" />
+<meta property="og:site_name" content="TronBrowser" />
+<meta property="og:title" content="TronBrowser — privacy-first, AI-native browser" />
+<meta property="og:description" content="Open-source, privacy-first, AI-native browser on Ungoogled Chromium. No telemetry, no ads, no sponsored tabs. Bring your own AI keys." />
+<meta property="og:url" content="https://tronbrowser.dev/" />
+<meta property="og:image" content="https://tronbrowser.dev/og.png" />
+<meta property="og:image:width" content="1200" />
+<meta property="og:image:height" content="630" />
+
+<!-- Twitter -->
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content="TronBrowser — privacy-first, AI-native browser" />
+<meta name="twitter:description" content="Open-source, privacy-first, AI-native browser on Ungoogled Chromium. No telemetry, no ads. Bring your own AI keys." />
+<meta name="twitter:image" content="https://tronbrowser.dev/og.png" />
+
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "Organization",
+      "@id": "https://profullstack.com/#org",
+      "name": "Profullstack, Inc.",
+      "url": "https://profullstack.com",
+      "sameAs": ["https://github.com/profullstack"]
+    },
+    {
+      "@type": "WebSite",
+      "@id": "https://tronbrowser.dev/#website",
+      "url": "https://tronbrowser.dev/",
+      "name": "TronBrowser",
+      "publisher": { "@id": "https://profullstack.com/#org" },
+      "inLanguage": "en"
+    },
+    {
+      "@type": "SoftwareApplication",
+      "name": "TronBrowser",
+      "applicationCategory": "BrowserApplication",
+      "operatingSystem": "macOS, Linux, Windows",
+      "url": "https://tronbrowser.dev/",
+      "downloadUrl": "https://tronbrowser.dev/install.sh",
+      "softwareVersion": "0.1.0",
+      "license": "https://opensource.org/licenses/MIT",
+      "description": "Open-source, privacy-first, AI-native web browser built on Ungoogled Chromium. No telemetry, no ads, no sponsored tabs. Bring your own AI keys.",
+      "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+      "publisher": { "@id": "https://profullstack.com/#org" }
+    },
+    {
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "What is TronBrowser?",
+          "acceptedAnswer": { "@type": "Answer", "text": "TronBrowser is an open-source, privacy-first, AI-native web browser built on Ungoogled Chromium by Profullstack, Inc. It removes Google phone-home, telemetry, ads, and sponsored tabs while keeping full Chrome-extension compatibility." }
+        },
+        {
+          "@type": "Question",
+          "name": "How is TronBrowser different from Chrome or Brave?",
+          "acceptedAnswer": { "@type": "Answer", "text": "TronBrowser is built on Ungoogled Chromium, so there is zero Google phone-home by default. It adds a built-in AI sidebar where you bring your own keys, and an agent-friendly CLI (tron <url>). There are no ads, no sponsored tabs, and no affiliate injection." }
+        },
+        {
+          "@type": "Question",
+          "name": "Is TronBrowser free?",
+          "acceptedAnswer": { "@type": "Answer", "text": "Yes. TronBrowser is free and open source under the MIT License. An optional managed cloud tier is available, but the browser itself is free." }
+        },
+        {
+          "@type": "Question",
+          "name": "Which AI models does TronBrowser support?",
+          "acceptedAnswer": { "@type": "Answer", "text": "Bring your own API keys for Anthropic (Claude), OpenAI (GPT), Google (Gemini), DeepSeek, Perplexity, Kimi (Moonshot), and Qwen — or run local models with Ollama, LM Studio, or vLLM." }
+        },
+        {
+          "@type": "Question",
+          "name": "How do I install TronBrowser?",
+          "acceptedAnswer": { "@type": "Answer", "text": "On macOS or Linux run: curl -fsSL https://tronbrowser.dev/install.sh | sh. Then use tron <url> to open a URL, or tron upgrade and tron remove to manage it. Windows builds are on the GitHub releases page." }
+        }
+      ]
+    }
+  ]
+}
+</script>
+
 <style>
   :root {
     --bg: #05070d; --panel: #0b1020; --line: #1b2540;
@@ -17,11 +105,12 @@
     min-height: 100vh;
   }
   .wrap { max-width: 860px; margin: 0 auto; padding: 72px 20px 96px; }
-  header { text-align: center; margin-bottom: 56px; }
-  .logo { font-size: 44px; font-weight: 800; letter-spacing: 2px;
+  header { text-align: center; margin-bottom: 40px; }
+  .logo { font-size: 44px; font-weight: 800; letter-spacing: 2px; margin: 0;
     color: #fff; text-shadow: 0 0 18px var(--cyan); }
   .logo span { color: var(--cyan); }
   .tag { color: var(--muted); margin-top: 10px; }
+  .lede { text-align: center; color: var(--fg); margin: 0 auto 48px; max-width: 680px; }
   .install { background: var(--panel); border: 1px solid var(--line);
     border-radius: 12px; padding: 22px; box-shadow: 0 0 40px rgba(52,231,255,.06); }
   .label { color: var(--muted); font-size: 13px; text-transform: uppercase; letter-spacing: 1px; }
@@ -33,12 +122,17 @@
   .cmd button:hover { border-color: var(--cyan); color: var(--cyan); }
   .sub { color: var(--muted); font-size: 14px; margin-top: 14px; }
   .sub code { color: var(--fg); }
-  .principles { list-style: none; padding: 0; margin: 48px 0 0;
+  h2 { color: #fff; font-size: 22px; margin: 56px 0 16px; }
+  .principles { list-style: none; padding: 0; margin: 16px 0 0;
     display: grid; grid-template-columns: repeat(auto-fit, minmax(220px,1fr)); gap: 12px; }
   .principles li { background: var(--panel); border: 1px solid var(--line);
     border-radius: 10px; padding: 14px 16px; }
   .principles b { color: var(--cyan); }
-  footer { text-align: center; margin-top: 56px; color: var(--muted); }
+  .faq { margin-top: 16px; }
+  .faq h3 { color: var(--cyan); font-size: 16px; margin: 22px 0 6px; }
+  .faq p { margin: 0; color: var(--fg); }
+  footer { text-align: center; margin-top: 64px; color: var(--muted); }
+  footer nav a { margin: 0 8px; }
   .copyright { margin-top: 14px; font-size: 13px; color: var(--muted); opacity: .8; }
   a { color: var(--cyan); }
 </style>
@@ -46,51 +140,87 @@
 <body>
 <div class="wrap">
   <header>
-    <div class="logo">Tron<span>Browser</span></div>
+    <h1 class="logo">Tron<span>Browser</span></h1>
     <div class="tag">Open-source · privacy-first · AI-native · built on a Chromium fork</div>
   </header>
 
-  <section class="install">
-    <div class="label">Install (macOS / Linux)</div>
-    <div class="cmd">
-      <code id="cmd">curl -fsSL https://tronbrowser.dev/install.sh | sh</code>
-      <button onclick="copyCmd()">copy</button>
-    </div>
-    <div class="sub">
-      Then use the agent-friendly <code>tron</code> CLI:<br />
-      <code>tron &lt;url&gt;</code> to open a URL &nbsp;·&nbsp;
-      <code>tron upgrade</code> &nbsp;·&nbsp;
-      <code>tron remove</code> &nbsp;·&nbsp;
-      <code>tron version</code>
-      <br />Windows &amp; manual downloads on the
-      <a href="https://github.com/profullstack/tronbrowser.dev/releases">releases page</a>.
-    </div>
-  </section>
+  <main>
+    <p class="lede">
+      TronBrowser is an open-source, privacy-first, AI-native web browser built on
+      <strong>Ungoogled Chromium</strong>. No telemetry, no ads, no sponsored tabs —
+      with a built-in AI sidebar (bring your own keys) and an agent-friendly CLI.
+      Free and open source under the MIT License.
+    </p>
 
-  <ul class="principles">
-    <li><b>No telemetry</b> — nothing phones home, by default.</li>
-    <li><b>No ads</b> — and no sponsored tabs.</li>
-    <li><b>No affiliate injection</b> — your links stay your links.</li>
-    <li><b>User-owned data</b> — bring your own SQLite, or use the cloud.</li>
-    <li><b>Chrome-compatible</b> — extensions, profiles, bookmarks, DevTools.</li>
-    <li><b>Self-hostable</b> — run the services yourself.</li>
-    <li><b>Agent-friendly</b> — drive it from the CLI: <code>tron &lt;url&gt;</code>.</li>
-    <li><b>Ungoogled core</b> — built on Ungoogled Chromium; zero Google phone-home.</li>
-    <li><b>Bring your own AI</b> — your keys for Claude, GPT, Gemini, and more.</li>
-  </ul>
+    <section class="install" aria-label="Install">
+      <div class="label">Install (macOS / Linux)</div>
+      <div class="cmd">
+        <code id="cmd">curl -fsSL https://tronbrowser.dev/install.sh | sh</code>
+        <button type="button" data-copy="cmd" aria-label="Copy install command">copy</button>
+      </div>
+      <div class="sub">
+        Then use the agent-friendly <code>tron</code> CLI:<br />
+        <code>tron &lt;url&gt;</code> to open a URL &nbsp;·&nbsp;
+        <code>tron upgrade</code> &nbsp;·&nbsp;
+        <code>tron remove</code> &nbsp;·&nbsp;
+        <code>tron version</code>
+        <br />Windows &amp; manual downloads on the
+        <a href="https://github.com/profullstack/tronbrowser.dev/releases">releases page</a>.
+      </div>
+    </section>
+
+    <h2>Why TronBrowser</h2>
+    <ul class="principles">
+      <li><b>No telemetry</b> — nothing phones home, by default.</li>
+      <li><b>No ads</b> — and no sponsored tabs.</li>
+      <li><b>No affiliate injection</b> — your links stay your links.</li>
+      <li><b>User-owned data</b> — bring your own SQLite, or use the cloud.</li>
+      <li><b>Chrome-compatible</b> — extensions, profiles, bookmarks, DevTools.</li>
+      <li><b>Self-hostable</b> — run the services yourself.</li>
+      <li><b>Agent-friendly</b> — drive it from the CLI: <code>tron &lt;url&gt;</code>.</li>
+      <li><b>Ungoogled core</b> — built on Ungoogled Chromium; zero Google phone-home.</li>
+      <li><b>Bring your own AI</b> — your keys for Claude, GPT, Gemini, and more.</li>
+    </ul>
+
+    <h2>FAQ</h2>
+    <div class="faq">
+      <h3>What is TronBrowser?</h3>
+      <p>An open-source, privacy-first, AI-native web browser built on Ungoogled
+      Chromium by Profullstack, Inc. It strips Google phone-home, telemetry, ads, and
+      sponsored tabs while keeping full Chrome-extension compatibility.</p>
+
+      <h3>How is it different from Chrome or Brave?</h3>
+      <p>It is built on Ungoogled Chromium, so there is zero Google phone-home by
+      default. It adds a built-in AI sidebar where you bring your own keys, and an
+      agent-friendly CLI (<code>tron &lt;url&gt;</code>). No ads, no sponsored tabs, no
+      affiliate injection.</p>
+
+      <h3>Is TronBrowser free?</h3>
+      <p>Yes — free and open source under the MIT License. An optional managed cloud
+      tier exists, but the browser itself is free.</p>
+
+      <h3>Which AI models does it support?</h3>
+      <p>Bring your own keys for Anthropic (Claude), OpenAI (GPT), Google (Gemini),
+      DeepSeek, Perplexity, Kimi (Moonshot), and Qwen — or run local models with
+      Ollama, LM Studio, or vLLM.</p>
+
+      <h3>How do I install it?</h3>
+      <p>On macOS or Linux: <code>curl -fsSL https://tronbrowser.dev/install.sh | sh</code>,
+      then <code>tron &lt;url&gt;</code>. Windows builds are on the
+      <a href="https://github.com/profullstack/tronbrowser.dev/releases">releases page</a>.</p>
+    </div>
+  </main>
 
   <footer>
-    <a href="https://github.com/profullstack/tronbrowser.dev">GitHub</a> ·
-    <a href="https://github.com/profullstack/tronbrowser.dev/blob/main/docs/tronbrowser-prd.md">PRD</a>
-    <div class="copyright">© 2026 <a href="https://profullstack.com">Profullstack, Inc.</a> · MIT License</div>
+    <nav>
+      <a href="/privacy">Privacy</a> ·
+      <a href="https://github.com/profullstack/tronbrowser.dev">GitHub</a> ·
+      <a href="https://github.com/profullstack/tronbrowser.dev/blob/main/docs/tronbrowser-prd.md">PRD</a> ·
+      <a href="https://github.com/profullstack/tronbrowser.dev/releases">Releases</a>
+    </nav>
+    <div class="copyright">© 2026 <a href="https://profullstack.com">Profullstack, Inc.</a> · MIT License · <time datetime="2026-06-25">Updated June 2026</time></div>
   </footer>
 </div>
-<script>
-  function copyCmd() {
-    var text = document.getElementById('cmd').textContent;
-    navigator.clipboard && navigator.clipboard.writeText(text);
-  }
-</script>
-  <script data-site="75ea2754-bc0e-435e-ad49-afd9beb64b72" src="https://crawlproof.com/stats.js" async></script>
+<script src="/app.js"></script>
 </body>
 </html>

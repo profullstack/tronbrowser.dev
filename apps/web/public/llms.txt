@@ -1,0 +1,28 @@
+# TronBrowser
+
+> Open-source, privacy-first, AI-native web browser built on Ungoogled Chromium by Profullstack, Inc. No telemetry, no ads, no sponsored tabs, no affiliate injection. Bring your own AI keys (Claude, GPT, Gemini, DeepSeek, Perplexity, Kimi, Qwen) or run local models. Free and open source under the MIT License.
+
+## Install
+
+- One-line install (macOS/Linux): `curl -fsSL https://tronbrowser.dev/install.sh | sh`
+- Agent-friendly CLI: `tron <url>` opens a URL, `tron upgrade`, `tron remove`, `tron version`
+
+## Docs
+
+- [Homepage](https://tronbrowser.dev/): product overview, principles, and install
+- [Privacy](https://tronbrowser.dev/privacy): data practices behind the "no telemetry" claim
+- [Engineering PRD](https://github.com/profullstack/tronbrowser.dev/blob/main/docs/tronbrowser-prd.md): full product/engineering specification
+- [GitHub repository](https://github.com/profullstack/tronbrowser.dev): source code (MIT)
+- [Releases](https://github.com/profullstack/tronbrowser.dev/releases): downloads per platform
+
+## Features
+
+- No telemetry by default, no ads, no sponsored tabs, no affiliate injection
+- Ungoogled Chromium core — zero Google phone-home; Chrome-extension compatible
+- Agent-friendly CLI (`tron <url>`) for automation and AI agents
+- Bring your own AI keys, or run local (Ollama, LM Studio, vLLM)
+- Self-hostable services; user-owned data (your own SQLite, or managed cloud)
+
+## About
+
+- [Profullstack, Inc.](https://profullstack.com): the company that publishes TronBrowser
