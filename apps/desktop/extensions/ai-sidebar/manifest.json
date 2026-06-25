@@ -27,7 +27,7 @@
     "https://api.moonshot.ai/*",
     "https://dashscope.aliyuncs.com/*",
     "https://coinpay.profullstack.com/*",
-    "https://api.tronbrowser.dev/*",
+    "https://tronbrowser.dev/*",
     "http://localhost/*",
     "http://127.0.0.1/*",
     "https://*/*"
