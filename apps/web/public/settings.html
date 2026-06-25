@@ -10,7 +10,8 @@
   body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.55 ui-monospace,Menlo,monospace;
     max-width:760px;margin:0 auto;padding:24px 20px 80px}
   header{display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--line);padding-bottom:14px}
-  .brand{font-weight:800;font-size:20px}.brand span{color:var(--cyan)}
+  .brand{font-weight:800;font-size:20px;display:flex;align-items:center;gap:6px}.brand span{color:var(--cyan)}
+  .brand-logo{height:28px;width:auto}
   .acct{color:var(--muted);font-size:13px}
   .acct a{color:var(--cyan);margin-left:12px}
   h2{font-size:16px;color:#fff;margin:30px 0 6px}
@@ -26,7 +27,7 @@
 </style></head>
 <body>
   <header>
-    <div class="brand">Tron<span>Browser</span> · Settings</div>
+    <div class="brand"><img src="/favicon.svg" alt="TronBrowser" class="brand-logo" /> Settings</div>
     <div class="acct"><span id="who"></span><a href="/">Home</a><a href="#" id="signout">Sign out</a></div>
   </header>
 
