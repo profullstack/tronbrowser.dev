@@ -30,6 +30,10 @@ export type ExecutionMode = 'local' | 'cloud' | 'hybrid';
 
 export * from './catalog.js';
 export * from './keys.js';
+export * from './endpoints.js';
+export * from './adapter-openai.js';
+export * from './adapter-anthropic.js';
+export * from './factory.js';
 
 export interface ChatMessage {
   role: 'system' | 'user' | 'assistant' | 'tool';
