@@ -1,6 +1,6 @@
 {
   "name": "@tronbrowser/api",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "private": true,
   "description": "TronBrowser auth + settings-sync API (CoinPay OAuth + email/password)",
   "type": "module",
