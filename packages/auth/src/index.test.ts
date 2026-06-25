@@ -7,10 +7,12 @@ import {
 } from './index.js';
 
 describe('CoinPay OAuth', () => {
-  it('defaults to the hosted CoinPay endpoints and x402 scopes', () => {
+  it('defaults to the hosted coinpayportal endpoints and scopes', () => {
     const cfg = resolveCoinPayConfig({ clientId: 'abc', redirectUri: 'tronbrowser://cb' });
     expect(cfg.authorizeUrl).toBe(COINPAY_DEFAULTS.authorizeUrl);
-    expect(cfg.scopes).toContain('payments:x402');
+    expect(cfg.authorizeUrl).toContain('coinpayportal.com/api/oauth/authorize');
+    expect(cfg.scopes).toContain('wallet:read');
+    expect(cfg.scopes).toContain('openid');
   });
 
   it('allows self-hosted CoinPay overrides', () => {
