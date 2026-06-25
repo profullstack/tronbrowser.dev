@@ -123,14 +123,14 @@ ensure_browser() {
     if command -v brew >/dev/null 2>&1; then
       if brew list --cask ungoogled-chromium >/dev/null 2>&1; then return 0; fi
       info "Installing Ungoogled Chromium (brew cask)…"
-      if ! brew install --cask ungoogled-chromium; then
-        warn "brew install failed. If you already have a regular Chromium.app, replace it:"
-        say  "    brew install --cask ungoogled-chromium --force"
-      fi
+      # --force so it REPLACES any pre-existing regular Chromium.app rather than
+      # erroring on the conflict. TronBrowser runs Ungoogled Chromium only.
+      brew install --cask ungoogled-chromium --force \
+        || warn "Auto-install failed. Run it yourself: brew install --cask ungoogled-chromium --force"
     else
-      warn "Homebrew not found — install it (https://brew.sh), then:"
-      say  "    brew install --cask ungoogled-chromium"
-      say  "  (or grab a notarized build from https://github.com/ungoogled-software/ungoogled-chromium-macos/releases)"
+      warn "Homebrew is required to auto-install Ungoogled Chromium. Install brew (https://brew.sh), then re-run:"
+      say  "    curl -fsSL $INSTALL_URL | sh"
+      say  "  (or grab a notarized build: https://github.com/ungoogled-software/ungoogled-chromium-macos/releases)"
     fi
     return 0
   fi
@@ -220,6 +220,7 @@ do_upgrade() {
   [ -n "$latest" ] || err "could not resolve the latest release of $REPO"
   if [ "$current" = "$latest" ] && [ "${TB_FORCE:-0}" != "1" ]; then
     info "TronBrowser is already up to date ($current)."
+    ensure_browser   # still make sure Ungoogled Chromium is installed
     info "Re-install anyway with: TB_FORCE=1 tron upgrade"
     return
   fi

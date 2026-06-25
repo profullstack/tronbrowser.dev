@@ -4,7 +4,7 @@
     "slug": "tronbrowserdev",
     "owner": "profullstack",
     "scheme": "tronbrowser",
-    "version": "0.1.22",
+    "version": "0.1.23",
     "orientation": "portrait",
     "userInterfaceStyle": "dark",
     "platforms": [
