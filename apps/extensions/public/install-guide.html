@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Install guide — TronBrowser Store</title>
+<meta name="description" content="How to install TronBrowser store extensions: one-click in TronBrowser, and sideload steps for Chrome, Edge and Firefox." />
+<meta name="theme-color" content="#05070d" />
+<link rel="icon" href="/mark.svg" type="image/svg+xml" />
+<link rel="stylesheet" href="/store/store.css" />
+</head>
+<body data-page="guide">
+<header class="nav"><div class="wrap">
+  <a class="brand" href="/store/"><img src="/mark.svg" alt="" /> TronBrowser <span class="tag">Store</span></a>
+  <span class="spacer"></span>
+  <a class="navlink" href="/store/submit.html">Publish</a>
+  <a class="navlink" href="/store/">All extensions</a>
+</div></header>
+
+<main class="wrap">
+  <section class="hero" style="padding:38px 0 6px">
+    <h1>Installing store extensions</h1>
+    <p>TronBrowser gives you a real one-click install. Other browsers actively block third-party extension installs, so they need a sideload step — here's the honest path for each.</p>
+  </section>
+
+  <div class="tabs">
+    <div class="tab active" data-tab="tron">TronBrowser</div>
+    <div class="tab" data-tab="chrome">Chrome</div>
+    <div class="tab" data-tab="edge">Edge</div>
+    <div class="tab" data-tab="firefox">Firefox</div>
+  </div>
+
+  <section id="tron" class="tabpane active panel">
+    <h2>TronBrowser — one click</h2>
+    <p>Because TronBrowser is our own Chromium build, store extensions install and auto-update directly — no developer mode, no warnings.</p>
+    <ol class="steps">
+      <li>Open the extension's page in the store and press <b>Install</b>.</li>
+      <li>Confirm the permission prompt. Done — it auto-updates via the store's <code>update_url</code>.</li>
+    </ol>
+  </section>
+
+  <section id="chrome" class="tabpane panel">
+    <h2>Chrome — sideload (developer mode)</h2>
+    <p class="hint">Chrome disables extensions installed from outside the Web Store on Windows/macOS. Use developer mode (works everywhere) or enterprise policy / Linux for the auto-updating <code>.crx</code>.</p>
+    <h3>Unpacked (.zip) — any OS</h3>
+    <ol class="steps">
+      <li><b>Download</b> the <code>.zip</code> from the listing and unzip it.</li>
+      <li>Go to <code>chrome://extensions</code> and toggle <b>Developer mode</b> (top-right).</li>
+      <li>Click <b>Load unpacked</b> and select the unzipped folder.</li>
+    </ol>
+    <h3>Auto-updating .crx — Linux / enterprise</h3>
+    <p class="hint">On Linux, or via the <code>ExtensionInstallForcelist</code> / <code>ExtensionSettings</code> enterprise policy, point Chrome at the listing's <code>.crx</code> and its <code>update_url</code> (shown on each listing) for silent auto-updates.</p>
+  </section>
+
+  <section id="edge" class="tabpane panel">
+    <h2>Edge — sideload (developer mode)</h2>
+    <p class="hint">Edge is Chromium too, so it mirrors Chrome.</p>
+    <ol class="steps">
+      <li>Download and unzip the bundle.</li>
+      <li>Open <code>edge://extensions</code> and enable <b>Developer mode</b>.</li>
+      <li>Click <b>Load unpacked</b> and choose the folder.</li>
+    </ol>
+  </section>
+
+  <section id="firefox" class="tabpane panel">
+    <h2>Firefox</h2>
+    <p class="hint">Release Firefox only runs add-ons signed by Mozilla. Two paths:</p>
+    <h3>Temporary (any build) — until restart</h3>
+    <ol class="steps">
+      <li>Open <code>about:debugging#/runtime/this-firefox</code>.</li>
+      <li><b>Load Temporary Add-on…</b> and pick the <code>manifest.json</code> from the unzipped bundle.</li>
+    </ol>
+    <h3>Permanent — needs Mozilla "unlisted" signing</h3>
+    <p class="hint">For a permanent install in release Firefox the <code>.xpi</code> must be signed by Mozilla's AMO (the "unlisted" path — no public listing/review). Developer Edition / Nightly / ESR-unbranded can disable signing and install the <code>.xpi</code> directly via <code>about:addons → Install Add-on From File</code>.</p>
+  </section>
+
+  <section id="publish" class="panel">
+    <h2>Publishing via a PR (alternative to the upload form)</h2>
+    <p>The store DB is the source of truth, but every published listing is also mirrored to a public git registry. If you prefer git, open a PR adding <code>registry/&lt;your-slug&gt;/listing.json</code> (name, MV3 manifest, bundle/CRX URLs). The vu1nz.com scan runs as the PR's CI check; once the $1 fee clears, it merges and goes live.</p>
+  </section>
+</main>
+
+<footer><div class="wrap">Questions? <a href="/">tronbrowser.dev</a></div></footer>
+
+<script src="/store/store.js"></script>
+</body>
+</html>
