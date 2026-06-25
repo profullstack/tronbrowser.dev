@@ -1,6 +1,6 @@
 {
   "name": "@tronbrowser/plugins",
-  "version": "0.1.38",
+  "version": "0.1.39",
   "private": true,
   "description": "Plugin SDK and lifecycle host",
   "type": "module",

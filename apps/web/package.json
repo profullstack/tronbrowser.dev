@@ -1,6 +1,6 @@
 {
   "name": "@tronbrowser/web",
-  "version": "0.1.38",
+  "version": "0.1.39",
   "private": true,
   "description": "TronBrowser marketing site + web dashboard",
   "type": "module",
