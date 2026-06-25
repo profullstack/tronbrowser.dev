@@ -19,6 +19,10 @@ body {
 .brand span { color: var(--cyan); }
 .tag { color: var(--muted); margin: 0 0 18px; }
 .search { margin: 0 auto; max-width: 620px; }
+.modes { display: flex; gap: 6px; justify-content: center; margin-bottom: 10px; }
+.mode { background: transparent; color: var(--muted); border: 1px solid var(--line);
+  border-radius: 999px; padding: 5px 16px; font: inherit; font-size: 13px; cursor: pointer; }
+.mode.active { background: var(--cyan); color: #04060c; border-color: var(--cyan); font-weight: 700; }
 .search input { width: 100%; padding: 14px 18px; border-radius: 12px; font: inherit;
   background: #04060c; color: var(--fg); border: 1px solid var(--line); }
 .search input:focus { outline: none; border-color: var(--cyan); }

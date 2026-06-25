@@ -21,8 +21,32 @@ header button { background: transparent; border: 1px solid var(--line); color: v
 .messages { flex: 1; overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 10px; }
 .msg { padding: 8px 10px; border-radius: 8px; white-space: pre-wrap; word-wrap: break-word; }
 .msg.user { background: var(--user); align-self: flex-end; max-width: 90%; }
-.msg.assistant { background: var(--panel); border: 1px solid var(--line); }
+.msg.assistant { background: var(--panel); border: 1px solid var(--line); white-space: normal; }
 .msg.error { background: #2a0f14; border: 1px solid #5a1f28; color: #ffb3bd; }
+
+/* Rendered markdown inside assistant replies. */
+.md > :first-child { margin-top: 0; }
+.md > :last-child { margin-bottom: 0; }
+.md p { margin: 0 0 8px; }
+.md h1, .md h2, .md h3, .md h4 { margin: 12px 0 6px; line-height: 1.3; color: #fff; }
+.md h1 { font-size: 1.25em; } .md h2 { font-size: 1.15em; } .md h3 { font-size: 1.05em; }
+.md ul, .md ol { margin: 6px 0; padding-left: 20px; }
+.md li { margin: 2px 0; }
+.md a { color: var(--cyan); }
+.md code { background: #04060c; border: 1px solid var(--line); border-radius: 4px;
+  padding: 1px 5px; font-family: ui-monospace, Menlo, monospace; font-size: .92em; }
+.md pre { background: #04060c; border: 1px solid var(--line); border-radius: 8px;
+  padding: 10px 12px; overflow-x: auto; margin: 8px 0; }
+.md pre code { background: none; border: 0; padding: 0; display: block; }
+.md blockquote { margin: 8px 0; padding: 2px 12px; border-left: 3px solid var(--line); color: var(--muted); }
+.md hr { border: 0; border-top: 1px solid var(--line); margin: 12px 0; }
+
+.actions { margin-top: 8px; }
+.actions.hidden { display: none; }
+.copy-md { background: transparent; color: var(--muted); border: 1px solid var(--line);
+  border-radius: 6px; padding: 4px 10px; font: inherit; font-size: 12px; cursor: pointer; }
+.copy-md:hover { color: var(--fg); border-color: var(--cyan); }
+
 .setup { padding: 16px; color: var(--muted); text-align: center; }
 .setup.hidden { display: none; }
 .composer { display: grid; grid-template-columns: 1fr auto; gap: 8px;

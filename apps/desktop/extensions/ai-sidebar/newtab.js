@@ -3,11 +3,32 @@ import { coinpaySignIn, coinpayState, coinpaySignOut } from './coinpay-auth.js';
 
 const el = (id) => document.getElementById(id);
 
-// --- DuckDuckGo search (default; no Google) ---
-el('search').addEventListener('submit', (e) => {
+// --- Search: Web (DuckDuckGo, default) or AI (our sidebar, BYO provider) ---
+let searchMode = 'web';
+function setMode(mode) {
+  searchMode = mode;
+  el('mode-web').classList.toggle('active', mode === 'web');
+  el('mode-ai').classList.toggle('active', mode === 'ai');
+  el('mode-web').setAttribute('aria-selected', mode === 'web');
+  el('mode-ai').setAttribute('aria-selected', mode === 'ai');
+  el('q').placeholder = mode === 'ai' ? 'Ask AI anything…' : 'Search DuckDuckGo…';
+  el('q').focus();
+}
+el('mode-web').addEventListener('click', () => setMode('web'));
+el('mode-ai').addEventListener('click', () => setMode('ai'));
+
+el('search').addEventListener('submit', async (e) => {
   e.preventDefault();
   const q = el('q').value.trim();
-  if (q) location.href = 'https://duckduckgo.com/?q=' + encodeURIComponent(q);
+  if (!q) return;
+  if (searchMode === 'ai') {
+    // Hand the question to the AI sidebar (privacy-first; uses your provider/key).
+    await chrome.storage.local.set({ pendingAiQuery: { text: q, at: Date.now() } });
+    chrome.runtime.sendMessage({ type: 'open-sidepanel' });
+    el('q').value = '';
+  } else {
+    location.href = 'https://duckduckgo.com/?q=' + encodeURIComponent(q);
+  }
 });
 
 // --- Links ---

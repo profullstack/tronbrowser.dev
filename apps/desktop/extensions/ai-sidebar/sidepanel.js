@@ -1,4 +1,5 @@
 import { PROVIDERS, chatStream } from './providers.js';
+import { renderMarkdown } from './markdown.js';
 
 const el = (id) => document.getElementById(id);
 const messagesEl = el('messages');
@@ -21,13 +22,54 @@ async function loadConfig() {
   return ok;
 }
 
-function addMessage(role, text) {
+function scrollDown() { messagesEl.scrollTop = messagesEl.scrollHeight; }
+
+// User messages are plain text (no markdown rendering of user input).
+function addUserMessage(text) {
   const div = document.createElement('div');
-  div.className = `msg ${role}`;
+  div.className = 'msg user';
   div.textContent = text;
   messagesEl.appendChild(div);
-  messagesEl.scrollTop = messagesEl.scrollHeight;
+  scrollDown();
   return div;
+}
+
+// Assistant messages render markdown -> HTML and carry a "Copy markdown" button.
+// Returns a handle: update(rawMarkdown) re-renders; finish() reveals actions.
+function addAssistantMessage() {
+  const div = document.createElement('div');
+  div.className = 'msg assistant';
+  const body = document.createElement('div');
+  body.className = 'md';
+  const actions = document.createElement('div');
+  actions.className = 'actions hidden';
+  const copy = document.createElement('button');
+  copy.type = 'button';
+  copy.className = 'copy-md';
+  copy.textContent = 'Copy markdown';
+  actions.appendChild(copy);
+  div.append(body, actions);
+  messagesEl.appendChild(div);
+  scrollDown();
+
+  let raw = '';
+  copy.addEventListener('click', async () => {
+    try {
+      await navigator.clipboard.writeText(raw);
+      copy.textContent = 'Copied ✓';
+      setTimeout(() => { copy.textContent = 'Copy markdown'; }, 1400);
+    } catch {
+      copy.textContent = 'Copy failed';
+      setTimeout(() => { copy.textContent = 'Copy markdown'; }, 1400);
+    }
+  });
+
+  return {
+    el: div,
+    update(text) { raw = text; body.innerHTML = renderMarkdown(text); scrollDown(); },
+    finish() { if (raw.trim()) actions.classList.remove('hidden'); },
+    error(msg) { div.className = 'msg error'; body.textContent = `Error: ${msg}`; },
+  };
 }
 
 async function pageContext() {
@@ -51,20 +93,21 @@ async function send(text) {
   messages.push({ role: 'user', content: text });
   history.push({ role: 'user', content: text });
 
-  addMessage('user', text);
-  const out = addMessage('assistant', '');
+  addUserMessage(text);
+  const out = addAssistantMessage();
   sendBtn.disabled = true;
 
   try {
+    let acc = '';
     const full = await chatStream(config, messages, (delta) => {
-      out.textContent += delta;
-      messagesEl.scrollTop = messagesEl.scrollHeight;
+      acc += delta;
+      out.update(acc);
     });
+    out.update(full || acc);
+    out.finish();
     history.push({ role: 'assistant', content: full });
   } catch (err) {
-    out.classList.remove('assistant');
-    out.classList.add('msg', 'error');
-    out.textContent = `Error: ${err.message}`;
+    out.error(err.message);
   } finally {
     sendBtn.disabled = false;
   }
@@ -89,4 +132,14 @@ el('settings').addEventListener('click', () => chrome.runtime.openOptionsPage())
 el('open-options').addEventListener('click', (e) => { e.preventDefault(); chrome.runtime.openOptionsPage(); });
 chrome.storage.onChanged.addListener((changes) => { if (changes.aiConfig) loadConfig(); });
 
-loadConfig();
+// If the new-tab page (AI mode) queued a question, ask it on open.
+async function consumePendingQuery() {
+  const { pendingAiQuery } = await chrome.storage.local.get('pendingAiQuery');
+  if (pendingAiQuery && pendingAiQuery.text) {
+    await chrome.storage.local.remove('pendingAiQuery');
+    if (await loadConfig()) send(pendingAiQuery.text);
+    else setupEl.classList.remove('hidden');
+  }
+}
+
+(async () => { await loadConfig(); await consumePendingQuery(); })();
