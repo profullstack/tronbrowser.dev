@@ -1,6 +1,7 @@
 import { loadFeeds, parseFeed } from './feeds.js';
 import { coinpaySignIn, coinpayState, coinpaySignOut } from './coinpay-auth.js';
 import { fetchQuotes, fetchAllScores } from './markets.js';
+import { fetchMotd } from './motd.js';
 
 const el = (id) => document.getElementById(id);
 
@@ -213,6 +214,24 @@ async function renderSports() {
   }).join('');
 }
 
+// --- Message of the Day (profullstack.com/motd, cached 30 min) ---
+async function renderMotd() {
+  const sec = el('motd-sec');
+  try {
+    const text = await fetchMotd();
+    if (!text) { sec.hidden = true; return; }
+    // Preserve line breaks via CSS (.motd-body is pre-wrap); linkify URLs.
+    el('motd').innerHTML = escapeHtml(text).replace(
+      /(https?:\/\/[^\s<]+)/g,
+      '<a href="$1" target="_blank" rel="noreferrer">$1</a>'
+    );
+    sec.hidden = false;
+  } catch {
+    sec.hidden = true;
+  }
+}
+
+renderMotd();
 renderFeeds();
 renderMarkets();
 renderSports();
