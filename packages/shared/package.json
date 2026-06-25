@@ -1,6 +1,6 @@
 {
   "name": "@tronbrowser/shared",
-  "version": "0.1.13",
+  "version": "0.1.14",
   "private": true,
   "description": "Shared types, utilities, and constants",
   "type": "module",

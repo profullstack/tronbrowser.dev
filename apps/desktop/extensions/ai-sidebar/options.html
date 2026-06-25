@@ -56,7 +56,9 @@
   <label for="default">Default provider</label>
   <select id="default"></select>
   <label for="model">Default model</label>
-  <input id="model" placeholder="e.g. claude-opus-4-8, gpt-5.5, deepseek-chat" />
+  <input id="model" list="modelList" placeholder="pick from the list, or type a model id" />
+  <datalist id="modelList"></datalist>
+  <p id="modelHint" class="hint"></p>
 
   <div id="providers" class="providers"></div>
 

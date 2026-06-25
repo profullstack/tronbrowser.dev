@@ -49,16 +49,29 @@ async function requireAuth() {
   return me;
 }
 
+// A provider counts as "configured" once it has a key (cloud) or base URL (local).
+function isConfigured(p, cur) {
+  return p.keyless ? !!(cur && cur.baseUrl) : !!(cur && cur.apiKey);
+}
+
 function buildProviderRows() {
   const sel = $('default');
   sel.innerHTML = '';
   const box = $('providers');
   box.innerHTML = '';
   const keys = settings.aiProviders || {};
-  for (const p of PROVIDERS) {
+
+  // Default-provider menu lists ONLY configured providers; fall back to all
+  // when nothing is configured yet so the menu is never empty.
+  const configured = PROVIDERS.filter((p) => isConfigured(p, keys[p.id]));
+  const menu = configured.length ? configured : PROVIDERS;
+  for (const p of menu) {
     const opt = document.createElement('option');
     opt.value = p.id; opt.textContent = p.label; sel.appendChild(opt);
+  }
 
+  // Key inputs still list every provider so you can add new keys.
+  for (const p of PROVIDERS) {
     const cur = keys[p.id] || {};
     const val = (p.keyless ? (cur.baseUrl || '') : (cur.apiKey || '')).replace(/"/g, '&quot;');
     const row = document.createElement('div');
@@ -71,7 +84,7 @@ function buildProviderRows() {
        <button type="button" class="reveal" data-reveal="${p.id}">show</button>`;
     box.appendChild(row);
   }
-  sel.value = settings.aiDefault || 'anthropic';
+  sel.value = menu.some((p) => p.id === settings.aiDefault) ? settings.aiDefault : (menu[0]?.id || 'anthropic');
   $('model').value = settings.aiModel || settings.aiConfig?.model || '';
   box.querySelectorAll('[data-reveal]').forEach((b) => b.addEventListener('click', () => {
     const inp = box.querySelector(`[data-key="${b.getAttribute('data-reveal')}"]`);
@@ -175,6 +188,9 @@ $('save').addEventListener('click', async () => {
   $('msg').textContent = r.ok ? 'saved (encrypted) ✓' : 'save failed';
   $('msg').className = r.ok ? 'saved' : 'err';
   setTimeout(() => ($('msg').textContent = ''), 1800);
+
+  // Refresh the view so the default-provider menu reflects the saved keys.
+  if (r.ok) { settings.aiProviders = aiProviders; buildProviderRows(); }
 });
 
 $('signout').addEventListener('click', async (e) => {

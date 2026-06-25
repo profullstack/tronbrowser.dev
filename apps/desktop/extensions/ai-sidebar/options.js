@@ -1,4 +1,4 @@
-import { PROVIDERS } from './providers.js';
+import { PROVIDERS, KNOWN_MODELS, listModels } from './providers.js';
 import { DEFAULT_FEEDS, parseOpml, toOpml, loadFeeds, saveFeeds } from './feeds.js';
 import { coinpaySignIn, coinpayState, coinpaySignOut } from './coinpay-auth.js';
 import { pushSettings, pullSettings } from './settings-store.js';
@@ -7,12 +7,26 @@ import { encryptVault, decryptVault } from './vault.js';
 const el = (id) => document.getElementById(id);
 const PROV_LIST = Object.entries(PROVIDERS);
 
+// A provider counts as "configured" once it has a key (cloud) or base URL (local).
+function isConfigured(meta, cur) {
+  return meta.keyless ? !!(cur && cur.baseUrl) : !!(cur && cur.apiKey);
+}
+
 /* ---------- AI providers (multiple, with reveal + E2E vault) ---------- */
 function buildProviders(aiProviders, aiDefault) {
   const sel = el('default'); sel.innerHTML = '';
   const box = el('providers'); box.innerHTML = '';
-  for (const [id, meta] of PROV_LIST) {
+
+  // Default-provider menu lists ONLY configured providers; fall back to all
+  // when nothing is configured yet so the menu is never empty.
+  const configured = PROV_LIST.filter(([id, meta]) => isConfigured(meta, aiProviders[id]));
+  const menu = configured.length ? configured : PROV_LIST;
+  for (const [id, meta] of menu) {
     const o = document.createElement('option'); o.value = id; o.textContent = meta.label; sel.appendChild(o);
+  }
+
+  // Key inputs still list every provider so you can add new keys.
+  for (const [id, meta] of PROV_LIST) {
     const cur = aiProviders[id] || {};
     const val = meta.keyless ? (cur.baseUrl || '') : (cur.apiKey || '');
     const row = document.createElement('div'); row.className = 'prow';
@@ -22,14 +36,57 @@ function buildProviders(aiProviders, aiDefault) {
        <button type="button" class="reveal" data-reveal="${id}">show</button>`;
     box.appendChild(row);
   }
-  sel.value = aiDefault || 'anthropic';
+  sel.value = (menu.find(([id]) => id === aiDefault) ? aiDefault : menu[0]?.[0]) || 'anthropic';
   box.querySelectorAll('[data-reveal]').forEach((b) => b.addEventListener('click', () => {
     const inp = box.querySelector(`[data-prov="${b.getAttribute('data-reveal')}"]`);
     const show = inp.type === 'password';
     inp.type = show ? 'text' : 'password';
     b.textContent = show ? 'hide' : 'show';
   }));
+  fetchModels();
 }
+
+// Populate the model datalist for the selected provider: known models first
+// (instant), then merge the provider's live list when a key is present.
+function setModelOptions(models) {
+  const dl = el('modelList'); dl.innerHTML = '';
+  const seen = new Set();
+  for (const m of models) {
+    if (!m || seen.has(m)) continue;
+    seen.add(m);
+    const o = document.createElement('option'); o.value = m; dl.appendChild(o);
+  }
+  if (!el('model').value.trim() && seen.size) el('model').value = [...seen][0];
+  return [...seen];
+}
+
+async function fetchModels() {
+  const provider = el('default').value;
+  const meta = PROVIDERS[provider];
+  if (!meta) return;
+  const known = KNOWN_MODELS[provider] || [];
+  const merged = setModelOptions(known);
+
+  const keyInput = el('providers').querySelector(`[data-prov="${provider}"]`);
+  const val = keyInput ? keyInput.value.trim() : '';
+  const cfg = meta.keyless ? { provider, baseUrl: val } : { provider, apiKey: val };
+  if (!meta.keyless && !val) { el('modelHint').textContent = `${merged.length} common models — add your key above to load the full list`; return; }
+
+  el('modelHint').textContent = 'loading models…';
+  try {
+    const live = await listModels(cfg);
+    if (live.length) {
+      const all = setModelOptions([...known, ...live]);
+      el('modelHint').textContent = `${all.length} models — pick or type`;
+    } else {
+      el('modelHint').textContent = `${merged.length} common models`;
+    }
+  } catch (e) {
+    el('modelHint').textContent = `${merged.length} common models (couldn't reach provider)`;
+  }
+}
+el('default').addEventListener('change', () => { el('model').value = ''; fetchModels(); });
+el('providers').addEventListener('input', (e) => { if (e.target.matches(`[data-prov="${el('default').value}"]`)) fetchModels(); });
 
 function collectProviders() {
   const aiProviders = {};
@@ -60,6 +117,7 @@ el('saveAi').addEventListener('click', async () => {
   }
   await pushSettings();
   flash('savedAi', el('vault').value ? 'saved (encrypted) ✓' : 'saved ✓ — set a vault passphrase to sync keys');
+  await loadAll(); // refresh so the default-provider menu reflects newly-added keys
 });
 
 /* ---------- CoinPay account + sync ---------- */
