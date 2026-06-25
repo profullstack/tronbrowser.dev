@@ -164,7 +164,10 @@ MSG
   fi
 fi
 
-FLAGS="--user-data-dir=$DATA --class=TronBrowser --no-first-run --no-default-browser-check --no-pings --disable-background-networking --disable-breakpad --disable-domain-reliability --disable-sync --disable-features=Translate,OptimizationHints,InterestFeedContentSuggestions --load-extension=$EXT"
+# Keep Manifest V2 working so uBlock Origin (MV2) loads — recent Chromium disables
+# MV2 by default. (Ungoogled keeps MV2, but force it off everywhere to be safe.)
+MV2_KEEP="ExtensionManifestV2Disabled,ExtensionManifestV2Unsupported,ExtensionManifestV2DeprecationWarning,ExtensionManifestV2DeprecationUnsupported"
+FLAGS="--user-data-dir=$DATA --class=TronBrowser --no-first-run --no-default-browser-check --no-pings --disable-background-networking --disable-breakpad --disable-domain-reliability --disable-sync --disable-features=Translate,OptimizationHints,InterestFeedContentSuggestions,$MV2_KEEP --load-extension=$EXT"
 
 # Chromium spews benign ERROR/WARNING noise to stderr (EV cert OID, mojo
 # WidgetHost, GPU, etc.). Route it to a log so `tron <url>` returns clean;
