@@ -17,3 +17,6 @@ coverage/
 # Expo / React Native (apps/mobile)
 .expo/
 *.orig
+
+# Bundled at build time (fetched, GPL — not vendored)
+apps/desktop/extensions/ublock/

@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Assemble TronBrowser release archives (launcher shim + AI sidebar extension)
+# Assemble TronBrowser release archives (launcher shim + AI sidebar + uBlock
+# Origin + chromium-web-store extensions)
 # for a given platform. Until the native fork binary is built, this packages the
 # launcher; asset names are stable so install.sh / package managers are unchanged.
 #
@@ -12,6 +13,25 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 DESKTOP="$REPO_ROOT/apps/desktop"
 OUT="$REPO_ROOT/dist"
 mkdir -p "$OUT"
+
+# Fetch uBlock Origin ONCE (the per-platform stage() copies from here). Full
+# uBlock Origin is MV2 — Ungoogled Chromium keeps MV2 support, so we ship the
+# real thing (not uBO Lite). The release asset name carries the version, so we
+# resolve the latest .chromium.zip via the GitHub API. Entirely non-fatal.
+UBO_SRC=""
+fetch_ublock() {
+  command -v python3 >/dev/null 2>&1 || { echo "  ! uBlock skipped (no python3)"; return; }
+  local url
+  url="$(curl -fsSL https://api.github.com/repos/gorhill/uBlock/releases/latest 2>/dev/null \
+    | python3 -c 'import sys,json;d=json.load(sys.stdin);print(next((a["browser_download_url"] for a in d["assets"] if a["name"].endswith(".chromium.zip")),""))' 2>/dev/null)" || true
+  [ -n "$url" ] || { echo "  ! uBlock resolve skipped (non-fatal)"; return; }
+  local z d m; z="$(mktemp)"; d="$(mktemp -d)"
+  if curl -fsSL "$url" -o "$z" 2>/dev/null && unzip -q -o "$z" -d "$d" 2>/dev/null; then
+    m="$(find "$d" -maxdepth 2 -name manifest.json | head -1)"
+    if [ -n "$m" ]; then UBO_SRC="$(dirname "$m")"; echo "  + fetched uBlock Origin ($url)"; fi
+  fi
+  rm -f "$z"  # keep $d (UBO_SRC lives inside) until the script exits
+}
 
 stage() { # dest dir
   local s="$1"
@@ -38,6 +58,12 @@ stage() { # dest dir
     echo "  ! chromium-web-store download skipped (non-fatal)"
   fi
   rm -f "$crx"
+
+  # Default ad/tracker blocker: uBlock Origin (fetched once into $UBO_SRC).
+  if [ -n "$UBO_SRC" ] && [ -d "$UBO_SRC" ]; then
+    mkdir -p "$s/extensions/ublock"
+    cp -R "$UBO_SRC/." "$s/extensions/ublock/"
+  fi
 }
 
 build_archive() { # ext-type
@@ -50,6 +76,8 @@ build_archive() { # ext-type
   esac
   rm -rf "$t"
 }
+
+fetch_ublock
 
 case "$PLATFORM" in
   linux|macos|windows) build_archive "$PLATFORM" ;;
