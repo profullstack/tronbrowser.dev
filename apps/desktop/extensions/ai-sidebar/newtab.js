@@ -17,6 +17,7 @@ const SEARCH_ENGINES = {
   ddg: { name: 'DuckDuckGo', url: 'https://duckduckgo.com/?q=' },
   // Altpower is a Google Programmable Search — query lives in the URL fragment.
   altpower: { name: 'Altpower', url: 'https://altpower.app/#open-source&gsc.tab=0&gsc.q=', suffix: '&gsc.sort=' },
+  oxiverse: { name: 'Oxiverse', url: 'https://search.oxiverse.com/?q=', suffix: '&tab=web' },
 };
 let searchMode = 'web';
 let searchEngine = 'xprivo';
