@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="stylesheet" href="sidepanel.css" />
+<title>TronBrowser AI</title>
+</head>
+<body>
+  <header>
+    <span class="brand">Tron<span class="accent">AI</span></span>
+    <span id="provider" class="provider"></span>
+    <button id="settings" title="Settings">⚙</button>
+  </header>
+
+  <div id="messages" class="messages"></div>
+
+  <div id="setup" class="setup hidden">
+    No model configured. <a href="#" id="open-options">Add a provider &amp; key</a> to start.
+  </div>
+
+  <form id="composer" class="composer">
+    <label class="ctx"><input type="checkbox" id="use-page" checked /> include page</label>
+    <textarea id="input" rows="2" placeholder="Ask anything…"></textarea>
+    <button id="send" type="submit">Send</button>
+  </form>
+
+  <script type="module" src="sidepanel.js"></script>
+</body>
+</html>

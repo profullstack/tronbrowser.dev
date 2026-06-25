@@ -13,6 +13,7 @@ integration layer (PRD rule: *desktop-specific code stays isolated*).
 | --- | --- |
 | [`chromium/`](chromium/) | Fork the browser: pinned versions, GN build args, branding, patch series, fetch/build scripts. See [chromium/README](chromium/README.md). |
 | [`src/`](src/) | Resolve the built binary and launch it with privacy flags enforced. |
+| [`extensions/ai-sidebar/`](extensions/ai-sidebar/) | **M2** AI side panel (MV3 extension) — BYOK chat, bundled into the fork. |
 
 ## TypeScript API
 
