@@ -28,6 +28,31 @@ body {
 .search input:focus { outline: none; border-color: var(--cyan); }
 .links { margin: 16px 0 8px; display: flex; gap: 16px; justify-content: center; flex-wrap: wrap; }
 .links a { color: var(--cyan); text-decoration: none; font-size: 14px; }
+/* Markets + Sports strips */
+.strip { max-width: 1100px; margin: 22px auto 0; padding: 0 18px; }
+.strip-head { display: flex; align-items: baseline; gap: 12px; border-bottom: 1px solid var(--line); padding-bottom: 8px; }
+.strip-head h2 { margin: 0; font-size: 16px; color: #fff; }
+.strip-head .edit { background: transparent; border: 1px solid var(--line); color: var(--muted);
+  border-radius: 6px; padding: 2px 10px; cursor: pointer; font: inherit; font-size: 12px; }
+.tickers { margin-top: 12px; display: flex; flex-wrap: wrap; gap: 8px; }
+.tk { background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
+  padding: 6px 10px; font-size: 13px; white-space: nowrap; }
+.tk b { color: var(--fg); margin-right: 4px; }
+.tk i { font-style: normal; font-size: 12px; }
+.tk .up { color: #2fd47a; } .tk .down { color: #ff6b81; } .tk .flat { color: var(--muted); }
+.tk.err { color: var(--muted); }
+.sportsgrid { margin-top: 12px; columns: 3 260px; column-gap: 18px; }
+.lgcard { break-inside: avoid; background: var(--panel); border: 1px solid var(--line);
+  border-radius: 10px; padding: 10px 12px; margin-bottom: 18px; }
+.lgcard h3 { margin: 0 0 8px; font-size: 12px; letter-spacing: 1px; color: var(--cyan); }
+.lgcard ul { list-style: none; margin: 0; padding: 0; }
+.lgcard li { display: flex; justify-content: space-between; gap: 8px; margin: 0 0 6px; font-size: 12px; }
+.lgcard .g { color: var(--fg); }
+.lgcard .when { color: var(--muted); white-space: nowrap; }
+.lgcard .when.final { color: var(--fg); }
+.lgcard .when.live { color: #2fd47a; }
+.lgcard .err { color: #ff8a9b; font-size: 12px; }
+
 .feeds { max-width: 1100px; margin: 24px auto 64px; padding: 0 18px; }
 .feeds-head { display: flex; align-items: baseline; gap: 12px; border-bottom: 1px solid var(--line); padding-bottom: 8px; }
 .feeds-head h2 { margin: 0; font-size: 16px; color: #fff; }

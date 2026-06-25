@@ -120,6 +120,17 @@ el('saveAi').addEventListener('click', async () => {
   await loadAll(); // refresh so the default-provider menu reflects newly-added keys
 });
 
+/* ---------- Markets & Sports (new-tab widgets) ---------- */
+el('saveMarkets').addEventListener('click', async () => {
+  const tickers = el('tickers').value.trim();
+  const leagues = el('leagues').value.trim();
+  await chrome.storage.local.set({ tickers, leagues });
+  // Invalidate the new-tab caches so the change shows immediately.
+  await chrome.storage.local.remove(['marketCache', 'sportsCache']);
+  await pushSettings();
+  flash('savedMarkets', 'saved ✓');
+});
+
 /* ---------- CoinPay account + sync ---------- */
 async function renderAccount() {
   const st = await coinpayState();
@@ -206,6 +217,9 @@ async function loadAll() {
   buildProviders(provs, aiDefault);
   el('cpClient').value = coinpayConfig?.clientId || '';
   el('syncUrl').value = syncConfig?.url || '';
+  const mkt = await chrome.storage.local.get(['tickers', 'leagues']);
+  el('tickers').value = mkt.tickers ?? '';
+  el('leagues').value = mkt.leagues ?? '';
   await renderAccount();
   await renderFeeds();
 }

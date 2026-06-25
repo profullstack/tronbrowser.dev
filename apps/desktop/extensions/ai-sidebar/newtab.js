@@ -1,7 +1,13 @@
 import { loadFeeds, parseFeed } from './feeds.js';
 import { coinpaySignIn, coinpayState, coinpaySignOut } from './coinpay-auth.js';
+import { fetchQuotes, fetchAllScores } from './markets.js';
 
 const el = (id) => document.getElementById(id);
+
+// Defaults — the user can change these in Settings.
+const DEFAULT_TICKERS = 'SPY, AAPL, NVDA, BTC-USD';
+const DEFAULT_LEAGUES = 'nfl, nba';
+const splitList = (s) => String(s || '').split(',').map((x) => x.trim()).filter(Boolean);
 
 // --- Search: Web (DuckDuckGo, default) or AI (our sidebar, BYO provider) ---
 let searchMode = 'web';
@@ -35,6 +41,8 @@ el('search').addEventListener('submit', async (e) => {
 el('ai').addEventListener('click', (e) => { e.preventDefault(); chrome.runtime.sendMessage({ type: 'open-sidepanel' }); });
 el('settings').addEventListener('click', (e) => { e.preventDefault(); chrome.runtime.openOptionsPage(); });
 el('edit-feeds').addEventListener('click', () => chrome.runtime.openOptionsPage());
+el('edit-markets').addEventListener('click', () => chrome.runtime.openOptionsPage());
+el('edit-sports').addEventListener('click', () => chrome.runtime.openOptionsPage());
 
 // --- CoinPay sign-in ---
 async function renderAccount() {
@@ -125,4 +133,72 @@ function escAttr(s) {
   return String(s || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
+// --- Markets (stocks/crypto) + Sports — keyless, cached 5 min ---
+const MKT_TTL = 5 * 60 * 1000;
+
+async function renderMarkets() {
+  const { tickers } = await chrome.storage.local.get('tickers');
+  const symbols = splitList(tickers ?? DEFAULT_TICKERS);
+  const sec = el('markets-sec');
+  if (!symbols.length) { sec.hidden = true; return; }
+  sec.hidden = false;
+
+  const sig = symbols.join(',');
+  const { marketCache } = await chrome.storage.local.get('marketCache');
+  let data;
+  if (marketCache && marketCache.sig === sig && Date.now() - marketCache.at < MKT_TTL) {
+    data = marketCache.data;
+  } else {
+    data = await fetchQuotes(symbols);
+    await chrome.storage.local.set({ marketCache: { at: Date.now(), sig, data } });
+  }
+
+  el('markets').innerHTML = data.map((q) => {
+    if (q.error) return `<span class="tk err"><b>${escapeHtml(q.symbol)}</b> —</span>`;
+    const pct = q.changePct;
+    const cls = pct > 0 ? 'up' : pct < 0 ? 'down' : 'flat';
+    const sign = pct > 0 ? '+' : '';
+    const price = q.price >= 1000 ? q.price.toLocaleString(undefined, { maximumFractionDigits: 0 })
+      : q.price.toLocaleString(undefined, { maximumFractionDigits: 2 });
+    return `<span class="tk"><b>${escapeHtml(q.symbol)}</b> ${price} ` +
+      `<i class="${cls}">${sign}${pct.toFixed(2)}%</i></span>`;
+  }).join('');
+}
+
+async function renderSports() {
+  const { leagues } = await chrome.storage.local.get('leagues');
+  const keys = splitList(leagues ?? DEFAULT_LEAGUES).map((k) => k.toLowerCase());
+  const sec = el('sports-sec');
+  if (!keys.length) { sec.hidden = true; return; }
+  sec.hidden = false;
+
+  const sig = keys.join(',');
+  const { sportsCache } = await chrome.storage.local.get('sportsCache');
+  let data;
+  if (sportsCache && sportsCache.sig === sig && Date.now() - sportsCache.at < MKT_TTL) {
+    data = sportsCache.data;
+  } else {
+    data = await fetchAllScores(keys);
+    await chrome.storage.local.set({ sportsCache: { at: Date.now(), sig, data } });
+  }
+
+  el('sports').innerHTML = data.map((lg) => {
+    const games = (lg.games || []).map((g) => {
+      const a = g.away, h = g.home;
+      if (g.state === 'pre' || !a?.score) {
+        return `<li><span class="g">${escapeHtml(g.name)}</span><span class="when">${escapeHtml(g.detail || '')}</span></li>`;
+      }
+      const final = g.state === 'post';
+      return `<li><span class="g">${escapeHtml(a?.abbr || '')} <b>${escapeHtml(String(a?.score ?? ''))}</b> @ ` +
+        `${escapeHtml(h?.abbr || '')} <b>${escapeHtml(String(h?.score ?? ''))}</b></span>` +
+        `<span class="when ${final ? 'final' : 'live'}">${escapeHtml(g.detail || '')}</span></li>`;
+    }).join('');
+    return `<div class="lgcard"><h3>${escapeHtml(lg.league.toUpperCase())}</h3>` +
+      (lg.error ? `<div class="err">${escapeHtml(lg.error)}</div>`
+        : `<ul>${games || '<li class="muted">no games</li>'}</ul>`) + `</div>`;
+  }).join('');
+}
+
 renderFeeds();
+renderMarkets();
+renderSports();
