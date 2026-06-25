@@ -24,7 +24,7 @@
 		X-Frame-Options "DENY"
 		Referrer-Policy "strict-origin-when-cross-origin"
 		Permissions-Policy "camera=(), microphone=(), geolocation=(), browsing-topics=()"
-		Content-Security-Policy "default-src 'self'; script-src 'self' https://crawlproof.com; connect-src 'self' https://crawlproof.com; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
+		Content-Security-Policy "default-src 'self'; script-src 'self' https://crawlproof.com https://feedback.profullstack.com; connect-src 'self' https://crawlproof.com https://feedback.profullstack.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://feedback.profullstack.com; font-src 'self'; frame-src 'self' https://feedback.profullstack.com; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
 		-Server
 	}
 
