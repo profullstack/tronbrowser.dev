@@ -2,7 +2,7 @@
   "name": "@tronbrowser/mobile",
   "version": "0.0.0",
   "private": true,
-  "description": "React Native mobile app (Phase 2)",
+  "description": "TronBrowser mobile (Expo / React Native) — Phase 2",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -16,7 +16,11 @@
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run --passWithNoTests",
-    "lint": "echo \"[lint] mobile: stub\""
+    "lint": "echo \"[lint] mobile: stub\"",
+    "_comment": "Phase 2: run `pnpm add expo react react-native expo-status-bar` then use the scripts below.",
+    "start": "expo start",
+    "android": "expo start --android",
+    "ios": "expo start --ios"
   },
   "devDependencies": {
     "typescript": "^5.6.3",

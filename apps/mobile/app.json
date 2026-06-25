@@ -1,0 +1,21 @@
+{
+  "expo": {
+    "name": "TronBrowser",
+    "slug": "tronbrowser",
+    "scheme": "tronbrowser",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "platforms": ["ios", "android"],
+    "ios": {
+      "bundleIdentifier": "dev.tronbrowser.app",
+      "supportsTablet": true
+    },
+    "android": {
+      "package": "dev.tronbrowser.app"
+    },
+    "extra": {
+      "note": "Phase 2 mobile (PRD §Mobile): AI chat, sync, voice, push, agent dashboard."
+    }
+  }
+}

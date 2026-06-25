@@ -1,19 +1,28 @@
 # @tronbrowser/mobile
 
-React Native mobile app (Phase 2)
+TronBrowser mobile app (iOS + Android) — **Expo / React Native**, **Phase 2**
+(PRD §Mobile).
 
-> Status: **stub** — interfaces defined, implementation pending. Part of milestone **M0 (Monorepo)**.
+> Status: **stub**. The Expo config (`app.json`) and entry screen (`App.tsx`)
+> are scaffolded; the React Native toolchain is not installed yet to keep the
+> workspace lockfile light. The `src/` TypeScript stub keeps it a valid
+> workspace member and is what CI typechecks/builds.
 
-## Install
+## Start Phase 2
 
 ```bash
-pnpm add @tronbrowser/mobile
+cd apps/mobile
+pnpm add expo react react-native expo-status-bar
+pnpm start            # Expo dev server (then press i / a)
+pnpm ios              # iOS simulator
+pnpm android          # Android emulator
 ```
 
-## Scripts
+Bundle ids: `dev.tronbrowser.app` (iOS + Android).
 
-- `pnpm build` — compile TypeScript to `dist/`
-- `pnpm typecheck` — type-check without emitting
-- `pnpm test` — run unit tests (vitest)
+## Planned features (PRD §Mobile)
 
-See the [PRD](../../docs/tronbrowser-prd.md) for the overall architecture.
+AI chat · sync · voice · push notifications · agent dashboard.
+
+Builds/submission will go through EAS (`eas build` / `eas submit`); a CI
+workflow lands when Phase 2 starts.

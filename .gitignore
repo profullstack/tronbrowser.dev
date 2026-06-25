@@ -13,3 +13,7 @@ coverage/
 *.tsbuildinfo
 .vitest/
 .railway/
+
+# Expo / React Native (apps/mobile)
+.expo/
+*.orig

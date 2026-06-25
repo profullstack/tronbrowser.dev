@@ -1,0 +1,27 @@
+name: Submit to Package Managers
+
+# Refreshes downstream package managers after a release. Stubbed channels
+# (mirrors pairux.com's submit-packages). Wire each as the tap/manifest repos
+# and secrets land.
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to submit (e.g. 0.1.0)'
+        required: true
+
+jobs:
+  homebrew:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "stub - bump profullstack/homebrew-tap tronbrowser to ${{ github.event.inputs.version }} (url + sha256 from the release)"
+
+  scoop:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "stub - update Scoop manifest for ${{ github.event.inputs.version }}"
+
+  aur:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "stub - push AUR PKGBUILD for ${{ github.event.inputs.version }}"
