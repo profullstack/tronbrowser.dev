@@ -85,6 +85,51 @@ for d in "$EXTBASE"/*/; do
   [ -f "${d}manifest.json" ] && EXT="${EXT:+$EXT,}${d%/}"
 done
 
+# Ungoogled Chromium blocks web-store .crx installs until this flag is set to
+# "Always prompt for install". Pre-seed it in the profile's Local State so the
+# bundled chromium-web-store can install extensions. Best-effort (needs python3).
+if command -v python3 >/dev/null 2>&1; then
+  TB_LOCAL_STATE="$DATA/Local State" python3 - <<'PY' 2>/dev/null || true
+import json, os
+p = os.environ["TB_LOCAL_STATE"]
+os.makedirs(os.path.dirname(p), exist_ok=True)
+try:
+    d = json.load(open(p)) if os.path.exists(p) else {}
+except Exception:
+    d = {}
+exp = d.setdefault("browser", {}).setdefault("enabled_labs_experiments", [])
+flag = "extension-mime-request-handling@2"
+if flag not in exp:
+    exp.append(flag)
+    json.dump(d, open(p, "w"))
+PY
+fi
+
+# Default the omnibox to DuckDuckGo (Ungoogled ships no default search engine,
+# so keyword input becomes http://<keyword>). Only seeds on first run; the user
+# can change it in chrome://settings/search afterward.
+if command -v python3 >/dev/null 2>&1; then
+  TB_PREFS="$DATA/Default/Preferences" python3 - <<'PY' 2>/dev/null || true
+import json, os
+p = os.environ["TB_PREFS"]
+os.makedirs(os.path.dirname(p), exist_ok=True)
+try:
+    d = json.load(open(p)) if os.path.exists(p) else {}
+except Exception:
+    d = {}
+if not d.get("default_search_provider_data", {}).get("template_url_data"):
+    d.setdefault("default_search_provider_data", {})["template_url_data"] = {
+        "short_name": "DuckDuckGo",
+        "keyword": "duckduckgo.com",
+        "url": "https://duckduckgo.com/?q={searchTerms}",
+        "suggestions_url": "https://duckduckgo.com/ac/?q={searchTerms}&type=list",
+        "favicon_url": "https://duckduckgo.com/favicon.ico",
+        "safe_for_autoreplace": False,
+    }
+    json.dump(d, open(p, "w"))
+PY
+fi
+
 # Warn loudly when the chosen browser isn't a de-googled Ungoogled Chromium.
 case "$BROWSER" in
   *ungoogled*) ;;                      # ideal
