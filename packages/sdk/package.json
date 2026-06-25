@@ -1,6 +1,6 @@
 {
   "name": "@tronbrowser/sdk",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "private": true,
   "description": "Public SDK for TronBrowser apps and plugins",
   "type": "module",

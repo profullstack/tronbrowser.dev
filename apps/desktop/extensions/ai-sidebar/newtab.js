@@ -235,9 +235,11 @@ async function renderMotd() {
 }
 
 // --- bittorrented favorites (Live TV + Podcasts) when connected ---
+let btrTokenCache = '';
 async function renderBtr() {
   const sec = el('btr-sec');
   const token = await btrToken();
+  btrTokenCache = token || '';
   if (!token) { sec.hidden = true; return; }
   let data;
   try {
@@ -269,13 +271,17 @@ async function renderBtr() {
       return tile(ep?.player, p.url, p.image, '🎙', p.title, ep ? `▶ ${ep.title}` : 'no recent episodes');
     })) +
     group('Radio', radio.slice(0, 12).map((s) => tile(null, s.url, s.logo, '📻', s.name))) +
-    group('Movies', movies.slice(0, 12).map((m) => tile(null, m.url, m.poster, '🎬', m.title)));
+    group('Music', movies.filter((m) => m.contentType === 'music').slice(0, 12).map((m) => tile(null, m.url, m.poster, '🎵', m.title))) +
+    group('Books', movies.filter((m) => m.contentType === 'book').slice(0, 12).map((m) => tile(null, m.url, m.poster, '📖', m.title))) +
+    group('Movies & Shows', movies.filter((m) => !['music', 'book'].includes(m.contentType)).slice(0, 12).map((m) => tile(null, m.url, m.poster, '🎬', m.title)));
 }
 
-// Open a bittorrented /api/player URL in a themed modal iframe.
+// Open a bittorrented /api/player URL in a themed modal iframe. Append the
+// connect token so gated streams (Live TV) authenticate inside the iframe.
 function openPlayer(url) {
   const sep = url.includes('?') ? '&' : '?';
-  el('player-frame').src = `${url}${sep}theme=dark&bg=${encodeURIComponent('#05070d')}&accent=${encodeURIComponent('#34e7ff')}`;
+  const tk = btrTokenCache ? `&token=${encodeURIComponent(btrTokenCache)}` : '';
+  el('player-frame').src = `${url}${sep}theme=dark&bg=${encodeURIComponent('#05070d')}&accent=${encodeURIComponent('#34e7ff')}${tk}`;
   el('player-modal').hidden = false;
 }
 function closePlayer() { el('player-modal').hidden = true; el('player-frame').src = 'about:blank'; }

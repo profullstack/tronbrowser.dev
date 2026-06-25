@@ -107,10 +107,10 @@ if flag not in exp:
 PY
 fi
 
-# Default the omnibox to Xprivo (Ungoogled ships no default search engine, so
-# keyword input becomes http://<keyword>). DuckDuckGo is available as an
-# alternative. Only seeds on first run; change it in chrome://settings/search.
-if command -v python3 >/dev/null 2>&1; then
+# Default the omnibox to Xprivo. Force this ONCE per profile (older builds
+# defaulted to DuckDuckGo, and seeding-only-when-empty left existing profiles on
+# DDG) via a marker file, then respect the user's chrome://settings/search choice.
+if command -v python3 >/dev/null 2>&1 && [ ! -f "$DATA/.tron-search-xprivo" ]; then
   TB_PREFS="$DATA/Default/Preferences" python3 - <<'PY' 2>/dev/null || true
 import json, os
 p = os.environ["TB_PREFS"]
@@ -119,16 +119,16 @@ try:
     d = json.load(open(p)) if os.path.exists(p) else {}
 except Exception:
     d = {}
-if not d.get("default_search_provider_data", {}).get("template_url_data"):
-    d.setdefault("default_search_provider_data", {})["template_url_data"] = {
-        "short_name": "Xprivo",
-        "keyword": "xprivo.com",
-        "url": "https://www.xprivo.com/search/?q={searchTerms}",
-        "favicon_url": "https://www.xprivo.com/favicon.ico",
-        "safe_for_autoreplace": False,
-    }
-    json.dump(d, open(p, "w"))
+d.setdefault("default_search_provider_data", {})["template_url_data"] = {
+    "short_name": "Xprivo",
+    "keyword": "xprivo.com",
+    "url": "https://www.xprivo.com/search/?q={searchTerms}",
+    "favicon_url": "https://www.xprivo.com/favicon.ico",
+    "safe_for_autoreplace": False,
+}
+json.dump(d, open(p, "w"))
 PY
+  mkdir -p "$DATA"; : > "$DATA/.tron-search-xprivo"
 fi
 
 # Auto-detection only ever selects Ungoogled Chromium / flatpak ungoogled / the
