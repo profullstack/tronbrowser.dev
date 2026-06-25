@@ -270,7 +270,7 @@ async function renderBtr() {
       const ep = (p.episodes || [])[0];
       return tile(ep?.player, p.url, p.image, '🎙', p.title, ep ? `▶ ${ep.title}` : 'no recent episodes');
     })) +
-    group('Radio', radio.slice(0, 12).map((s) => tile(null, s.url, s.logo, '📻', s.name))) +
+    group('Radio', radio.slice(0, 12).map((s) => tile(s.player, s.url, s.logo, '📻', s.name))) +
     group('Music', movies.filter((m) => m.contentType === 'music').slice(0, 12).map((m) => tile(m.player, m.url, m.poster, '🎵', m.title))) +
     group('Books', movies.filter((m) => m.contentType === 'book').slice(0, 12).map((m) => tile(m.player, m.url, m.poster, '📖', m.title))) +
     group('Movies & Shows', movies.filter((m) => !['music', 'book'].includes(m.contentType)).slice(0, 12).map((m) => tile(m.player, m.url, m.poster, '🎬', m.title)));
