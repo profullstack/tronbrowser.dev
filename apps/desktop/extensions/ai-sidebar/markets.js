@@ -31,7 +31,8 @@ export async function fetchQuotes(symbols) {
   }));
 }
 
-// ESPN league key -> sport/league path.
+// ESPN league key -> sport/league path. Several aliases map to the same comp
+// (e.g. fifa/worldcup) so common names just work.
 export const LEAGUES = {
   nfl: 'football/nfl',
   ncaaf: 'football/college-football',
@@ -40,9 +41,20 @@ export const LEAGUES = {
   ncaam: 'basketball/mens-college-basketball',
   mlb: 'baseball/mlb',
   nhl: 'hockey/nhl',
+  // Soccer / football
+  worldcup: 'soccer/fifa.world',
+  fifa: 'soccer/fifa.world',
+  wwc: 'soccer/fifa.wwc',
+  wcq: 'soccer/fifa.worldq.uefa',
+  euro: 'soccer/uefa.euro',
+  ucl: 'soccer/uefa.champions',
+  uel: 'soccer/uefa.europa',
   mls: 'soccer/usa.1',
   epl: 'soccer/eng.1',
-  ucl: 'soccer/uefa.champions',
+  laliga: 'soccer/esp.1',
+  bundesliga: 'soccer/ger.1',
+  seriea: 'soccer/ita.1',
+  ligue1: 'soccer/fra.1',
 };
 
 export async function fetchScores(leagueKey) {
