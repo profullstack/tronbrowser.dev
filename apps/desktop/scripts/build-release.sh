@@ -42,11 +42,14 @@ stage() { # dest dir
   # so the package contains real files, not dangling links.
   cp -RL "$DESKTOP/extensions/ai-sidebar" "$s/extensions/ai-sidebar"
   cp "$REPO_ROOT/LICENSE" "$s/LICENSE"
-  # Branding from the repo-root single source of truth.
-  cp -L "$REPO_ROOT/favicon.svg" "$s/tronbrowser.svg"
+  # Branding from the repo-root single source of truth. The desktop/app icon uses
+  # the EMBLEM-only mark (mark.svg) — the full lockup (favicon.svg, with wordmark)
+  # is only for big logo displays, not tiny app icons.
+  cp -L "$REPO_ROOT/mark.svg" "$s/tronbrowser.svg"
+  cp -L "$REPO_ROOT/favicon.svg" "$s/favicon.svg"
   cp -L "$REPO_ROOT/logo.svg" "$s/logo.svg"
   cp -L "$REPO_ROOT/banner.png" "$s/banner.png"
-  # PNG app icon (favicon-sourced) for desktops that render SVG icons poorly (KDE).
+  # PNG app icon (emblem) for desktops that render SVG icons poorly (KDE).
   cp -L "$REPO_ROOT/apps/web/public/icons/icon-512x512.png" "$s/tronbrowser.png" 2>/dev/null || true
   printf '%s\n' "$VERSION" > "$s/VERSION"
 
