@@ -29,6 +29,9 @@ COPY logo.svg favicon.svg mark.svg banner.png /srv/
 COPY --from=api /api/dist /api/dist
 COPY --from=api /api/node_modules /api/node_modules
 COPY --from=api /api/package.json /api/package.json
+# DB migrations run on boot (start.sh) so schema never drifts from the deploy.
+COPY scripts/db-migrate.mjs /api/db-migrate.mjs
+COPY packages/storage/migrations /api/migrations
 COPY start.sh /start.sh
 RUN chmod +x /start.sh
 CMD ["/start.sh"]
