@@ -33,6 +33,24 @@ fetch_ublock() {
   rm -f "$z"  # keep $d (UBO_SRC lives inside) until the script exits
 }
 
+# Fetch MarkSyncr ONCE from the Chrome Web Store (latest published CRX). Open
+# source (github.com/profullstack/marksyncr.com), MV3 bookmark sync. Non-fatal.
+MKS_ID="hjcjjcpialiakkalcgadnfnoomdaegjg"
+MKS_SRC=""
+fetch_marksyncr() {
+  local url="https://clients2.google.com/service/update2/crx?response=redirect&acceptformat=crx2,crx3&prodversion=120.0.0.0&x=id%3D${MKS_ID}%26installsource%3Dondemand%26uc"
+  local z d m; z="$(mktemp)"; d="$(mktemp -d)"
+  if curl -fsSL -A "Mozilla/5.0 Chrome/120.0.0.0" "$url" -o "$z" 2>/dev/null; then
+    # CRX files have a header before the zip → unzip prints a warning and exits
+    # 1 even though it extracts fine; don't gate on its exit code.
+    unzip -q -o "$z" -d "$d" 2>/dev/null || true
+    m="$(find "$d" -maxdepth 2 -name manifest.json | head -1)"
+    if [ -n "$m" ]; then MKS_SRC="$(dirname "$m")"; echo "  + fetched MarkSyncr (CWS $MKS_ID)"; fi
+  fi
+  rm -f "$z"
+  [ -n "$MKS_SRC" ] || echo "  ! MarkSyncr fetch skipped (non-fatal)"
+}
+
 stage() { # dest dir
   local s="$1"
   mkdir -p "$s/extensions"
@@ -64,6 +82,11 @@ stage() { # dest dir
     mkdir -p "$s/extensions/ublock-origin"
     cp -R "$UBO_SRC/." "$s/extensions/ublock-origin/"
   fi
+  # Bundled bookmark sync: MarkSyncr (fetched once into $MKS_SRC).
+  if [ -n "$MKS_SRC" ] && [ -d "$MKS_SRC" ]; then
+    mkdir -p "$s/extensions/marksyncr"
+    cp -R "$MKS_SRC/." "$s/extensions/marksyncr/"
+  fi
 }
 
 build_archive() { # ext-type
@@ -78,6 +101,7 @@ build_archive() { # ext-type
 }
 
 fetch_ublock
+fetch_marksyncr
 
 case "$PLATFORM" in
   linux|macos|windows) build_archive "$PLATFORM" ;;

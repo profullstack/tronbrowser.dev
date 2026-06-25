@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Connecting… — TronBrowser</title>
+<link rel="icon" href="/mark.svg" type="image/svg+xml" />
+<meta name="robots" content="noindex" />
+<style>
+  body{margin:0;min-height:100vh;display:grid;place-items:center;background:#05070d;
+    color:#cfe8ff;font:16px/1.6 ui-monospace,Menlo,monospace;text-align:center}
+  .box{max-width:420px;padding:24px}
+  img{width:96px;height:auto;margin-bottom:16px}
+  .muted{color:#6f86b3}
+</style></head>
+<body>
+  <div class="box">
+    <img src="/mark.svg" alt="TronBrowser" />
+    <h1 id="msg">Connecting your account…</h1>
+    <p class="muted" id="sub">You can close this tab.</p>
+  </div>
+  <!--
+    The TronBrowser extension injects a content script here that reads the token
+    from the URL fragment (#token=…) and stores it. This page is just a landing
+    surface — the token never reaches the server (it's in the fragment). If you
+    landed here outside TronBrowser, nothing happens.
+  -->
+</body></html>
