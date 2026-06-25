@@ -13,11 +13,16 @@ command -v nfpm >/dev/null 2>&1 || { echo "nfpm not installed (https://nfpm.gore
 work="$(mktemp -d)"
 tar -xzf "$TARBALL" -C "$work"            # -> $work/tronbrowser
 
-export TB_VERSION="${VERSION#v}"
-export TB_ROOT="$work/tronbrowser"
+TB_VERSION="${VERSION#v}"
+TB_ROOT="$work/tronbrowser"
 
-nfpm package -f "$ROOT/packaging/nfpm.yaml" -p deb -t "$ROOT/dist"
-nfpm package -f "$ROOT/packaging/nfpm.yaml" -p rpm -t "$ROOT/dist"
+# Render the config (nfpm doesn't reliably expand env in contents.src globs).
+rendered="$work/nfpm.yaml"
+sed -e "s|\${TB_VERSION}|${TB_VERSION}|g" -e "s|\${TB_ROOT}|${TB_ROOT}|g" \
+  "$ROOT/packaging/nfpm.yaml" > "$rendered"
+
+nfpm package -f "$rendered" -p deb -t "$ROOT/dist"
+nfpm package -f "$rendered" -p rpm -t "$ROOT/dist"
 
 rm -rf "$work"
 echo "built deb + rpm:"

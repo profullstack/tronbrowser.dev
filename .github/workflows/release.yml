@@ -51,10 +51,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v5
-      - uses: pnpm/action-setup@v6
-      - uses: actions/setup-node@v5
-        with:
-          node-version: lts/*
+      # Runners ship Node preinstalled; these steps only run scripts + packaging,
+      # so we skip setup-node (its packageManager:pnpm detection causes cache noise).
 
       - name: Sync version
         run: node scripts/set-version.mjs "${{ needs.create-release.outputs.version }}"

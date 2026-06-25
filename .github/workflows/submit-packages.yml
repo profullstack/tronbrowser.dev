@@ -27,10 +27,7 @@ jobs:
     name: Submit (Linux)
     steps:
       - uses: actions/checkout@v5
-      - uses: pnpm/action-setup@v6
-      - uses: actions/setup-node@v5
-        with:
-          node-version: lts/*
+      # Node is preinstalled on the runner; submit-packages.mjs only uses builtins.
 
       - name: Resolve version
         id: v
@@ -70,10 +67,6 @@ jobs:
       contains(github.event.inputs.package_managers, 'chocolatey')
     steps:
       - uses: actions/checkout@v5
-      - uses: pnpm/action-setup@v6
-      - uses: actions/setup-node@v5
-        with:
-          node-version: lts/*
       - name: Resolve version
         id: v
         shell: bash
