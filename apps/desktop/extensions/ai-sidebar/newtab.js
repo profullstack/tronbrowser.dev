@@ -282,6 +282,11 @@ async function renderBtr() {
 function openPlayer(url) {
   const sep = url.includes('?') ? '&' : '?';
   const tk = btrTokenCache ? `&token=${encodeURIComponent(btrTokenCache)}` : '';
+  // Audio types (podcast/music/radio) render a docked bar, not a 16:9 video box —
+  // size the modal as a short bottom dock to match.
+  const type = (url.match(/[?&]type=([^&]+)/) || [])[1] || '';
+  const isAudio = ['audio', 'podcast', 'music', 'radio'].includes(type);
+  el('player-modal').classList.toggle('audio', isAudio);
   // _ cache-buster: never reuse a previously-cached response (older builds got an
   // X-Frame-Options header that the browser may still be holding).
   el('player-frame').src =

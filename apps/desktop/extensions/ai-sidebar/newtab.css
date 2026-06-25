@@ -44,6 +44,11 @@ body {
   background: #000; border: 1px solid var(--line); border-radius: 12px; overflow: hidden;
   box-shadow: 0 20px 80px rgba(0,0,0,.6); }
 .modal-box iframe { width: 100%; height: 100%; border: 0; display: block; }
+/* Audio dock: a short bar docked to the bottom of the viewport, not a video box. */
+.modal.audio { place-items: end center; background: rgba(0,0,0,.45); }
+.modal.audio .modal-box { width: min(96vw, 920px); height: 78px; margin-bottom: 18px;
+  background: var(--bg); border-radius: 12px; }
+.modal.audio .modal-close { top: -36px; right: 0; }
 .modal-close { position: absolute; top: 8px; right: 8px; z-index: 2; width: 32px; height: 32px;
   background: rgba(0,0,0,.6); color: #fff; border: 1px solid var(--line); border-radius: 8px;
   cursor: pointer; font: inherit; }
