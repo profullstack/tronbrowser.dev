@@ -146,7 +146,20 @@ do_install() {
 }
 
 do_upgrade() {
-  if [ -f "$VERSION_FILE" ]; then info "Current: $(cat "$VERSION_FILE")"; else warn "TronBrowser not installed; installing fresh."; fi
+  if [ ! -f "$VERSION_FILE" ]; then
+    warn "TronBrowser not installed; installing fresh."
+    do_install
+    return
+  fi
+  current="$(cat "$VERSION_FILE")"
+  latest="$(latest_tag)"
+  [ -n "$latest" ] || err "could not resolve the latest release of $REPO"
+  if [ "$current" = "$latest" ] && [ "${TB_FORCE:-0}" != "1" ]; then
+    info "TronBrowser is already up to date ($current)."
+    info "Re-install anyway with: TB_FORCE=1 tron upgrade"
+    return
+  fi
+  info "Updating $current -> $latest"
   do_install
 }
 
