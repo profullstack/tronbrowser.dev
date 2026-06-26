@@ -80,9 +80,16 @@ export async function slugTaken(slug: string): Promise<boolean> {
   return r.rows.length > 0;
 }
 
+export function boundedInteger(value: number | undefined, fallback: number, min: number, max?: number): number {
+  if (!Number.isFinite(value)) return fallback;
+  const integer = Math.trunc(value as number);
+  const lowerBounded = Math.max(integer, min);
+  return typeof max === 'number' ? Math.min(lowerBounded, max) : lowerBounded;
+}
+
 export async function listLiveExtensions(opts: { q?: string | undefined; limit?: number; offset?: number } = {}): Promise<Extension[]> {
-  const limit = Math.min(Math.max(opts.limit ?? 50, 1), 100);
-  const offset = Math.max(opts.offset ?? 0, 0);
+  const limit = boundedInteger(opts.limit, 50, 1, 100);
+  const offset = boundedInteger(opts.offset, 0, 0);
   if (opts.q) {
     const like = `%${opts.q}%`;
     const r = await db().execute({
