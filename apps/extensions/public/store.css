@@ -142,3 +142,26 @@ footer { border-top: 1px solid var(--border); color: var(--muted); font-size: 13
 .muted { color: var(--muted); }
 .center { text-align: center; }
 .hidden { display: none !important; }
+
+/* Mobile nav: the fixed-height single row overflowed and wrapped messily. Keep
+   the brand + Sign in on the top row and let the nav links flow onto their own
+   row below, instead of every anchor wrapping independently. */
+@media (max-width: 640px) {
+  .nav .wrap {
+    flex-wrap: wrap;
+    height: auto;
+    gap: 6px 16px;
+    padding-top: 10px;
+    padding-bottom: 10px;
+  }
+  /* Brand stays top-left with Sign in pushed to the top-right; the nav links
+     drop to their own row below instead of each anchor wrapping on its own.
+     The existing .spacer (a direct flex child) becomes a full-width line break. */
+  .brand { order: 0; }
+  .brand img { height: 26px; }
+  .acctbar { order: 1; margin-left: auto; }
+  .nav .spacer { order: 2; flex-basis: 100%; height: 0; }
+  .nav a.navlink { order: 3; font-size: 14px; }
+  /* Footer link list: give it room so it wraps between links, not mid-phrase. */
+  footer .wrap { line-height: 2; }
+}
