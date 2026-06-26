@@ -1,6 +1,6 @@
 {
   "name": "@tronbrowser/workflow-engine",
-  "version": "0.2.21",
+  "version": "0.2.22",
   "private": true,
   "description": "Typed node-based workflow engine",
   "type": "module",
