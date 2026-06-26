@@ -183,6 +183,33 @@ brand_macos_icon() {
   fi
 }
 
+# Stop any running TronBrowser before we replace its files. A window left open
+# across an upgrade keeps handles on the old app dir and throws ERR_FILE_NOT_FOUND
+# until it's restarted. We match TronBrowser's UNIQUE launch signature
+# (--class=TronBrowser, set by the launcher on every platform) so the user's other
+# Chromium/Chrome windows are never touched. Best-effort; skip with TB_NO_KILL=1.
+stop_running() {
+  [ "${TB_NO_KILL:-0}" = "1" ] && return 0
+  sig='class=TronBrowser'
+  if command -v pgrep >/dev/null 2>&1; then
+    pids="$(pgrep -f "$sig" 2>/dev/null || true)"
+  else
+    pids="$(ps ax 2>/dev/null | grep -F "$sig" | grep -v grep | awk '{print $1}')"
+  fi
+  [ -n "${pids:-}" ] || return 0
+  info "Stopping running TronBrowser…"
+  for pid in $pids; do kill "$pid" 2>/dev/null || true; done
+  # Wait up to ~5s for a clean exit, then force-kill stragglers.
+  n=0
+  while [ "$n" -lt 5 ]; do
+    alive=0
+    for pid in $pids; do kill -0 "$pid" 2>/dev/null && alive=1; done
+    [ "$alive" = "0" ] && return 0
+    sleep 1; n=$((n + 1))
+  done
+  for pid in $pids; do kill -9 "$pid" 2>/dev/null || true; done
+}
+
 do_install() {
   need uname
   asset="$(detect_asset)"
@@ -194,6 +221,7 @@ do_install() {
   tmp="$(mktemp -d)"
   fetch "$url" "$tmp/$asset" || err "download failed: $url"
 
+  stop_running   # don't replace files under a live instance (ERR_FILE_NOT_FOUND)
   rm -rf "$APP_DIR"; mkdir -p "$APP_DIR" "$PREFIX/bin"
   case "$asset" in
     *.tar.gz) tar -xzf "$tmp/$asset" -C "$APP_DIR" ;;
