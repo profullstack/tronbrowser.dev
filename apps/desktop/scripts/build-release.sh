@@ -61,9 +61,9 @@ stage() { # dest dir
   cp -RL "$DESKTOP/extensions/ai-sidebar" "$s/extensions/ai-sidebar"
   cp "$REPO_ROOT/LICENSE" "$s/LICENSE"
   # Branding from the repo-root single source of truth. The desktop/app icon uses
-  # the EMBLEM-only mark (mark.svg) — the full lockup (favicon.svg, with wordmark)
-  # is only for big logo displays, not tiny app icons.
-  cp -L "$REPO_ROOT/mark.svg" "$s/tronbrowser.svg"
+  # the emblem on the dark tile (hero.svg) — favicon.svg is the transparent emblem
+  # and logo.svg is the full lockup, only for big displays, not tiny app icons.
+  cp -L "$REPO_ROOT/hero.svg" "$s/tronbrowser.svg"
   cp -L "$REPO_ROOT/favicon.svg" "$s/favicon.svg"
   cp -L "$REPO_ROOT/logo.svg" "$s/logo.svg"
   cp -L "$REPO_ROOT/banner.png" "$s/banner.png"
