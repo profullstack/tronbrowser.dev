@@ -9,7 +9,7 @@
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run --passWithNoTests",
-    "lint": "echo \"[lint] api: stub\"",
+    "lint": "eslint src",
     "start": "node dist/index.js",
     "migrate": "node ../../scripts/db-migrate.mjs"
   },
