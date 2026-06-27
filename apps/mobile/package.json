@@ -16,7 +16,7 @@
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run --passWithNoTests",
-    "lint": "echo \"[lint] mobile: stub\"",
+    "lint": "eslint src",
     "_comment": "Phase 2: run `pnpm add expo react react-native expo-status-bar` then use the scripts below.",
     "start": "expo start",
     "android": "expo start --android",

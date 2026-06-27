@@ -16,7 +16,7 @@
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run --passWithNoTests",
-    "lint": "echo \"[lint] desktop: stub\"",
+    "lint": "eslint src extensions",
     "chromium:fetch": "chromium/scripts/fetch.sh",
     "chromium:sync": "chromium/scripts/sync.sh",
     "chromium:patch": "chromium/scripts/apply-patches.sh",

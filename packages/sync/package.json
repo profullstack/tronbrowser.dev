@@ -16,7 +16,7 @@
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run --passWithNoTests",
-    "lint": "echo \"[lint] sync: stub\""
+    "lint": "eslint src"
   },
   "devDependencies": {
     "typescript": "^5.6.3",

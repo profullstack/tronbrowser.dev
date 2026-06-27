@@ -11,7 +11,7 @@
   "scripts": {
     "build": "pnpm -r build",
     "test": "pnpm -r test",
-    "lint": "pnpm -r lint",
+    "lint": "eslint scripts && pnpm -r lint",
     "typecheck": "pnpm -r typecheck",
     "version:set": "node scripts/set-version.mjs",
     "clean": "pnpm -r exec rm -rf dist",
@@ -22,6 +22,10 @@
     "@types/node": "^24.0.0",
     "typescript": "^5.6.3",
     "vitest": "^2.1.4",
-    "@libsql/client": "^0.14.0"
+    "@libsql/client": "^0.14.0",
+    "@eslint/js": "^9.18.0",
+    "eslint": "^9.18.0",
+    "globals": "^15.14.0",
+    "typescript-eslint": "^8.62.0"
   }
 }
