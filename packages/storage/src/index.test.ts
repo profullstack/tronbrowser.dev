@@ -37,6 +37,15 @@ describe('@tronbrowser/storage config', () => {
     expect(() => resolveStorageConfig({ [ENV.url]: 'libsql://x.turso.io' })).toThrow(/AUTH_TOKEN/);
   });
 
+  it('reports invalid remote URLs as storage configuration errors', () => {
+    expect(() =>
+      resolveStorageConfig({
+        [ENV.url]: 'not a valid remote url',
+        [ENV.authToken]: 'tok',
+      }),
+    ).toThrow(/TRONBROWSER_DB_URL must be a valid remote libSQL\/Turso URL/);
+  });
+
   it('errors when nothing is configured', () => {
     expect(() => resolveStorageConfig({})).toThrow(/No storage configured/);
   });
