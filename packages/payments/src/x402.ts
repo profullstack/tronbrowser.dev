@@ -47,6 +47,35 @@ export interface PaymentPayload {
   payload: Record<string, unknown>;
 }
 
+const REQUIRED_ACCEPT_FIELDS = [
+  'scheme',
+  'network',
+  'maxAmountRequired',
+  'resource',
+  'payTo',
+  'asset',
+] as const satisfies readonly (keyof PaymentRequirements)[];
+
+function validatePaymentRequirement(value: unknown, index: number): PaymentRequirements {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    throw new Error(`x402: accepts[${index}] is not an object`);
+  }
+
+  const req = value as Record<string, unknown>;
+  for (const field of REQUIRED_ACCEPT_FIELDS) {
+    if (typeof req[field] !== 'string' || !req[field].trim()) {
+      throw new Error(`x402: accepts[${index}].${field} must be a non-empty string`);
+    }
+  }
+
+  const maxAmountRequired = req['maxAmountRequired'] as string;
+  if (!/^\d+$/.test(maxAmountRequired)) {
+    throw new Error(`x402: accepts[${index}].maxAmountRequired must be an atomic-unit integer string`);
+  }
+
+  return req as unknown as PaymentRequirements;
+}
+
 /** Parses a 402 response body, throwing on malformed input. */
 export function parsePaymentRequired(body: unknown): PaymentRequiredBody {
   if (typeof body !== 'object' || body === null) {
@@ -58,7 +87,7 @@ export function parsePaymentRequired(body: unknown): PaymentRequiredBody {
   }
   return {
     x402Version: typeof b['x402Version'] === 'number' ? b['x402Version'] : X402_VERSION,
-    accepts: b['accepts'] as PaymentRequirements[],
+    accepts: b['accepts'].map(validatePaymentRequirement),
     ...(typeof b['error'] === 'string' ? { error: b['error'] } : {}),
   };
 }

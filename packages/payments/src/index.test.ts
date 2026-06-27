@@ -25,10 +25,40 @@ describe('x402 header codec', () => {
   });
 
   it('parses a 402 body and rejects malformed input', () => {
-    const body = { x402Version: 1, accepts: [{ network: 'base' }] };
+    const body = {
+      x402Version: 1,
+      accepts: [
+        {
+          scheme: 'exact',
+          network: 'base',
+          maxAmountRequired: '1000',
+          resource: 'https://x/y',
+          payTo: '0xdest',
+          asset: 'USDC',
+        },
+      ],
+    };
     expect(parsePaymentRequired(body).accepts).toHaveLength(1);
     expect(() => parsePaymentRequired({})).toThrow(/accepts/);
     expect(() => parsePaymentRequired(null)).toThrow();
+  });
+
+  it('rejects malformed accepts entries before payment processing', () => {
+    expect(() => parsePaymentRequired({ accepts: [null] })).toThrow(/accepts\[0\] is not an object/);
+    expect(() =>
+      parsePaymentRequired({
+        accepts: [
+          {
+            scheme: 'exact',
+            network: 'base',
+            maxAmountRequired: 'not-a-number',
+            resource: 'https://x/y',
+            payTo: '0xdest',
+            asset: 'USDC',
+          },
+        ],
+      }),
+    ).toThrow(/maxAmountRequired/);
   });
 });
 
