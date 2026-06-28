@@ -66,6 +66,7 @@ PREFIX="${TRONBROWSER_PREFIX:-$HOME/.local}"
 APP_DIR="$PREFIX/lib/tronbrowser"
 CURRENT="$APP_DIR/current"
 VERSION_FILE="$APP_DIR/VERSION"
+AUTO_UPGRADE_STAMP="$APP_DIR/.last-auto-upgrade-check"
 INSTALL_URL="https://tronbrowser.dev/install.sh"
 
 usage() {
@@ -80,11 +81,37 @@ Usage:
   tron remove           Uninstall TronBrowser (keeps your profile data)
   tron version          Print the installed version
   tron help             Show this help
+
+Set TRONBROWSER_AUTO_UPGRADE=0 to skip the once-daily background upgrade check.
 USAGE
+}
+
+maybe_auto_upgrade() {
+  case "${TRONBROWSER_AUTO_UPGRADE:-1}" in
+    0|false|False|FALSE|no|No|NO) return 0 ;;
+  esac
+  command -v curl >/dev/null 2>&1 || return 0
+  [ -d "$APP_DIR" ] || return 0
+
+  now="$(date +%s 2>/dev/null || echo 0)"
+  last="$(cat "$AUTO_UPGRADE_STAMP" 2>/dev/null || echo 0)"
+  case "$now:$last" in
+    0:*) return 0 ;;
+  esac
+  case "$last" in
+    ''|*[!0-9]*) last=0 ;;
+  esac
+  [ "$((now - last))" -lt 86400 ] && return 0
+
+  printf '%s\n' "$now" > "$AUTO_UPGRADE_STAMP" 2>/dev/null || return 0
+  (
+    TRONBROWSER_AUTO_UPGRADE=0 sh -c "curl -fsSL '$INSTALL_URL' | sh -s -- upgrade"
+  ) >/dev/null 2>&1 &
 }
 
 launch() {
   [ -x "$CURRENT" ] || { echo "TronBrowser is not installed. Run: curl -fsSL $INSTALL_URL | sh" >&2; exit 1; }
+  maybe_auto_upgrade
   exec "$CURRENT" "$@"
 }
 
