@@ -1,6 +1,6 @@
 {
   "name": "@tronbrowser/agent-runtime",
-  "version": "3.2.14",
+  "version": "3.2.15",
   "private": true,
   "description": "Agent runtime: planner, executor, validator, memory, tools",
   "type": "module",
