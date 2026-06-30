@@ -18,6 +18,7 @@ Endpoints (POST/GET on 127.0.0.1):
 Single-instance: binds a fixed loopback port; a second copy exits cleanly when
 the port is taken, so the launcher can fire-and-forget it every launch.
 """
+import glob
 import json
 import os
 import shutil
@@ -46,13 +47,31 @@ def log(msg):
 
 def tor_binary():
     """Bundled `tor` next to the helper or under tor-bin/ (the auto-installed
-    Tor Expert Bundle), else one on PATH (or None)."""
+    Tor Expert Bundle), else one on PATH (or None). Checks the launcher dir, its
+    tor-bin/, and the parent's tor-bin/ (the release extracts the shim into a
+    subdir, so tor-bin can live a level up)."""
+    cands = []
     if BUNDLED_DIR:
-        for cand in (os.path.join(BUNDLED_DIR, "tor"),
-                     os.path.join(BUNDLED_DIR, "tor-bin", "tor")):
-            if os.access(cand, os.X_OK):
-                return cand
+        parent = os.path.dirname(BUNDLED_DIR.rstrip("/"))
+        cands += [os.path.join(BUNDLED_DIR, "tor"),
+                  os.path.join(BUNDLED_DIR, "tor-bin", "tor"),
+                  os.path.join(parent, "tor-bin", "tor")]
+    for cand in cands:
+        if os.access(cand, os.X_OK):
+            return cand
     return shutil.which("tor")
+
+
+def socks_port_open():
+    """True if something already accepts connections on the SOCKS port — e.g.
+    Tor started by `tron tor` or a system service. Then we reuse it instead of
+    spawning a duplicate (a second tor would fail to bind the port)."""
+    import socket
+    try:
+        with socket.create_connection((HOST, SOCKS_PORT), timeout=1.5):
+            return True
+    except OSError:
+        return False
 
 
 def start_tor():
@@ -60,7 +79,14 @@ def start_tor():
     global _proc, _ready
     with _lock:
         if _proc is not None and _proc.poll() is None and _ready:
-            return True, None  # already up
+            return True, None  # already up (we started it)
+    # Something already serving SOCKS on the port (tron tor / system tor)? Reuse
+    # it — don't spawn a second tor that would fail to bind the port.
+    if socks_port_open():
+        _set_ready(True)
+        log("tor already running on %s:%d — reusing it" % (HOST, SOCKS_PORT))
+        return True, None
+    with _lock:
         binary = tor_binary()
         if not binary:
             log("start requested but no tor binary found (bundled or on PATH)")
@@ -74,11 +100,12 @@ def start_tor():
 
         _ready = False
         env = os.environ.copy()
-        # The Tor Expert Bundle ships its own libs next to the binary with no
-        # $ORIGIN rpath, so a bundled/auto-installed tor needs its dir on the
-        # library path. (Harmless for a system tor, which we don't touch here.)
-        if BUNDLED_DIR and os.path.dirname(binary).startswith(BUNDLED_DIR):
-            bindir = os.path.dirname(binary)
+        # The Tor Expert Bundle ships its own libs (libevent/libssl/…) next to
+        # the binary with no $ORIGIN rpath, so it needs its dir on the library
+        # path. Detect a bundle by a sibling libevent — works wherever tor was
+        # found; a system tor (no sibling libs) is left untouched.
+        bindir = os.path.dirname(binary)
+        if glob.glob(os.path.join(bindir, "libevent*")):
             for var in ("LD_LIBRARY_PATH", "DYLD_LIBRARY_PATH"):
                 env[var] = bindir + (os.pathsep + env[var] if env.get(var) else "")
         try:

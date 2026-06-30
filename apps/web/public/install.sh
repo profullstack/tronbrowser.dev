@@ -131,7 +131,9 @@ case "${1:-}" in
     # (any platform) if missing. (The `--tor` flag, handled by the launcher,
     # instead opens a dedicated Tor session.)
     resolve_tor() {
-      if [ -x "$APP_DIR/tor-bin/tor" ]; then echo "$APP_DIR/tor-bin/tor"
+      ldir="$(dirname "$(readlink -f "$CURRENT" 2>/dev/null || echo "$CURRENT")")"
+      if   [ -x "$ldir/tor-bin/tor" ];     then echo "$ldir/tor-bin/tor"
+      elif [ -x "$APP_DIR/tor-bin/tor" ];  then echo "$APP_DIR/tor-bin/tor"
       else command -v tor 2>/dev/null || true; fi
     }
     TORBIN="$(resolve_tor)"
@@ -321,7 +323,12 @@ download_tor_expert_bundle() { # dest_dir
 ensure_tor() {
   [ "${TB_NO_TOR_INSTALL:-0}" = "1" ] && return 0
   command -v tor >/dev/null 2>&1 && return 0
-  [ -x "$APP_DIR/tor-bin/tor" ] && return 0
+  # Install Tor right next to the launcher shim so its dir ($DIR/tor-bin) resolves
+  # it — the release tarball extracts the shim into a tronbrowser/ subdir.
+  tordest="$APP_DIR/tor-bin"
+  _ldir="$(find "$APP_DIR" -maxdepth 3 -type f -name tronbrowser 2>/dev/null | head -n1)"
+  [ -n "$_ldir" ] && tordest="$(dirname "$_ldir")/tor-bin"
+  [ -x "$tordest/tor" ] && return 0
 
   info "Setting up Tor (for the in-browser Tor toggle)…"
   # 1) Homebrew (macOS/Linux) — no sudo.
