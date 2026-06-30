@@ -23,9 +23,12 @@ if (qo) qo.addEventListener('click', (e) => { e.preventDefault(); chrome.tabs.cr
 
 // --- IRC ------------------------------------------------------------------
 const STORE_KEY = 'ircConfig';
+const STATUS = '✻ status'; // server/system window (always present, pinned first)
 const irc = new IrcClient();
 const buffers = new Map(); // channel -> [{from,text,time,...}]
 let active = null;
+
+function logStatus(text) { appendMsg({ channel: STATUS, sys: true, text, time: Date.now() }); }
 
 function setStatus(text, kind) { const s = $('irc-status'); s.textContent = text; s.className = 'status ' + (kind || ''); }
 
@@ -72,19 +75,22 @@ function appendMsg(line, store = true) {
 
 irc.addEventListener('status', (e) => {
   const { state, error } = e.detail;
-  if (state === 'connecting') setStatus('Connecting…');
+  if (state === 'connecting') { setStatus('Connecting…'); logStatus('Connecting…'); }
   else if (state === 'connected') {
     setStatus('Connected ✓', 'ok');
     $('irc-connect').classList.add('hidden');
     $('irc-client').classList.remove('hidden');
     $('irc-me').textContent = irc.nick;
+    logStatus(`Connected as ${irc.nick}`);
   } else if (state === 'disconnected') {
     setStatus('Disconnected', 'err');
+    logStatus('Disconnected');
   } else if (state === 'error') {
     setStatus(error || 'error', 'err');
+    logStatus('Error: ' + (error || 'unknown'));
   }
 });
-irc.addEventListener('joined', (e) => { ensureBuffer(e.detail.channel); if (!active) selectChannel(e.detail.channel); });
+irc.addEventListener('joined', (e) => { ensureBuffer(e.detail.channel); if (!active || active === STATUS) selectChannel(e.detail.channel); });
 irc.addEventListener('message', (e) => { appendMsg(e.detail); maybeNotify(e.detail); });
 
 // --- web notifications for incoming IRC messages --------------------------
@@ -119,7 +125,8 @@ if (chrome?.notifications?.onClicked) {
     }
   });
 }
-irc.addEventListener('system', (e) => { if (e.detail.channel) appendMsg({ channel: e.detail.channel, sys: true, text: e.detail.text }); });
+irc.addEventListener('system', (e) => { appendMsg({ channel: e.detail.channel || STATUS, sys: true, text: e.detail.text }); });
+irc.addEventListener('names', (e) => logStatus(`Names ${e.detail.channel}: ${(e.detail.names || []).join(' ')}`));
 irc.addEventListener('topic', (e) => { if (e.detail.channel === active) $('chan-title').textContent = `${e.detail.channel} — ${e.detail.topic}`; });
 
 async function doConnect() {
@@ -145,12 +152,41 @@ $('join-form').addEventListener('submit', (e) => { e.preventDefault(); const v =
 $('say-form').addEventListener('submit', (e) => {
   e.preventDefault();
   const v = $('say-input').value;
-  if (!v.trim() || !active) return;
-  if (v.startsWith('/join ')) irc.join(v.slice(6).trim());
-  else if (v.startsWith('/msg ')) { const [, who, ...rest] = v.split(' '); irc.say(who, rest.join(' ')); }
-  else irc.say(active, v);
+  if (!v.trim()) return;
+  if (v[0] === '/') handleCommand(v.slice(1));
+  else if (active && active !== STATUS) irc.say(active, v);
+  else logStatus('Not in a channel — use /join #channel');
   $('say-input').value = '';
 });
+
+// Slash-commands → real IRC. Known verbs get friendly handling; anything else
+// is passed through verbatim (e.g. "/mode #chan +o nick", "/who #chan").
+function handleCommand(raw) {
+  const sp = raw.indexOf(' ');
+  const cmd = (sp === -1 ? raw : raw.slice(0, sp)).toLowerCase();
+  const rest = sp === -1 ? '' : raw.slice(sp + 1).trim();
+  const args = rest ? rest.split(/\s+/) : [];
+  const inChan = active && active !== STATUS;
+  switch (cmd) {
+    case 'join': case 'j': if (args[0]) irc.join(args[0]); break;
+    case 'part': case 'leave': irc.part(args[0] || (inChan ? active : '')); break;
+    case 'msg': case 'query': if (args[0]) irc.say(args[0], args.slice(1).join(' ')); break;
+    case 'me':
+      if (inChan && rest) {
+        irc.send(`PRIVMSG ${active} :ACTION ${rest}`);
+        appendMsg({ channel: active, from: irc.nick, text: rest, self: true, time: new Date().toISOString() });
+      }
+      break;
+    case 'nick': if (args[0]) irc.send(`NICK ${args[0]}`); break;
+    case 'topic': if (inChan) irc.send(`TOPIC ${active}${rest ? ' :' + rest : ''}`); break;
+    case 'names': irc.send(`NAMES ${args[0] || (inChan ? active : '')}`.trim()); break;
+    case 'list': irc.send(`LIST ${rest}`.trim()); break;
+    case 'whois': if (args[0]) irc.send(`WHOIS ${args[0]}`); break;
+    case 'quit': irc.quit(); break;
+    case 'raw': case 'quote': if (rest) irc.send(rest); break;
+    default: irc.send(raw); // generic passthrough — any other IRC command
+  }
+}
 
 // Prefill from saved config — and auto-connect if a full account is set up.
 (async () => {

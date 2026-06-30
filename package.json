@@ -1,6 +1,6 @@
 {
   "name": "tronbrowser",
-  "version": "3.5.0",
+  "version": "3.6.0",
   "private": true,
   "description": "TronBrowser.dev — open-source, privacy-first, AI-native browser",
   "packageManager": "pnpm@9.12.0",

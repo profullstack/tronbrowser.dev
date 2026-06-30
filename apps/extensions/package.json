@@ -1,6 +1,6 @@
 {
   "name": "@tronbrowser/extensions",
-  "version": "3.5.0",
+  "version": "3.6.0",
   "private": true,
   "description": "TronBrowser extension store — pay $1, list your MV3 extension (tronbrowser.dev/store)",
   "type": "module",

@@ -147,7 +147,10 @@ export class IrcClient extends EventTarget {
         this.emit('status', { state: 'error', error: params[0] || 'server error' });
         break;
       default:
-        if (/^[45]\d\d$/.test(command)) {
+        // Surface ALL server numerics (LIST 322, NAMES 366, WHOIS 311-319,
+        // MOTD 372, errors 4xx/5xx, …) to the status window so commands that
+        // reply with numerics actually show output.
+        if (/^\d{3}$/.test(command)) {
           this.emit('system', { channel: null, text: params.slice(1).join(' ') });
         }
     }
