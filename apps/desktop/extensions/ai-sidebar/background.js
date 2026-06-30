@@ -224,8 +224,9 @@ chrome.runtime.onStartup.addListener(() => {
   disableTor().catch(() => {});
 });
 
-// Auto-enable Tor when navigating to a .onion site — those only resolve through
-// Tor. Turn it on, wait for the circuit, then reload the page now that we route.
+// Auto-enable Tor when navigating to a .onion site (they only resolve through
+// Tor). Redirect to a "Connecting to Tor…" page so there's no raw DNS error,
+// bring Tor up, then send the tab to the onion once it routes.
 chrome.webNavigation.onBeforeNavigate.addListener(async (details) => {
   if (details.frameId !== 0) return; // top-level navigations only
   let host;
@@ -233,15 +234,29 @@ chrome.webNavigation.onBeforeNavigate.addListener(async (details) => {
   if (!host.endsWith('.onion')) return;
 
   const { torEnabled } = await chrome.storage.local.get('torEnabled');
-  if (torEnabled) return; // already routing through Tor
+  const onion = details.url;
+  const tabId = details.tabId;
+
+  // If Tor is already on, the navigation will resolve through it — leave it.
+  if (torEnabled) return;
+
+  // Swap the failing onion navigation for the connecting page.
+  const interstitial = chrome.runtime.getURL('onion-connecting.html') + '?u=' + encodeURIComponent(onion);
+  try { await chrome.tabs.update(tabId, { url: interstitial }); } catch (_) { return; }
 
   const started = await startTorViaHelper();
-  if (started.error === 'unreachable' || started.error === 'tor-not-installed') return;
-  const result = await waitForTor(() => {});
+  if (started.error === 'unreachable' || started.error === 'tor-not-installed') {
+    chrome.runtime.sendMessage({ type: 'onion-error', reason: started.error }).catch(() => {});
+    return;
+  }
+  const result = await waitForTor((pct) => {
+    chrome.runtime.sendMessage({ type: 'tor-progress', pct }).catch(() => {});
+  });
   if (result.ready) {
     await enableTor(true); // auto: released when the .onion tabs close
-    // Re-issue the navigation now that traffic routes through Tor.
-    try { await chrome.tabs.update(details.tabId, { url: details.url }); } catch (_) { /* tab gone */ }
+    try { await chrome.tabs.update(tabId, { url: onion }); } catch (_) { /* tab gone */ }
+  } else {
+    chrome.runtime.sendMessage({ type: 'onion-error', reason: result.error || 'tor-exited' }).catch(() => {});
   }
 });
 
