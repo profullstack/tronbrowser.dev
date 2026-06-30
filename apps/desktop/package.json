@@ -1,6 +1,6 @@
 {
   "name": "@tronbrowser/desktop",
-  "version": "3.2.8",
+  "version": "3.2.9",
   "private": true,
   "description": "Desktop shell for the TronBrowser Chromium fork",
   "type": "module",

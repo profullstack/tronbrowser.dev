@@ -160,6 +160,11 @@ EXT=""
 for d in "$EXTBASE"/*/; do
   [ -f "${d}manifest.json" ] && EXT="${EXT:+$EXT,}${d%/}"
 done
+# Surface the AI-sidebar version + path so it's clear which extension loads.
+if [ -f "$EXTBASE/ai-sidebar/manifest.json" ]; then
+  _extver="$(sed -n 's/.*"version"[^"]*"\([^"]*\)".*/\1/p' "$EXTBASE/ai-sidebar/manifest.json" | head -n1)"
+  echo "TronBrowser: loading AI-sidebar extension v$_extver from $EXTBASE/ai-sidebar" >&2
+fi
 
 # Ungoogled Chromium blocks web-store .crx installs until this flag is set to
 # "Always prompt for install". Pre-seed it in the profile's Local State so the

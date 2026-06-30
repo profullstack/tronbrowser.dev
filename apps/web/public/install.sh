@@ -77,6 +77,7 @@ Usage:
   tron <url> [url...]   Open URL(s) in TronBrowser (agent-friendly)
   tron open <url>       Same as above, explicit
   tron                  Launch TronBrowser
+  tron restart          Force-quit and relaunch (loads the latest extension)
   tron --tor [url]      Launch a dedicated Tor session (separate wiped profile)
   tron tor              Start a standalone Tor daemon for the in-browser toggle
   tron upgrade          Update to the latest release
@@ -125,6 +126,14 @@ case "${1:-}" in
     shift
     [ "$#" -gt 0 ] || { echo "usage: tron open <url>" >&2; exit 2; }
     launch "$@" ;;
+  restart)
+    # Force-quit any running TronBrowser, then launch fresh. Chromium forwards a
+    # new launch to an already-running instance (which keeps the OLD extension
+    # loaded), so a hard restart is the only way a new extension actually loads.
+    pkill -9 -f 'class=TronBrowser' 2>/dev/null || true
+    pkill -9 -f 'user-data-dir=.*tronbrowser' 2>/dev/null || true
+    sleep 1
+    launch ;;
   tor)
     # Start a standalone Tor daemon (no browser) on 127.0.0.1:9071 for the
     # in-browser Tor toggle in the AI sidebar. Ctrl-C to stop. Auto-installs Tor

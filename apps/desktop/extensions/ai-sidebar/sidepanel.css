@@ -28,6 +28,8 @@ header button { background: transparent; border: 1px solid var(--line); color: v
 .tor-status.ok { color: #6ee7a8; }
 .tor-status.warn { color: #ffcf6e; }
 .tor-status.hidden { display: none; }
+.ext-version { padding: 3px 12px; font-size: 11px; color: var(--muted);
+  border-bottom: 1px solid var(--line); letter-spacing: .5px; }
 .tor-progress { height: 5px; background: #1b2540; overflow: hidden; }
 .tor-progress.hidden { display: none; }
 .tor-progress .bar { height: 100%; width: 0%; background: #7d4698;

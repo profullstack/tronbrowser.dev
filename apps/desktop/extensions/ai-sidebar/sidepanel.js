@@ -2,6 +2,13 @@ import { PROVIDERS, chatStream } from './providers.js';
 import { renderMarkdown } from './markdown.js';
 
 const el = (id) => document.getElementById(id);
+
+// Show the loaded extension version (so it's obvious which build is running).
+try {
+  const v = chrome.runtime.getManifest().version;
+  const vEl = document.getElementById('ext-version');
+  if (vEl) vEl.textContent = `TronBrowser extension v${v}`;
+} catch (_) { /* manifest unavailable */ }
 const messagesEl = el('messages');
 const inputEl = el('input');
 const sendBtn = el('send');
