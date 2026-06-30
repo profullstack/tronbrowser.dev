@@ -45,11 +45,13 @@ def log(msg):
 
 
 def tor_binary():
-    """Bundled `tor` next to the helper, else one on PATH (or None)."""
+    """Bundled `tor` next to the helper or under tor-bin/ (the auto-installed
+    Tor Expert Bundle), else one on PATH (or None)."""
     if BUNDLED_DIR:
-        cand = os.path.join(BUNDLED_DIR, "tor")
-        if os.access(cand, os.X_OK):
-            return cand
+        for cand in (os.path.join(BUNDLED_DIR, "tor"),
+                     os.path.join(BUNDLED_DIR, "tor-bin", "tor")):
+            if os.access(cand, os.X_OK):
+                return cand
     return shutil.which("tor")
 
 
@@ -71,6 +73,14 @@ def start_tor():
             return False, "datadir: %s" % exc
 
         _ready = False
+        env = os.environ.copy()
+        # The Tor Expert Bundle ships its own libs next to the binary with no
+        # $ORIGIN rpath, so a bundled/auto-installed tor needs its dir on the
+        # library path. (Harmless for a system tor, which we don't touch here.)
+        if BUNDLED_DIR and os.path.dirname(binary).startswith(BUNDLED_DIR):
+            bindir = os.path.dirname(binary)
+            for var in ("LD_LIBRARY_PATH", "DYLD_LIBRARY_PATH"):
+                env[var] = bindir + (os.pathsep + env[var] if env.get(var) else "")
         try:
             _proc = subprocess.Popen(
                 [binary,
@@ -79,6 +89,7 @@ def start_tor():
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,
+                env=env,
             )
         except OSError as exc:
             return False, "spawn: %s" % exc

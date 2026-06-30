@@ -196,7 +196,7 @@ async function toggleTor() {
       setTorButton(false);
       const err = res && res.started && res.started.error;
       if (err === 'tor-not-installed') {
-        showTorStatus('warn', 'Tor isn’t installed on this computer yet, so it can’t be turned on here.');
+        showTorStatus('warn', 'Tor isn’t installed yet. Run <code>tron tor</code> once (it installs Tor automatically), then try again.');
       } else if (err === 'unreachable') {
         showTorStatus('warn', 'Couldn’t reach the Tor helper. Restart TronBrowser and try again, or run <code>tron tor</code>.');
       } else {

@@ -127,10 +127,29 @@ case "${1:-}" in
     launch "$@" ;;
   tor)
     # Start a standalone Tor daemon (no browser) on 127.0.0.1:9050 for the
-    # in-browser Tor toggle in the AI sidebar. Ctrl-C to stop. (The `--tor` flag
-    # below, handled by the launcher, instead opens a dedicated Tor session.)
-    TORBIN="$(command -v tor 2>/dev/null || true)"
-    [ -n "$TORBIN" ] || { echo "Tor isn't installed. Install it (e.g. 'sudo apt install tor', 'brew install tor', 'sudo pacman -S tor'), then run: tron tor" >&2; exit 1; }
+    # in-browser Tor toggle in the AI sidebar. Ctrl-C to stop. Auto-installs Tor
+    # (any platform) if missing. (The `--tor` flag, handled by the launcher,
+    # instead opens a dedicated Tor session.)
+    resolve_tor() {
+      if [ -x "$APP_DIR/tor-bin/tor" ]; then echo "$APP_DIR/tor-bin/tor"
+      else command -v tor 2>/dev/null || true; fi
+    }
+    TORBIN="$(resolve_tor)"
+    if [ -z "$TORBIN" ]; then
+      echo "Tor isn't installed — setting it up…"
+      sh -c "curl -fsSL '$INSTALL_URL' | sh -s -- ensure-tor" || true
+      TORBIN="$(resolve_tor)"
+    fi
+    [ -n "$TORBIN" ] || { echo "Could not install Tor automatically. Install 'tor' manually (e.g. 'sudo apt install tor' / 'brew install tor'), then run: tron tor" >&2; exit 1; }
+    # The auto-installed Tor Expert Bundle ships its libs next to the binary with
+    # no $ORIGIN rpath, so point the library path at its dir.
+    case "$TORBIN" in
+      "$APP_DIR"/*)
+        _tordir="$(dirname "$TORBIN")"
+        LD_LIBRARY_PATH="$_tordir${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+        DYLD_LIBRARY_PATH="$_tordir${DYLD_LIBRARY_PATH:+:$DYLD_LIBRARY_PATH}"
+        export LD_LIBRARY_PATH DYLD_LIBRARY_PATH ;;
+    esac
     TOR_DATA="${TRONBROWSER_DATA:-$HOME/.tronbrowser}/tor"
     mkdir -p "$TOR_DATA"
     echo "Starting Tor on 127.0.0.1:9050 (Ctrl-C to stop). Now flip the 🧅 Tor toggle in the TronBrowser AI sidebar."
@@ -252,6 +271,89 @@ stop_running() {
   for pid in $pids; do kill -9 "$pid" 2>/dev/null || true; done
 }
 
+# curl/wget a URL to stdout (for listing the Tor archive).
+fetch_stdout() { # url
+  if command -v curl >/dev/null 2>&1; then curl -fsSL "$1"
+  elif command -v wget >/dev/null 2>&1; then wget -qO- "$1"
+  else return 1; fi
+}
+
+# Download the Tor Project's "expert bundle" (a standalone tor daemon + its libs)
+# into $1. No package manager, no sudo, works on any platform. Best-effort.
+download_tor_expert_bundle() { # dest_dir
+  dst="$1"
+  os="$(uname -s)"; arch="$(uname -m)"
+  case "$os" in
+    Linux)  teb_os=linux ;;
+    Darwin) teb_os=macos ;;
+    *) return 1 ;;
+  esac
+  case "$arch" in
+    x86_64|amd64)  teb_arch=x86_64 ;;
+    aarch64|arm64) teb_arch=aarch64 ;;
+    i686|i386)     teb_arch=i686 ;;
+    *) return 1 ;;
+  esac
+  base="https://archive.torproject.org/tor-package-archive/torbrowser"
+  ver="${TRONBROWSER_TOR_VERSION:-}"
+  if [ -z "$ver" ]; then
+    # Highest version directory in the archive listing (e.g. 14.0.1).
+    ver="$(fetch_stdout "$base/" 2>/dev/null | sed -n 's/.*href="\([0-9][0-9.]*\)\/".*/\1/p' | sort -V | tail -n1)"
+  fi
+  [ -n "$ver" ] || return 1
+  url="$base/$ver/tor-expert-bundle-${teb_os}-${teb_arch}-${ver}.tar.gz"
+  tmp="$(mktemp -d)"
+  info "Downloading Tor $ver ($teb_os-$teb_arch)…"
+  if fetch "$url" "$tmp/teb.tgz" 2>/dev/null && tar -xzf "$tmp/teb.tgz" -C "$tmp" 2>/dev/null && [ -x "$tmp/tor/tor" ]; then
+    mkdir -p "$dst"
+    cp -R "$tmp/tor/." "$dst/" 2>/dev/null
+    chmod +x "$dst/tor" 2>/dev/null || true
+    rm -rf "$tmp"
+    [ -x "$dst/tor" ] && return 0
+  fi
+  rm -rf "$tmp"; return 1
+}
+
+# Make a `tor` daemon available for the in-browser 🧅 Tor toggle. Tries the
+# system package manager first (sudo only when interactive), then falls back to
+# the Tor Expert Bundle download (no sudo, any platform). Skip with
+# TB_NO_TOR_INSTALL=1.
+ensure_tor() {
+  [ "${TB_NO_TOR_INSTALL:-0}" = "1" ] && return 0
+  command -v tor >/dev/null 2>&1 && return 0
+  [ -x "$APP_DIR/tor-bin/tor" ] && return 0
+
+  info "Setting up Tor (for the in-browser Tor toggle)…"
+  # 1) Homebrew (macOS/Linux) — no sudo.
+  if command -v brew >/dev/null 2>&1; then
+    brew install tor >/dev/null 2>&1 || true
+    command -v tor >/dev/null 2>&1 && return 0
+  fi
+  # 2) Linux package managers. Use sudo only if we're root already or have an
+  #    interactive terminal (sudo prompts on /dev/tty). Never block a piped/
+  #    background run.
+  uid="$(id -u 2>/dev/null || echo 0)"
+  SUDO=""
+  if [ "$uid" -ne 0 ] && command -v sudo >/dev/null 2>&1 && { [ -t 1 ] || [ -t 2 ]; }; then SUDO="sudo"; fi
+  if [ "$uid" -eq 0 ] || [ -n "$SUDO" ]; then
+    if   command -v apt-get >/dev/null 2>&1; then $SUDO apt-get update -y >/dev/null 2>&1; $SUDO apt-get install -y tor >/dev/null 2>&1 || true
+    elif command -v dnf     >/dev/null 2>&1; then $SUDO dnf install -y tor >/dev/null 2>&1 || true
+    elif command -v yum     >/dev/null 2>&1; then $SUDO yum install -y tor >/dev/null 2>&1 || true
+    elif command -v pacman  >/dev/null 2>&1; then $SUDO pacman -Sy --noconfirm tor >/dev/null 2>&1 || true
+    elif command -v zypper  >/dev/null 2>&1; then $SUDO zypper --non-interactive install tor >/dev/null 2>&1 || true
+    elif command -v apk     >/dev/null 2>&1; then $SUDO apk add tor >/dev/null 2>&1 || true
+    fi
+    command -v tor >/dev/null 2>&1 && return 0
+  fi
+  # 3) No-sudo, any platform: the Tor Expert Bundle, into the app dir.
+  if download_tor_expert_bundle "$APP_DIR/tor-bin"; then
+    info "Installed Tor to $APP_DIR/tor-bin"
+    return 0
+  fi
+  warn "Couldn't install Tor automatically. The 🧅 Tor toggle needs 'tor' — install it (e.g. 'sudo apt install tor' / 'brew install tor')."
+  return 1
+}
+
 do_install() {
   need uname
   asset="$(detect_asset)"
@@ -302,6 +404,7 @@ DESKTOP
   command -v update-desktop-database >/dev/null 2>&1 && update-desktop-database "$apps_dir" 2>/dev/null || true
 
   ensure_browser
+  ensure_tor   # so the in-browser 🧅 Tor toggle works out of the box
   brand_macos_icon "$(dirname "$bin")/tronbrowser.png"
 
   info "Installed TronBrowser $tag to $APP_DIR"
@@ -325,6 +428,7 @@ do_upgrade() {
   if [ "$current" = "$latest" ] && [ "${TB_FORCE:-0}" != "1" ]; then
     info "TronBrowser is already up to date ($current)."
     ensure_browser   # still make sure Ungoogled Chromium is installed
+    ensure_tor       # and that Tor is available for the toggle
     brand_macos_icon "$(find "$APP_DIR" -maxdepth 3 -name tronbrowser.png 2>/dev/null | head -n1)"  # re-apply icon (Chromium updates reset it)
     info "Re-install anyway with: TB_FORCE=1 tron upgrade"
     return
@@ -371,6 +475,7 @@ case "$cmd" in
   install) do_install ;;
   upgrade|update) do_upgrade ;;
   remove|uninstall) do_remove ;;
+  ensure-tor) ensure_tor ;;
   version|--version|-v) do_version ;;
   help|--help|-h) usage ;;
   *) err "unknown command: $cmd (try 'help')" ;;

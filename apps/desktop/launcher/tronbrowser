@@ -127,8 +127,9 @@ if [ "$TOR" != "1" ]; then
     mkdir -p "$DATA"
     # Resolve which tor the helper would use, just for an informative log line.
     if [ -x "$DIR/tor" ]; then _torbin="$DIR/tor (bundled)";
+    elif [ -x "$DIR/tor-bin/tor" ]; then _torbin="$DIR/tor-bin/tor (auto-installed)";
     elif command -v tor >/dev/null 2>&1; then _torbin="$(command -v tor)";
-    else _torbin="NOT FOUND — install tor for the 🧅 toggle"; fi
+    else _torbin="NOT FOUND — run 'tron tor' to install it"; fi
     echo "TronBrowser: Tor control helper on 127.0.0.1:9061 (tor: $_torbin). Toggle 🧅 Tor in the AI sidebar. Log: $DATA/tor-helper.log" >&2
     TRON_TOR_DATA="$DATA/tor" TRON_TOR_BIN_DIR="$DIR" \
       python3 "$DIR/tron-tor-helper" >>"$DATA/tor-helper.log" 2>&1 &
