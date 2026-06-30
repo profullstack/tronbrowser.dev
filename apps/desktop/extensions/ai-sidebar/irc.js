@@ -52,6 +52,7 @@ export class IrcClient extends EventTarget {
   connect(opts) {
     this.opts = { url: DEFAULT_URL, channels: ['#general'], ...opts };
     this.nick = this.opts.nick;
+    this._caps = new Set();
     this.emit('status', { state: 'connecting' });
     let ws;
     try {
@@ -84,12 +85,18 @@ export class IrcClient extends EventTarget {
       case 'PING': this.send(`PONG :${params[0] || ''}`); break;
       case 'CAP': {
         const sub = params[1];
+        const list = params[params.length - 1] || '';
         if (sub === 'LS') {
-          const offered = (params[2] || '').split(' ');
-          const want = ['sasl', 'server-time', 'message-tags'].filter((c) => offered.includes(c));
-          this.send(`CAP REQ :${want.join(' ')}`);
+          // 302 multiline: a `*` param before the trailing list means more lines.
+          list.split(' ').filter(Boolean).forEach((c) => this._caps.add(c.split('=')[0]));
+          if (params[2] !== '*') {
+            const want = ['sasl', 'server-time', 'message-tags'].filter((c) => this._caps.has(c));
+            if (want.length) this.send(`CAP REQ :${want.join(' ')}`);
+            else this.send('CAP END');
+          }
         } else if (sub === 'ACK') {
-          if ((params[2] || '').includes('sasl') && this.opts.password) this.send('AUTHENTICATE PLAIN');
+          // Authenticate as soon as SASL is acknowledged. CAP END comes after.
+          if (list.includes('sasl')) this.send('AUTHENTICATE PLAIN');
           else this.send('CAP END');
         } else if (sub === 'NAK') {
           this.send('CAP END');
@@ -98,14 +105,15 @@ export class IrcClient extends EventTarget {
       }
       case 'AUTHENTICATE':
         if (params[0] === '+') {
-          const token = btoa(`\0${this.nick}\0${this.opts.password}`);
+          const token = btoa(`\0${this.nick}\0${this.opts.password || ''}`);
           this.send(`AUTHENTICATE ${token}`);
         }
         break;
+      case '900': break; // RPL_LOGGEDIN
       case '903': this.send('CAP END'); break; // SASL success
-      case '904': case '905': // SASL failed
-        this.emit('status', { state: 'error', error: 'Login failed (check username/password)' });
-        this.send('CAP END');
+      case '902': case '904': case '905': case '906': // SASL failed/aborted
+        this.emit('status', { state: 'error', error: 'Login failed — check your username and IRC password.' });
+        this.quit(); // do NOT CAP END; the server requires SASL
         break;
       case '001': // welcome
         this.connected = true;

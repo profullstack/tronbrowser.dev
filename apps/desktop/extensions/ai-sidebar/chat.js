@@ -87,7 +87,8 @@ async function doConnect() {
     password: $('irc-pass').value,
     channels: $('irc-chans').value.split(/[,\s]+/).filter(Boolean),
   };
-  if (!cfg.nick) { setStatus('Enter your username', 'err'); return; }
+  if (!cfg.nick) { setStatus('Enter your BBS username', 'err'); return; }
+  if (!cfg.password) { setStatus('Enter your IRC password (this network requires SASL login)', 'err'); return; }
   if ($('irc-remember').checked) {
     chrome.storage.local.set({ [STORE_KEY]: cfg });
   }
