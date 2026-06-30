@@ -10,13 +10,8 @@
   <header class="apphdr">
     <img src="icons/favicon.svg" alt="" class="logo" />
     <span class="brand">Tron<span class="accent">Browser</span></span>
-    <nav class="tabs" id="media-tabs">
-      <button class="tab active" data-tab="favorites">★ Favorites</button>
-      <button class="tab" data-tab="livetv">📺 Live TV</button>
-      <button class="tab" data-tab="radio">📻 Radio</button>
-      <button class="tab" data-tab="podcasts">🎙 Podcasts</button>
-    </nav>
-    <span style="flex:1"></span>
+    <span class="hspace"></span>
+    <a class="tab" href="https://bittorrented.com" target="_blank" rel="noreferrer">bittorrented.com ↗</a>
     <span id="acct" class="muted" style="font-size:12px"></span>
     <button id="disc" class="tab hidden" title="Disconnect">⏻</button>
   </header>
@@ -25,18 +20,25 @@
   <section id="connect" class="panel active">
     <div class="connect">
       <h2>Connect bittorrented.com</h2>
-      <p class="muted">Sign in to <strong>bittorrented.com</strong> to stream your favorites, live TV, radio, and podcasts right here. We open the sign-in in a tab and bring the token back to this device.</p>
+      <p class="muted">Sign in to <strong>bittorrented.com</strong> to stream your Live TV, radio, podcasts, music and movie favorites right here. We open the sign-in in a tab and bring the token back to this device.</p>
       <button id="go" class="primary">Connect bittorrented.com</button>
       <div id="status" class="status"></div>
     </div>
   </section>
 
-  <!-- content (one panel, swapped by tab) -->
-  <section id="content" class="panel">
-    <main class="convo" style="width:100%">
-      <div id="list" class="msgs" style="gap:8px"></div>
-    </main>
+  <!-- content -->
+  <section id="content" class="panel" style="flex-direction:column; overflow:auto; padding:14px;">
+    <input id="btr-filter" class="btr-filter" type="search" placeholder="Filter favorites…" autocomplete="off" />
+    <div id="btr"></div>
   </section>
+
+  <!-- player modal -->
+  <div id="player-modal" class="modal" hidden>
+    <div class="modal-box">
+      <button id="player-close" class="modal-close" title="Close">✕</button>
+      <iframe id="player-frame" allow="autoplay; fullscreen; encrypted-media"></iframe>
+    </div>
+  </div>
 
   <script type="module" src="media.js"></script>
 </body>
