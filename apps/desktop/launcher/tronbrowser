@@ -118,10 +118,21 @@ fi
 # + idempotent (a second copy exits when the port is taken), so both the desktop
 # app entry and `tron` (which share this shim) get it. Best-effort: needs
 # python3, and skipped in --tor mode (that path runs its own Tor).
-if [ "$TOR" != "1" ] && command -v python3 >/dev/null 2>&1 && [ -f "$DIR/tron-tor-helper" ]; then
-  mkdir -p "$DATA"
-  TRON_TOR_DATA="$DATA/tor" TRON_TOR_BIN_DIR="$DIR" \
-    python3 "$DIR/tron-tor-helper" >>"$DATA/tor-helper.log" 2>&1 &
+if [ "$TOR" != "1" ]; then
+  if ! command -v python3 >/dev/null 2>&1; then
+    echo "TronBrowser: python3 not found — the 🧅 Tor toggle won't work (install python3)." >&2
+  elif [ ! -f "$DIR/tron-tor-helper" ]; then
+    echo "TronBrowser: Tor helper missing ($DIR/tron-tor-helper) — run 'tron upgrade'." >&2
+  else
+    mkdir -p "$DATA"
+    # Resolve which tor the helper would use, just for an informative log line.
+    if [ -x "$DIR/tor" ]; then _torbin="$DIR/tor (bundled)";
+    elif command -v tor >/dev/null 2>&1; then _torbin="$(command -v tor)";
+    else _torbin="NOT FOUND — install tor for the 🧅 toggle"; fi
+    echo "TronBrowser: Tor control helper on 127.0.0.1:9061 (tor: $_torbin). Toggle 🧅 Tor in the AI sidebar. Log: $DATA/tor-helper.log" >&2
+    TRON_TOR_DATA="$DATA/tor" TRON_TOR_BIN_DIR="$DIR" \
+      python3 "$DIR/tron-tor-helper" >>"$DATA/tor-helper.log" 2>&1 &
+  fi
 fi
 
 # Load every bundled extension (each subdir with a manifest.json).

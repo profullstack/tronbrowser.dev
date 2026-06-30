@@ -73,9 +73,11 @@ function torProxyConfig(port) {
     mode: 'fixed_servers',
     rules: {
       // SOCKS5 → Chromium resolves DNS at the proxy, so .onion resolves inside
-      // Tor and names never leak. Empty bypass = nothing skips Tor.
+      // Tor and names never leak.
       singleProxy: { scheme: 'socks5', host: '127.0.0.1', port },
-      bypassList: [],
+      // Loopback must bypass Tor: the SOCKS port + the control helper are on
+      // 127.0.0.1, and Tor refuses to proxy private addresses anyway.
+      bypassList: ['localhost', '127.0.0.1', '[::1]'],
     },
   };
 }
@@ -110,7 +112,7 @@ async function disableTor() {
 async function checkTor() {
   try {
     const ctrl = new AbortController();
-    const t = setTimeout(() => ctrl.abort(), 12000);
+    const t = setTimeout(() => ctrl.abort(), 20000); // fresh Tor circuits can be slow
     const res = await fetch(TOR_CHECK_URL, { cache: 'no-store', signal: ctrl.signal });
     clearTimeout(t);
     const data = await res.json();
@@ -124,13 +126,29 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg?.type === 'tor-set') {
     (async () => {
       if (msg.on) {
-        // Start the daemon on demand, route through it, then confirm real Tor.
         const started = await startTorViaHelper();
-        await enableTor();
-        const check = await checkTor();
-        const ok = check.ok && check.isTor;
-        if (!ok) await disableTor(); // never leave a dead proxy in place
-        sendResponse({ enabled: ok, started, check });
+        if (started.ok) {
+          // The daemon bootstrapped → route through it and TRUST it. The
+          // check.torproject.org probe is only a confirmation; a slow/blocked
+          // probe must NOT tear down a working Tor session.
+          await enableTor();
+          const check = await checkTor();
+          sendResponse({ enabled: true, started, check });
+        } else if (started.error === 'unreachable') {
+          // No control helper — maybe the user runs their own Tor. Try, but
+          // here we DO require the probe to confirm before committing.
+          await enableTor();
+          const check = await checkTor();
+          if (check.ok && check.isTor) {
+            sendResponse({ enabled: true, started, check });
+          } else {
+            await disableTor();
+            sendResponse({ enabled: false, started, check });
+          }
+        } else {
+          // tor-not-installed / tor-exited / spawn error → can't route.
+          sendResponse({ enabled: false, started });
+        }
       } else {
         await disableTor();
         await stopTorViaHelper();

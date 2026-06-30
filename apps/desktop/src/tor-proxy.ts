@@ -24,17 +24,24 @@ export interface TorProxyConfig {
 }
 
 /**
- * `chrome.proxy` `fixed_servers` config that routes ALL traffic through the
- * local Tor SOCKS5 proxy. SOCKS5 (not SOCKS4) means Chromium resolves DNS at the
- * proxy — names, including `.onion`, are resolved inside Tor with no local leak.
- * Empty bypass list = nothing skips Tor.
+ * Loopback must bypass the proxy: Tor's SOCKS port itself is on 127.0.0.1, and
+ * Tor refuses to proxy connections to private/loopback addresses anyway — so
+ * routing localhost through Tor would just break the local control channel.
+ */
+export const TOR_BYPASS_LIST = ['localhost', '127.0.0.1', '[::1]'] as const;
+
+/**
+ * `chrome.proxy` `fixed_servers` config that routes all *non-loopback* traffic
+ * through the local Tor SOCKS5 proxy. SOCKS5 (not SOCKS4) means Chromium
+ * resolves DNS at the proxy — names, including `.onion`, are resolved inside Tor
+ * with no local leak.
  */
 export function buildTorProxyConfig(socksPort: number = DEFAULT_TOR_SOCKS_PORT): TorProxyConfig {
   return {
     mode: 'fixed_servers',
     rules: {
       singleProxy: { scheme: 'socks5', host: '127.0.0.1', port: socksPort },
-      bypassList: [],
+      bypassList: [...TOR_BYPASS_LIST],
     },
   };
 }

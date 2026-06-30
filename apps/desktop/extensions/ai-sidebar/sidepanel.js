@@ -177,28 +177,30 @@ async function toggleTor() {
   if (turningOn) showTorStatus('', 'Connecting through Tor…');
   try {
     const res = await chrome.runtime.sendMessage({ type: 'tor-set', on: turningOn });
+    const torBrowserNote =
+      'Not Tor-Browser-grade — for real anonymity use ' +
+      '<a href="https://www.torproject.org/" target="_blank" rel="noreferrer">Tor Browser</a>.';
     if (!turningOn) {
       setTorButton(false);
       hideTorStatus();
-    } else if (res && res.check && res.check.ok && res.check.isTor) {
+    } else if (res && res.enabled && res.check && res.check.ok && res.check.isTor) {
       setTorButton(true);
-      showTorStatus(
-        'ok',
-        `Connected via Tor · exit IP <code>${safeIp(res.check.ip)}</code>. ` +
-          'Not Tor-Browser-grade — for real anonymity use ' +
-          '<a href="https://www.torproject.org/" target="_blank" rel="noreferrer">Tor Browser</a>.',
-      );
+      showTorStatus('ok', `Connected via Tor · exit IP <code>${safeIp(res.check.ip)}</code>. ${torBrowserNote}`);
+    } else if (res && res.enabled) {
+      // Tor started and we're routing through it; the exit-IP probe just didn't
+      // confirm in time (a fresh circuit can be slow). Stay ON, don't alarm.
+      setTorButton(true);
+      showTorStatus('ok', `Tor is on — routing this session through Tor. ${torBrowserNote}`);
     } else {
-      // Background already reverted the proxy. Explain why, in plain language.
+      // Background couldn't route. Explain why, in plain language.
       setTorButton(false);
       const err = res && res.started && res.started.error;
       if (err === 'tor-not-installed') {
         showTorStatus('warn', 'Tor isn’t installed on this computer yet, so it can’t be turned on here.');
       } else if (err === 'unreachable') {
-        // The on-demand helper isn't running (older launch / no python3).
         showTorStatus('warn', 'Couldn’t reach the Tor helper. Restart TronBrowser and try again, or run <code>tron tor</code>.');
       } else {
-        showTorStatus('warn', 'Couldn’t connect through Tor. Please try again in a moment.');
+        showTorStatus('warn', 'Tor couldn’t start. Make sure Tor is installed, then try again.');
       }
     }
   } catch (e) {

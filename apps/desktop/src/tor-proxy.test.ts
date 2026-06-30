@@ -13,10 +13,13 @@ describe('buildTorProxyConfig', () => {
     });
   });
 
-  it('uses SOCKS5 (remote DNS — no .onion/DNS leak) and bypasses nothing', () => {
+  it('uses SOCKS5 (remote DNS — no .onion/DNS leak) and bypasses loopback', () => {
     const cfg = buildTorProxyConfig();
     expect(cfg.rules.singleProxy.scheme).toBe('socks5');
-    expect(cfg.rules.bypassList).toEqual([]);
+    // Loopback must skip Tor — Tor rejects connections to private addresses, so
+    // routing localhost through it would break the local control channel.
+    expect(cfg.rules.bypassList).toContain('127.0.0.1');
+    expect(cfg.rules.bypassList).toContain('localhost');
   });
 
   it('honors a custom SOCKS port', () => {

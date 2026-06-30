@@ -39,6 +39,11 @@ _proc = None       # the running tor subprocess (or None)
 _ready = False     # True once tor reported Bootstrapped 100%
 
 
+def log(msg):
+    """Line to stdout (the launcher routes it to $DATA/tor-helper.log)."""
+    print("[tron-tor-helper] %s" % msg, flush=True)
+
+
 def tor_binary():
     """Bundled `tor` next to the helper, else one on PATH (or None)."""
     if BUNDLED_DIR:
@@ -56,7 +61,9 @@ def start_tor():
             return True, None  # already up
         binary = tor_binary()
         if not binary:
+            log("start requested but no tor binary found (bundled or on PATH)")
             return False, "tor-not-installed"
+        log("starting tor: %s (SOCKS %s:%d)" % (binary, HOST, SOCKS_PORT))
         try:
             os.makedirs(DATA_DIR, mode=0o700, exist_ok=True)
             os.chmod(DATA_DIR, 0o700)  # tor refuses a group/world-readable DataDirectory
@@ -82,9 +89,13 @@ def start_tor():
     timer.start()
     try:
         for line in proc.stdout:
+            if "Bootstrapped " in line:
+                log(line.strip())
             if "Bootstrapped 100%" in line:
                 _set_ready(True)
+                log("tor ready")
                 return True, None
+        log("tor exited before bootstrapping")
         return False, "tor-exited"  # stdout closed before 100%
     finally:
         timer.cancel()
@@ -162,6 +173,7 @@ def main():
     except OSError:
         # Port already bound → another helper is running. Nothing to do.
         return
+    log("listening on %s:%d (tor: %s)" % (HOST, PORT, tor_binary() or "NOT FOUND"))
     try:
         server.serve_forever()
     finally:
