@@ -126,6 +126,12 @@ async function enableTor() {
 }
 
 async function disableTor() {
+  // Force the proxy back to the OS/default FIRST. clear() alone can leave the
+  // fixed_servers config active → once Tor stops the browser dies with
+  // ERR_PROXY_CONNECTION_FAILED. Setting 'system' guarantees normal browsing.
+  try {
+    await chrome.proxy.settings.set({ value: { mode: 'system' }, scope: 'regular' });
+  } catch (_) { /* fall through to clear */ }
   try { await chrome.proxy.settings.clear({ scope: 'regular' }); } catch (_) { /* already clear */ }
   try { await chrome.privacy.network.webRTCIPHandlingPolicy.clear({}); } catch (_) { /* already clear */ }
   await chrome.storage.local.set({ torEnabled: false });

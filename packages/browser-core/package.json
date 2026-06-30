@@ -1,6 +1,6 @@
 {
   "name": "@tronbrowser/browser-core",
-  "version": "3.2.9",
+  "version": "3.2.10",
   "private": true,
   "description": "Browser abstraction over the Chromium fork (tabs, profiles, bookmarks, history)",
   "type": "module",
