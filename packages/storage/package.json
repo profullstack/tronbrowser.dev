@@ -1,6 +1,6 @@
 {
   "name": "@tronbrowser/storage",
-  "version": "3.3.0",
+  "version": "3.3.1",
   "private": true,
   "description": "Storage abstraction (Turso, R2, local)",
   "type": "module",

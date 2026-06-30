@@ -1,6 +1,6 @@
 {
   "name": "@tronbrowser/mobile",
-  "version": "3.3.0",
+  "version": "3.3.1",
   "private": true,
   "description": "TronBrowser mobile (Expo / React Native) — Phase 2",
   "type": "module",

@@ -136,6 +136,7 @@ inputEl.addEventListener('keydown', (e) => {
 });
 
 el('chat').addEventListener('click', () => chrome.tabs.create({ url: chrome.runtime.getURL('chat.html') }));
+el('media').addEventListener('click', () => chrome.tabs.create({ url: chrome.runtime.getURL('media.html') }));
 el('settings').addEventListener('click', () => chrome.runtime.openOptionsPage());
 el('open-options').addEventListener('click', (e) => { e.preventDefault(); chrome.runtime.openOptionsPage(); });
 chrome.storage.onChanged.addListener((changes) => { if (changes.aiConfig) loadConfig(); });

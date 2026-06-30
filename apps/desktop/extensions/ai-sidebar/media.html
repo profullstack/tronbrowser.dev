@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="stylesheet" href="chat.css" />
+<title>TronBrowser · Media</title>
+</head>
+<body>
+  <header class="apphdr">
+    <img src="icons/favicon.svg" alt="" class="logo" />
+    <span class="brand">Tron<span class="accent">Browser</span></span>
+    <nav class="tabs" id="media-tabs">
+      <button class="tab active" data-tab="favorites">★ Favorites</button>
+      <button class="tab" data-tab="livetv">📺 Live TV</button>
+      <button class="tab" data-tab="radio">📻 Radio</button>
+      <button class="tab" data-tab="podcasts">🎙 Podcasts</button>
+    </nav>
+    <span style="flex:1"></span>
+    <span id="acct" class="muted" style="font-size:12px"></span>
+    <button id="disc" class="tab hidden" title="Disconnect">⏻</button>
+  </header>
+
+  <!-- connect -->
+  <section id="connect" class="panel active">
+    <div class="connect">
+      <h2>Connect bittorrented.com</h2>
+      <p class="muted">Sign in to <strong>bittorrented.com</strong> to stream your favorites, live TV, radio, and podcasts right here. We open the sign-in in a tab and bring the token back to this device.</p>
+      <button id="go" class="primary">Connect bittorrented.com</button>
+      <div id="status" class="status"></div>
+    </div>
+  </section>
+
+  <!-- content (one panel, swapped by tab) -->
+  <section id="content" class="panel">
+    <main class="convo" style="width:100%">
+      <div id="list" class="msgs" style="gap:8px"></div>
+    </main>
+  </section>
+
+  <script type="module" src="media.js"></script>
+</body>
+</html>
