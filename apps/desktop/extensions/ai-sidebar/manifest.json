@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "TronBrowser",
-  "version": "3.2.15",
+  "version": "3.2.16",
   "description": "TronBrowser — privacy-first, AI-native. Branded new tab, private search, CoinPay login, and a bring-your-own-keys AI sidebar.",
   "icons": {
     "16": "icons/icon-16.png",
@@ -17,8 +17,7 @@
     "scripting",
     "identity",
     "proxy",
-    "privacy",
-    "webNavigation"
+    "privacy"
   ],
   "host_permissions": [
     "https://api.openai.com/*",
@@ -33,8 +32,7 @@
     "https://tronbrowser.dev/*",
     "http://localhost/*",
     "http://127.0.0.1/*",
-    "https://*/*",
-    "*://*.onion/*"
+    "https://*/*"
   ],
   "background": {
     "service_worker": "background.js"
@@ -75,16 +73,5 @@
   "options_page": "options.html",
   "chrome_url_overrides": {
     "newtab": "newtab.html"
-  },
-  "web_accessible_resources": [
-    {
-      "resources": [
-        "onion-connecting.html",
-        "onion-connecting.js"
-      ],
-      "matches": [
-        "<all_urls>"
-      ]
-    }
-  ]
+  }
 }

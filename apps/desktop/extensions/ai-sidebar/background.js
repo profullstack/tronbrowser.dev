@@ -115,17 +115,15 @@ async function setTorBadge(on) {
   } catch (_) { /* action API may be unavailable */ }
 }
 
-// auto=false → a MANUAL toggle: sticky, stays on until the user turns it off or
-// exits. auto=true → enabled for a .onion site: released when its tabs close.
-async function enableTor(auto = false) {
+async function enableTor() {
   await chrome.proxy.settings.set({ value: torProxyConfig(TOR_SOCKS_PORT), scope: 'regular' });
   // Stop WebRTC from leaking the real IP via non-proxied UDP.
   try {
     await chrome.privacy.network.webRTCIPHandlingPolicy.set({ value: 'disable_non_proxied_udp' });
   } catch (_) { /* privacy controlled elsewhere */ }
-  await chrome.storage.local.set({ torEnabled: true, torAuto: auto });
+  await chrome.storage.local.set({ torEnabled: true });
   // session storage is wiped on browser restart → marks Tor as on THIS session.
-  try { await chrome.storage.session.set({ torSession: { auto } }); } catch (_) { /* no-op */ }
+  try { await chrome.storage.session.set({ torSession: true }); } catch (_) { /* no-op */ }
   await setTorBadge(true);
 }
 
@@ -138,29 +136,9 @@ async function disableTor() {
   } catch (_) { /* fall through to clear */ }
   try { await chrome.proxy.settings.clear({ scope: 'regular' }); } catch (_) { /* already clear */ }
   try { await chrome.privacy.network.webRTCIPHandlingPolicy.clear({}); } catch (_) { /* already clear */ }
-  await chrome.storage.local.set({ torEnabled: false, torAuto: false });
+  await chrome.storage.local.set({ torEnabled: false });
   try { await chrome.storage.session.remove('torSession'); } catch (_) { /* no-op */ }
   await setTorBadge(false);
-}
-
-function isOnionUrl(url) {
-  try { return new URL(url || '').hostname.endsWith('.onion'); } catch (_) { return false; }
-}
-
-async function anyOnionTabsOpen(excludeTabId) {
-  const tabs = await chrome.tabs.query({});
-  return tabs.some((t) => t.id !== excludeTabId && (isOnionUrl(t.url) || isOnionUrl(t.pendingUrl)));
-}
-
-// When the last .onion tab closes, turn Tor back off — but ONLY if Tor was
-// auto-enabled for .onion (torAuto), never a manual toggle the user set.
-async function maybeAutoDisableTor(excludeTabId) {
-  const { torEnabled, torAuto } = await chrome.storage.local.get(['torEnabled', 'torAuto']);
-  if (!torEnabled || !torAuto) return;
-  if (!(await anyOnionTabsOpen(excludeTabId))) {
-    await disableTor();
-    await stopTorViaHelper();
-  }
 }
 
 // Confirm traffic actually exits via Tor — the proxy is set, but the daemon may
@@ -196,7 +174,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
           chrome.runtime.sendMessage({ type: 'tor-progress', pct }).catch(() => {});
         });
         if (result.ready) {
-          await enableTor(false); // manual toggle = sticky (until exit / turned off)
+          await enableTor();
           const check = await checkTor();
           sendResponse({ enabled: true, check });
         } else {
@@ -220,14 +198,14 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 });
 
 // Tor defaults OFF on every fresh browser start — nobody is routed through Tor
-// unless they ask (or load a .onion). chrome.storage.session is wiped on browser
+// unless they flip the toggle. chrome.storage.session is wiped on browser
 // restart, so it tells a fresh launch from a service-worker restart mid-session.
 (async () => {
   try {
     const { torSession } = await chrome.storage.session.get('torSession');
     if (torSession) {
       // Same session, SW just restarted → keep Tor on (re-apply the proxy).
-      await enableTor(!!torSession.auto);
+      await enableTor();
     } else {
       // Fresh browser start. If local still says Tor was on (carried over from
       // the last run), clear it + any persisted proxy. Otherwise leave the
@@ -237,50 +215,3 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     }
   } catch (_) { /* best effort */ }
 })();
-
-// Auto-enable Tor for .onion sites (they only resolve through Tor). A .onion
-// with Tor off fails DNS → onErrorOccurred fires; that's our trigger. We show a
-// "Connecting to Tor…" page, bring Tor up, then send the tab to the onion.
-const onionInProgress = new Set();
-
-async function handleOnionNavigation(onion, tabId) {
-  if (tabId == null || tabId < 0 || onionInProgress.has(tabId)) return;
-  const { torEnabled } = await chrome.storage.local.get('torEnabled');
-  if (torEnabled) return; // already routing through Tor
-
-  onionInProgress.add(tabId);
-  console.log('[tron-tor] .onion detected, connecting Tor:', onion);
-  try {
-    const interstitial = chrome.runtime.getURL('onion-connecting.html') + '?u=' + encodeURIComponent(onion);
-    try { await chrome.tabs.update(tabId, { url: interstitial }); } catch (_) { /* tab gone */ }
-
-    const started = await startTorViaHelper();
-    if (started.error === 'unreachable' || started.error === 'tor-not-installed') {
-      chrome.runtime.sendMessage({ type: 'onion-error', reason: started.error }).catch(() => {});
-      return;
-    }
-    const result = await waitForTor((pct) => {
-      chrome.runtime.sendMessage({ type: 'tor-progress', pct }).catch(() => {});
-    });
-    if (result.ready) {
-      await enableTor(true); // auto: released when the .onion tabs close
-      try { await chrome.tabs.update(tabId, { url: onion }); } catch (_) { /* tab gone */ }
-    } else {
-      chrome.runtime.sendMessage({ type: 'onion-error', reason: result.error || 'tor-exited' }).catch(() => {});
-    }
-  } finally {
-    onionInProgress.delete(tabId);
-  }
-}
-
-chrome.webNavigation.onErrorOccurred.addListener((d) => {
-  if (d.frameId === 0 && isOnionUrl(d.url)) handleOnionNavigation(d.url, d.tabId);
-});
-
-// Auto-disable Tor once the last .onion tab is gone (only if we auto-enabled it).
-chrome.tabs.onRemoved.addListener((tabId) => {
-  maybeAutoDisableTor(tabId).catch(() => {});
-});
-chrome.tabs.onUpdated.addListener((_tabId, changeInfo) => {
-  if (changeInfo.url) maybeAutoDisableTor().catch(() => {});
-});
