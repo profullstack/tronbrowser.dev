@@ -27,6 +27,8 @@ const STATUS = '✻ status'; // server/system window (always present, pinned fir
 const irc = new IrcClient();
 const buffers = new Map(); // channel -> [{from,text,time,...}]
 let active = null;
+const unread = new Set();   // channels/status with new activity since last viewed
+const mentions = new Set(); // subset: a DM or a mention of our nick (stronger highlight)
 
 function logStatus(text) { appendMsg({ channel: STATUS, sys: true, text, time: Date.now() }); }
 
@@ -39,7 +41,13 @@ function ensureBuffer(chan) {
 function renderChanList() {
   const ul = $('chan-list'); ul.innerHTML = '';
   for (const chan of buffers.keys()) {
-    const li = el('li', chan === active ? 'active' : '', chan);
+    let cls = 'chan';
+    if (chan === active) cls += ' active';
+    else if (mentions.has(chan)) cls += ' unread mention';
+    else if (unread.has(chan)) cls += ' unread';
+    const li = el('li', cls);
+    li.append(el('span', 'name', chan));
+    if (chan !== active && (unread.has(chan) || mentions.has(chan))) li.append(el('span', 'dot'));
     li.addEventListener('click', () => selectChannel(chan));
     ul.appendChild(li);
   }
@@ -47,6 +55,7 @@ function renderChanList() {
 
 function selectChannel(chan) {
   active = chan;
+  unread.delete(chan); mentions.delete(chan); // viewing it clears the highlight
   $('chan-title').textContent = chan;
   renderChanList();
   const m = $('msgs'); m.innerHTML = '';
@@ -56,7 +65,15 @@ function selectChannel(chan) {
 }
 
 function appendMsg(line, store = true) {
-  if (store) { ensureBuffer(line.channel); buffers.get(line.channel).push(line); }
+  if (store) {
+    ensureBuffer(line.channel);
+    buffers.get(line.channel).push(line);
+    if (line.channel && line.channel !== active) {
+      unread.add(line.channel);
+      if (!line.sys && (isDM(line) || isMention(line))) mentions.add(line.channel);
+      renderChanList();
+    }
+  }
   if (line.channel !== active) return;
   const m = $('msgs');
   const div = el('div', 'msg' + (line.sys ? ' sys' : '') + (line.self ? ' self' : '') + (line.notice ? ' notice' : ''));
