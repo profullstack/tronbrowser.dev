@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="stylesheet" href="chat.css" />
+<title>TronBrowser · Chat</title>
+</head>
+<body>
+  <header class="apphdr">
+    <img src="icons/favicon.svg" alt="" class="logo" />
+    <span class="brand">Tron<span class="accent">Browser</span></span>
+    <nav class="tabs">
+      <button class="tab active" data-tab="chat">💬 Chat</button>
+      <button class="tab" data-tab="torrents">🧲 Torrents</button>
+      <button class="tab" data-tab="qrypt">🔒 qrypt.chat</button>
+    </nav>
+  </header>
+
+  <!-- ===== Chat (IRC) ===== -->
+  <section id="tab-chat" class="panel active">
+    <!-- connect form -->
+    <div id="irc-connect" class="connect">
+      <h2>Connect to IRC</h2>
+      <p class="muted">Members-only network. Sign in with your <strong>bbs.profullstack.com</strong> username and IRC password (SASL).</p>
+      <label>Server <input id="irc-url" type="text" value="wss://irc.profullstack.com/irc" /></label>
+      <label>Username <input id="irc-nick" type="text" placeholder="your BBS name" autocomplete="username" /></label>
+      <label>Password <input id="irc-pass" type="password" placeholder="IRC password (SASL)" autocomplete="current-password" /></label>
+      <label>Channels <input id="irc-chans" type="text" value="#general" /></label>
+      <label class="row"><input id="irc-remember" type="checkbox" checked /> remember on this device</label>
+      <button id="irc-go" class="primary">Connect</button>
+      <div id="irc-status" class="status"></div>
+    </div>
+
+    <!-- chat client -->
+    <div id="irc-client" class="client hidden">
+      <aside class="chans">
+        <div class="chans-head"><span id="irc-me"></span><button id="irc-disc" title="Disconnect">⏻</button></div>
+        <ul id="chan-list"></ul>
+        <form id="join-form" class="join"><input id="join-input" placeholder="#join a channel" /></form>
+      </aside>
+      <main class="convo">
+        <div id="chan-title" class="convo-head"></div>
+        <div id="msgs" class="msgs"></div>
+        <form id="say-form" class="composer">
+          <input id="say-input" placeholder="Message…" autocomplete="off" />
+          <button type="submit">Send</button>
+        </form>
+      </main>
+    </div>
+  </section>
+
+  <!-- ===== Torrents (placeholder) ===== -->
+  <section id="tab-torrents" class="panel">
+    <div class="soon">🧲 <strong>Torrents</strong> — DHT search + indexed torrents via bittorrented.com. Coming next.</div>
+  </section>
+
+  <!-- ===== qrypt.chat (placeholder) ===== -->
+  <section id="tab-qrypt" class="panel">
+    <div class="soon">🔒 <strong>qrypt.chat</strong> — quantum-resistant E2EE messaging (CoinPay login, contacts, media). Lands once the qrypt.chat backend is live.</div>
+  </section>
+
+  <script type="module" src="chat.js"></script>
+</body>
+</html>
