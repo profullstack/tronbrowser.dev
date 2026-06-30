@@ -34,6 +34,10 @@ SOCKS_PORT = int(os.environ.get("TRON_TOR_SOCKS_PORT", "9050"))
 DATA_DIR = os.environ.get("TRON_TOR_DATA", os.path.expanduser("~/.tronbrowser/tor"))
 BUNDLED_DIR = os.environ.get("TRON_TOR_BIN_DIR", "")
 BOOTSTRAP_TIMEOUT = float(os.environ.get("TRON_TOR_TIMEOUT", "60"))
+PIDFILE = os.environ.get("TRON_TOR_PIDFILE", "")
+# Bumped whenever the helper protocol/behaviour changes; the launcher kills a
+# stale helper so the current version always runs.
+HELPER_VERSION = "3.2.6"
 
 _lock = threading.Lock()
 _proc = None       # the running tor subprocess (or None)
@@ -178,7 +182,8 @@ def status():
     with _lock:
         running = _proc is not None and _proc.poll() is None
         return {"running": running, "ready": running and _ready,
-                "torInstalled": tor_binary() is not None}
+                "torInstalled": tor_binary() is not None,
+                "version": HELPER_VERSION}
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -217,7 +222,26 @@ class Handler(BaseHTTPRequestHandler):
 
 def _shutdown(*_):
     stop_tor()
+    _remove_pidfile()
     sys.exit(0)
+
+
+def _write_pidfile():
+    if not PIDFILE:
+        return
+    try:
+        with open(PIDFILE, "w") as f:
+            f.write(str(os.getpid()))
+    except OSError:
+        pass
+
+
+def _remove_pidfile():
+    if PIDFILE:
+        try:
+            os.remove(PIDFILE)
+        except OSError:
+            pass
 
 
 def main():
@@ -226,13 +250,16 @@ def main():
     try:
         server = ThreadingHTTPServer((HOST, PORT), Handler)
     except OSError:
-        # Port already bound → another helper is running. Nothing to do.
+        # Port already bound → another helper is running. Nothing to do. (The
+        # launcher kills a stale helper before us, so this is rare.)
         return
-    log("listening on %s:%d (tor: %s)" % (HOST, PORT, tor_binary() or "NOT FOUND"))
+    _write_pidfile()
+    log("listening on %s:%d v%s (tor: %s)" % (HOST, PORT, HELPER_VERSION, tor_binary() or "NOT FOUND"))
     try:
         server.serve_forever()
     finally:
         stop_tor()
+        _remove_pidfile()
 
 
 if __name__ == "__main__":

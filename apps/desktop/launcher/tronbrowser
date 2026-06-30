@@ -131,8 +131,27 @@ if [ "$TOR" != "1" ]; then
     elif command -v tor >/dev/null 2>&1; then _torbin="$(command -v tor)";
     else _torbin="NOT FOUND — run 'tron tor' to install it"; fi
     echo "TronBrowser: Tor control helper on 127.0.0.1:9061 (tor: $_torbin). Toggle 🧅 Tor in the AI sidebar. Log: $DATA/tor-helper.log" >&2
-    TRON_TOR_DATA="$DATA/tor" TRON_TOR_BIN_DIR="$DIR" \
-      python3 "$DIR/tron-tor-helper" >>"$DATA/tor-helper.log" 2>&1 &
+    # The helper persists across launches, so an OLD one (from before an upgrade)
+    # would keep answering the toggle with stale code. Replace it ONLY when the
+    # running helper isn't this version — otherwise leave a healthy current
+    # helper alone (don't drop an active Tor session). All backgrounded so the
+    # kill+settle never holds up the browser launch.
+    HELPER_VERSION=3.2.6
+    (
+      _pf="$DATA/tor-helper.pid"
+      _rv="$(curl -fsS --max-time 1 http://127.0.0.1:9061/status 2>/dev/null | sed -n 's/.*"version"[^"]*"\([^"]*\)".*/\1/p')"
+      if [ "$_rv" != "$HELPER_VERSION" ]; then
+        [ -f "$_pf" ] && kill "$(cat "$_pf" 2>/dev/null)" 2>/dev/null || true
+        if command -v fuser >/dev/null 2>&1; then
+          fuser -k 9061/tcp >/dev/null 2>&1 || true
+        elif command -v lsof >/dev/null 2>&1; then
+          lsof -ti tcp:9061 2>/dev/null | while read -r _p; do kill "$_p" 2>/dev/null || true; done
+        fi
+        sleep 1   # let the control port free up before re-binding
+        exec env TRON_TOR_DATA="$DATA/tor" TRON_TOR_BIN_DIR="$DIR" TRON_TOR_PIDFILE="$_pf" \
+          python3 "$DIR/tron-tor-helper"
+      fi
+    ) >>"$DATA/tor-helper.log" 2>&1 &
   fi
 fi
 
