@@ -122,19 +122,36 @@ def start_tor():
             return False, "spawn: %s" % exc
 
     # Read tor's log (outside the lock) until it bootstraps or dies/timeouts.
+    # Capture recent output so a failure reports WHY (perms, port in use, libs…).
     proc = _proc
     timer = threading.Timer(BOOTSTRAP_TIMEOUT, lambda: proc.poll() is None and proc.kill())
     timer.start()
+    recent = []
     try:
         for line in proc.stdout:
-            if "Bootstrapped " in line:
-                log(line.strip())
+            line = line.rstrip()
+            if not line:
+                continue
+            recent.append(line)
+            if len(recent) > 20:
+                recent.pop(0)
+            # Surface progress + anything that looks like a problem to the log.
+            if "Bootstrapped " in line or "[warn]" in line or "[err]" in line:
+                log(line)
             if "Bootstrapped 100%" in line:
                 _set_ready(True)
                 log("tor ready")
                 return True, None
-        log("tor exited before bootstrapping")
-        return False, "tor-exited"  # stdout closed before 100%
+        # stdout closed before 100% → tor exited. If something is now serving the
+        # SOCKS port (a system Tor / stale tor that beat us to it), reuse it
+        # rather than reporting failure.
+        if socks_port_open():
+            _set_ready(True)
+            log("SOCKS port %d already serving — reusing the existing Tor" % SOCKS_PORT)
+            return True, None
+        tail = " ¦ ".join(recent[-6:]) or "(no output)"
+        log("tor exited before bootstrapping: " + tail)
+        return False, "tor-exited: " + tail
     finally:
         timer.cancel()
 

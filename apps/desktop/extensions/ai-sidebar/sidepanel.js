@@ -200,7 +200,7 @@ async function toggleTor() {
       } else if (err === 'unreachable') {
         showTorStatus('warn', 'Couldn’t reach the Tor helper. Restart TronBrowser and try again, or run <code>tron tor</code>.');
       } else {
-        showTorStatus('warn', 'Tor couldn’t start. Make sure Tor is installed, then try again.');
+        showTorStatus('warn', 'Tor couldn’t start. See <code>~/.tronbrowser/tor-helper.log</code> for the reason.');
       }
     }
   } catch (e) {
