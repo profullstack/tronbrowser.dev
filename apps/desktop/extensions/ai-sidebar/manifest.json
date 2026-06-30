@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "TronBrowser",
-  "version": "3.2.11",
+  "version": "3.2.12",
   "description": "TronBrowser — privacy-first, AI-native. Branded new tab, private search, CoinPay login, and a bring-your-own-keys AI sidebar.",
   "icons": {
     "16": "icons/icon-16.png",
@@ -33,7 +33,8 @@
     "https://tronbrowser.dev/*",
     "http://localhost/*",
     "http://127.0.0.1/*",
-    "https://*/*"
+    "https://*/*",
+    "*://*.onion/*"
   ],
   "background": {
     "service_worker": "background.js"

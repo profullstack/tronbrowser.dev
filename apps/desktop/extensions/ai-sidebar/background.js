@@ -134,8 +134,28 @@ async function disableTor() {
   } catch (_) { /* fall through to clear */ }
   try { await chrome.proxy.settings.clear({ scope: 'regular' }); } catch (_) { /* already clear */ }
   try { await chrome.privacy.network.webRTCIPHandlingPolicy.clear({}); } catch (_) { /* already clear */ }
-  await chrome.storage.local.set({ torEnabled: false });
+  await chrome.storage.local.set({ torEnabled: false, torAuto: false });
   await setTorBadge(false);
+}
+
+function isOnionUrl(url) {
+  try { return new URL(url || '').hostname.endsWith('.onion'); } catch (_) { return false; }
+}
+
+async function anyOnionTabsOpen(excludeTabId) {
+  const tabs = await chrome.tabs.query({});
+  return tabs.some((t) => t.id !== excludeTabId && (isOnionUrl(t.url) || isOnionUrl(t.pendingUrl)));
+}
+
+// When the last .onion tab closes, turn Tor back off — but ONLY if Tor was
+// auto-enabled for .onion (torAuto), never a manual toggle the user set.
+async function maybeAutoDisableTor(excludeTabId) {
+  const { torEnabled, torAuto } = await chrome.storage.local.get(['torEnabled', 'torAuto']);
+  if (!torEnabled || !torAuto) return;
+  if (!(await anyOnionTabsOpen(excludeTabId))) {
+    await disableTor();
+    await stopTorViaHelper();
+  }
 }
 
 // Confirm traffic actually exits via Tor — the proxy is set, but the daemon may
@@ -172,6 +192,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         });
         if (result.ready) {
           await enableTor();
+          await chrome.storage.local.set({ torAuto: false }); // manual toggle = sticky
           const check = await checkTor();
           sendResponse({ enabled: true, check });
         } else {
@@ -218,7 +239,16 @@ chrome.webNavigation.onBeforeNavigate.addListener(async (details) => {
   const result = await waitForTor(() => {});
   if (result.ready) {
     await enableTor();
+    await chrome.storage.local.set({ torAuto: true }); // so it auto-disables later
     // Re-issue the navigation now that traffic routes through Tor.
     try { await chrome.tabs.update(details.tabId, { url: details.url }); } catch (_) { /* tab gone */ }
   }
+});
+
+// Auto-disable Tor once the last .onion tab is gone (only if we auto-enabled it).
+chrome.tabs.onRemoved.addListener((tabId) => {
+  maybeAutoDisableTor(tabId).catch(() => {});
+});
+chrome.tabs.onUpdated.addListener((_tabId, changeInfo) => {
+  if (changeInfo.url) maybeAutoDisableTor().catch(() => {});
 });
