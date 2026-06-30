@@ -136,7 +136,7 @@ if [ "$TOR" != "1" ]; then
     # running helper isn't this version — otherwise leave a healthy current
     # helper alone (don't drop an active Tor session). All backgrounded so the
     # kill+settle never holds up the browser launch.
-    HELPER_VERSION=3.2.7
+    HELPER_VERSION=3.2.8
     (
       _pf="$DATA/tor-helper.pid"
       _rv="$(curl -fsS --max-time 1 http://127.0.0.1:9061/status 2>/dev/null | sed -n 's/.*"version"[^"]*"\([^"]*\)".*/\1/p')"

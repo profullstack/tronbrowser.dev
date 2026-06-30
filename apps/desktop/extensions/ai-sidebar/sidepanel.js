@@ -147,6 +147,8 @@ async function consumePendingQuery() {
 // routing, not Tor-Browser-grade — see docs/tor-onion-mode.md.
 const torBtn = el('tor');
 const torStatusEl = el('tor-status');
+const torProgressEl = el('tor-progress');
+const torProgressBar = el('tor-progress-bar');
 
 function showTorStatus(kind, html) {
   torStatusEl.className = 'tor-status ' + kind;
@@ -156,6 +158,22 @@ function hideTorStatus() {
   torStatusEl.className = 'tor-status hidden';
   torStatusEl.textContent = '';
 }
+function showTorProgress(pct) {
+  torProgressEl.classList.remove('hidden');
+  torProgressBar.style.width = Math.max(0, Math.min(100, pct)) + '%';
+}
+function hideTorProgress() {
+  torProgressEl.classList.add('hidden');
+  torProgressBar.style.width = '0%';
+}
+
+// Live bootstrap progress pushed from the background while connecting.
+chrome.runtime.onMessage.addListener((m) => {
+  if (m && m.type === 'tor-progress') {
+    showTorProgress(m.pct);
+    showTorStatus('', `Connecting through Tor… ${Math.round(m.pct)}%`);
+  }
+});
 function setTorButton(on) {
   torBtn.setAttribute('aria-pressed', on ? 'true' : 'false');
   torBtn.textContent = on ? '🧅 Tor ON' : '🧅 Tor';
@@ -174,7 +192,10 @@ async function toggleTor() {
   const turningOn = torBtn.getAttribute('aria-pressed') !== 'true';
   torBtn.classList.add('busy');
   torBtn.disabled = true;
-  if (turningOn) showTorStatus('', 'Connecting through Tor…');
+  if (turningOn) {
+    showTorStatus('', 'Connecting through Tor… (the first run can take up to a minute)');
+    showTorProgress(0);
+  }
   try {
     const res = await chrome.runtime.sendMessage({ type: 'tor-set', on: turningOn });
     const torBrowserNote =
@@ -195,7 +216,9 @@ async function toggleTor() {
       // Background couldn't route. Explain why, in plain language.
       setTorButton(false);
       const err = res && res.started && res.started.error;
-      if (err === 'tor-not-installed') {
+      if (err === 'tor-starting') {
+        showTorStatus('', 'Tor is still connecting — the first run downloads the Tor network and can take a minute or two. Click 🧅 again in a few seconds; it’ll finish in the background.');
+      } else if (err === 'tor-not-installed') {
         showTorStatus('warn', 'Tor isn’t installed yet. Run <code>tron tor</code> once (it installs Tor automatically), then try again.');
       } else if (err === 'unreachable') {
         showTorStatus('warn', 'Couldn’t reach the Tor helper. Restart TronBrowser and try again, or run <code>tron tor</code>.');
@@ -207,6 +230,7 @@ async function toggleTor() {
     setTorButton(false);
     showTorStatus('warn', 'Could not toggle Tor: ' + ((e && e.message) || e));
   } finally {
+    hideTorProgress();
     torBtn.classList.remove('busy');
     torBtn.disabled = false;
   }

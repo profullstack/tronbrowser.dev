@@ -44,19 +44,44 @@ const TOR_CHECK_URL = 'https://check.torproject.org/api/ip';
 // to Tor until the user flips it on.
 const TOR_HELPER = 'http://127.0.0.1:9061';
 
-// Ask the helper to start Tor and block until it's bootstrapped. Returns
-// { ok, error? }; { ok:false, error:'unreachable' } when the helper isn't running.
+async function helperJson(path, method) {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), 8000);
+  try {
+    const res = await fetch(`${TOR_HELPER}${path}`, { method, signal: ctrl.signal });
+    return await res.json().catch(() => ({}));
+  } finally {
+    clearTimeout(t);
+  }
+}
+
+// Kick Tor off (non-blocking). Returns the helper's initial status, or
+// { error:'unreachable' } when the helper isn't running.
 async function startTorViaHelper() {
   try {
-    const ctrl = new AbortController();
-    const t = setTimeout(() => ctrl.abort(), 75000); // tor bootstrap can take ~60s
-    const res = await fetch(`${TOR_HELPER}/start`, { method: 'POST', signal: ctrl.signal });
-    clearTimeout(t);
-    const data = await res.json().catch(() => ({}));
-    return { ok: res.ok && data.ready !== false, error: data.error };
+    return await helperJson('/start', 'POST');
   } catch (_) {
-    return { ok: false, error: 'unreachable' };
+    return { error: 'unreachable' };
   }
+}
+
+// Poll the helper's bootstrap until ready / error / timeout, reporting live
+// progress (0..100) via onProgress. Returns { ready } or { error }.
+async function waitForTor(onProgress, timeoutMs = 180000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    let st;
+    try {
+      st = await helperJson('/status', 'GET');
+    } catch (_) {
+      return { error: 'unreachable' };
+    }
+    if (typeof st.progress === 'number') onProgress(st.progress);
+    if (st.ready) return { ready: true };
+    if (st.error) return { error: st.error }; // tor exited with a reason
+    await new Promise((r) => setTimeout(r, 1000));
+  }
+  return { error: 'tor-starting' };
 }
 
 async function stopTorViaHelper() {
@@ -127,27 +152,24 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     (async () => {
       if (msg.on) {
         const started = await startTorViaHelper();
-        if (started.ok) {
-          // The daemon bootstrapped → route through it and TRUST it. The
-          // check.torproject.org probe is only a confirmation; a slow/blocked
-          // probe must NOT tear down a working Tor session.
+        if (started.error === 'unreachable') {
+          sendResponse({ enabled: false, started: { error: 'unreachable' } });
+          return;
+        }
+        if (started.error === 'tor-not-installed') {
+          sendResponse({ enabled: false, started: { error: 'tor-not-installed' } });
+          return;
+        }
+        // Poll bootstrap, pushing live progress to the sidebar's progress bar.
+        const result = await waitForTor((pct) => {
+          chrome.runtime.sendMessage({ type: 'tor-progress', pct }).catch(() => {});
+        });
+        if (result.ready) {
           await enableTor();
           const check = await checkTor();
-          sendResponse({ enabled: true, started, check });
-        } else if (started.error === 'unreachable') {
-          // No control helper — maybe the user runs their own Tor. Try, but
-          // here we DO require the probe to confirm before committing.
-          await enableTor();
-          const check = await checkTor();
-          if (check.ok && check.isTor) {
-            sendResponse({ enabled: true, started, check });
-          } else {
-            await disableTor();
-            sendResponse({ enabled: false, started, check });
-          }
+          sendResponse({ enabled: true, check });
         } else {
-          // tor-not-installed / tor-exited / spawn error → can't route.
-          sendResponse({ enabled: false, started });
+          sendResponse({ enabled: false, started: { error: result.error } });
         }
       } else {
         await disableTor();
