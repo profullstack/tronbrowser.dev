@@ -34,10 +34,10 @@ chrome.runtime.onMessage.addListener((msg, sender) => {
 // Routes the LIVE session through the local Tor SOCKS5 proxy via chrome.proxy —
 // no relaunch, no second instance. Mirrors src/tor-proxy.ts. The extension can
 // re-route traffic but CANNOT start the daemon, so the toggle expects Tor on
-// 127.0.0.1:9050 (start it with `tron tor`) and verifies via check.torproject.org.
+// 127.0.0.1:9071 (TronBrowser's own port) and verifies via check.torproject.org.
 // This is convenience routing, NOT Tor-Browser-grade anonymity — see
 // docs/tor-onion-mode.md.
-const TOR_SOCKS_PORT = 9050;
+const TOR_SOCKS_PORT = 9071;
 const TOR_CHECK_URL = 'https://check.torproject.org/api/ip';
 // Loopback control helper the launcher runs (launcher/tron-tor-helper). It
 // starts the Tor daemon ON DEMAND so the toggle "just works" — nobody connects

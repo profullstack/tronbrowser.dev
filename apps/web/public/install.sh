@@ -126,7 +126,7 @@ case "${1:-}" in
     [ "$#" -gt 0 ] || { echo "usage: tron open <url>" >&2; exit 2; }
     launch "$@" ;;
   tor)
-    # Start a standalone Tor daemon (no browser) on 127.0.0.1:9050 for the
+    # Start a standalone Tor daemon (no browser) on 127.0.0.1:9071 for the
     # in-browser Tor toggle in the AI sidebar. Ctrl-C to stop. Auto-installs Tor
     # (any platform) if missing. (The `--tor` flag, handled by the launcher,
     # instead opens a dedicated Tor session.)
@@ -154,8 +154,8 @@ case "${1:-}" in
     esac
     TOR_DATA="${TRONBROWSER_DATA:-$HOME/.tronbrowser}/tor"
     mkdir -p "$TOR_DATA"
-    echo "Starting Tor on 127.0.0.1:9050 (Ctrl-C to stop). Now flip the 🧅 Tor toggle in the TronBrowser AI sidebar."
-    exec "$TORBIN" --SocksPort 127.0.0.1:9050 --DataDirectory "$TOR_DATA" ;;
+    echo "Starting Tor on 127.0.0.1:9071 (Ctrl-C to stop). Now flip the 🧅 Tor toggle in the TronBrowser AI sidebar."
+    exec "$TORBIN" --SocksPort 127.0.0.1:9071 --DataDirectory "$TOR_DATA" ;;
   upgrade|update)
     exec sh -c "curl -fsSL '$INSTALL_URL' | sh -s -- upgrade" ;;
   remove|uninstall)
@@ -317,11 +317,11 @@ download_tor_expert_bundle() { # dest_dir
 }
 
 # Make a `tor` daemon available for the in-browser 🧅 Tor toggle. We install OUR
-# OWN standalone tor (the Tor Expert Bundle) and prefer it, because the system
-# `tor` (/usr/sbin/tor) is AppArmor-confined to /var/lib/tor on Debian/Ubuntu and
-# can't be spawned with a custom DataDirectory — it just exits. The package
-# manager is only a fallback (its tor still works via the helper's reuse path if
-# the distro runs a tor service on 9050). Skip with TB_NO_TOR_INSTALL=1.
+# OWN standalone tor (the Tor Expert Bundle) and run it on our OWN port (9071),
+# never touching any system tor. We prefer the bundle because the system `tor`
+# (/usr/sbin/tor) is AppArmor-confined to /var/lib/tor on Debian/Ubuntu and can't
+# be spawned with a custom DataDirectory — it just exits. The package manager is
+# only a last-resort fallback. Skip with TB_NO_TOR_INSTALL=1.
 ensure_tor() {
   [ "${TB_NO_TOR_INSTALL:-0}" = "1" ] && return 0
   # Install next to the launcher shim so its dir ($DIR/tor-bin) resolves it — the

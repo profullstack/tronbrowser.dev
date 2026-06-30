@@ -5,6 +5,7 @@ import {
   parseBootstrapProgress,
   isBootstrapComplete,
 } from './tor.js';
+import { DEFAULT_TOR_SOCKS_PORT } from './chromium-flags.js';
 
 describe('resolveTorBinary', () => {
   it('falls back to the bare command on PATH when no bundled dir', () => {
@@ -32,7 +33,7 @@ describe('buildTorArgs', () => {
     const args = buildTorArgs();
     const i = args.indexOf('--SocksPort');
     expect(i).toBeGreaterThanOrEqual(0);
-    expect(args[i + 1]).toBe('127.0.0.1:9050');
+    expect(args[i + 1]).toBe(`127.0.0.1:${DEFAULT_TOR_SOCKS_PORT}`);
   });
 
   it('honors a custom socks port, data dir, and control port', () => {

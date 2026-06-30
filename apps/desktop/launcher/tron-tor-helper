@@ -30,14 +30,14 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 HOST = "127.0.0.1"
 PORT = int(os.environ.get("TRON_TOR_HELPER_PORT", "9061"))
-SOCKS_PORT = int(os.environ.get("TRON_TOR_SOCKS_PORT", "9050"))
+SOCKS_PORT = int(os.environ.get("TRON_TOR_SOCKS_PORT", "9071"))
 DATA_DIR = os.environ.get("TRON_TOR_DATA", os.path.expanduser("~/.tronbrowser/tor"))
 BUNDLED_DIR = os.environ.get("TRON_TOR_BIN_DIR", "")
 BOOTSTRAP_TIMEOUT = float(os.environ.get("TRON_TOR_TIMEOUT", "60"))
 PIDFILE = os.environ.get("TRON_TOR_PIDFILE", "")
 # Bumped whenever the helper protocol/behaviour changes; the launcher kills a
 # stale helper so the current version always runs.
-HELPER_VERSION = "3.2.6"
+HELPER_VERSION = "3.2.7"
 
 _lock = threading.Lock()
 _proc = None       # the running tor subprocess (or None)

@@ -27,7 +27,7 @@ EXTBASE_SRC="$DIR/extensions"   # holds ai-sidebar + ublock-origin (uBlock Origi
 # docs/tor-onion-mode.md). Strip --tor out of the args; the rest passes through
 # to the browser as URLs. (Rotate-through-$@ keeps order and is whitespace-safe.)
 TOR=0
-TOR_SOCKS_PORT="${TRONBROWSER_TOR_PORT:-9050}"
+TOR_SOCKS_PORT="${TRONBROWSER_TOR_PORT:-9071}"
 _argc=$#
 _i=0
 while [ "$_i" -lt "$_argc" ]; do
@@ -136,7 +136,7 @@ if [ "$TOR" != "1" ]; then
     # running helper isn't this version — otherwise leave a healthy current
     # helper alone (don't drop an active Tor session). All backgrounded so the
     # kill+settle never holds up the browser launch.
-    HELPER_VERSION=3.2.6
+    HELPER_VERSION=3.2.7
     (
       _pf="$DATA/tor-helper.pid"
       _rv="$(curl -fsS --max-time 1 http://127.0.0.1:9061/status 2>/dev/null | sed -n 's/.*"version"[^"]*"\([^"]*\)".*/\1/p')"

@@ -12,7 +12,7 @@ export interface LaunchOptions {
   /** Opt-in only. Defaults to false — no telemetry by default (PRD §Principles). */
   telemetry?: boolean;
   /**
-   * Route all traffic through the local Tor SOCKS5 proxy (127.0.0.1:9050).
+   * Route all traffic through the local Tor SOCKS5 proxy (127.0.0.1:9071).
    * Hides your IP and lets `.onion` sites resolve. Implies `incognito` unless
    * explicitly disabled. NOT Tor-Browser-grade anonymity — see
    * `docs/tor-onion-mode.md`.
@@ -24,14 +24,18 @@ export interface LaunchOptions {
    * (discouraged).
    */
   incognito?: boolean;
-  /** SOCKS5 port the local Tor daemon listens on. Defaults to 9050. */
+  /** SOCKS5 port the local Tor daemon listens on. Defaults to 9071. */
   torSocksPort?: number;
   /** Extra flags appended verbatim (escape hatch for power users). */
   extraFlags?: string[];
 }
 
-/** Default SOCKS5 port for the local Tor daemon. */
-export const DEFAULT_TOR_SOCKS_PORT = 9050;
+/**
+ * Default SOCKS5 port for TronBrowser's OWN Tor daemon. Deliberately NOT 9050
+ * (system tor) or 9150 (Tor Browser) — we run our own bundled tor here so we
+ * never collide with or depend on any existing Tor on the system.
+ */
+export const DEFAULT_TOR_SOCKS_PORT = 9071;
 
 /**
  * Flags that hard-disable phone-home / telemetry / sponsored surfaces. These are
