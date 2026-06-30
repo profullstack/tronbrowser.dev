@@ -194,11 +194,31 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   }
 });
 
-// Re-apply the proxy when the service worker wakes if Tor was left on (extension
-// proxy settings don't always survive a browser restart). Idempotent.
-(async () => {
-  try {
-    const { torEnabled } = await chrome.storage.local.get('torEnabled');
-    if (torEnabled) await enableTor();
-  } catch (_) { /* best effort */ }
-})();
+// Tor defaults OFF on every fresh browser start. Nobody should be routed through
+// Tor unless they ask — and the daemon isn't running yet at launch, so a
+// left-over proxy would just break browsing. (Within a session the proxy is a
+// persisted setting, so Tor stays on across service-worker restarts on its own.)
+chrome.runtime.onStartup.addListener(() => {
+  disableTor().catch(() => {});
+});
+
+// Auto-enable Tor when navigating to a .onion site — those only resolve through
+// Tor. Turn it on, wait for the circuit, then reload the page now that we route.
+chrome.webNavigation.onBeforeNavigate.addListener(async (details) => {
+  if (details.frameId !== 0) return; // top-level navigations only
+  let host;
+  try { host = new URL(details.url).hostname; } catch (_) { return; }
+  if (!host.endsWith('.onion')) return;
+
+  const { torEnabled } = await chrome.storage.local.get('torEnabled');
+  if (torEnabled) return; // already routing through Tor
+
+  const started = await startTorViaHelper();
+  if (started.error === 'unreachable' || started.error === 'tor-not-installed') return;
+  const result = await waitForTor(() => {});
+  if (result.ready) {
+    await enableTor();
+    // Re-issue the navigation now that traffic routes through Tor.
+    try { await chrome.tabs.update(details.tabId, { url: details.url }); } catch (_) { /* tab gone */ }
+  }
+});
