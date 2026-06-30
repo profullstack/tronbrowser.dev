@@ -17,7 +17,11 @@ header {
 .brand { font-weight: 800; letter-spacing: 1px; }
 .brand .accent { color: var(--cyan); }
 .accent { color: var(--cyan); }
-.provider { color: var(--muted); font-size: 12px; flex: 1; }
+.hspace { flex: 1; }
+.provider { color: var(--muted); font-size: 11px; padding: 3px 12px;
+  border-bottom: 1px solid var(--line); white-space: nowrap; overflow: hidden;
+  text-overflow: ellipsis; }
+.provider:empty { display: none; }
 header button { background: transparent; border: 1px solid var(--line); color: var(--fg);
   border-radius: 6px; cursor: pointer; padding: 2px 8px; }
 .tor-btn { font-size: 12px; white-space: nowrap; }
