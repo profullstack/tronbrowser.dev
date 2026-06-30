@@ -130,7 +130,7 @@ if [ "$TOR" != "1" ]; then
     elif [ -x "$DIR/tor-bin/tor" ]; then _torbin="$DIR/tor-bin/tor (auto-installed)";
     elif command -v tor >/dev/null 2>&1; then _torbin="$(command -v tor)";
     else _torbin="NOT FOUND — run 'tron tor' to install it"; fi
-    echo "TronBrowser: Tor control helper on 127.0.0.1:9061 (tor: $_torbin). Toggle 🧅 Tor in the AI sidebar. Log: $DATA/tor-helper.log" >&2
+    echo "TronBrowser: Tor toggle ready — helper control on 127.0.0.1:9061, Tor SOCKS on 127.0.0.1:$TOR_SOCKS_PORT (tor: $_torbin). Click 🧅 Tor in the AI sidebar. Log: $DATA/tor-helper.log" >&2
     # The helper persists across launches, so an OLD one (from before an upgrade)
     # would keep answering the toggle with stale code. Replace it ONLY when the
     # running helper isn't this version — otherwise leave a healthy current
