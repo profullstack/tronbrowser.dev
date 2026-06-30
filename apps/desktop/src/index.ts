@@ -12,3 +12,4 @@ export const PACKAGE_NAME = '@tronbrowser/desktop' as const;
 export * from './chromium-flags.js';
 export * from './binary.js';
 export * from './launcher.js';
+export * from './tor.js';

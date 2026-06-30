@@ -20,10 +20,18 @@ Then use the agent-friendly **`tron`** CLI:
 
 ```bash
 tron <url>        # open URL(s) in TronBrowser
+tron --tor [url]  # route through Tor (hides your IP, reaches .onion) — see note
 tron upgrade      # update to the latest release (no-ops if current)
 tron remove       # uninstall (keeps your profile)
 tron version
 ```
+
+> **`--tor` is a convenience feature, not anonymity.** It hides your IP and lets
+> you reach `.onion` sites from your everyday browser, using a separate wiped
+> profile. It is **not** Tor-Browser-grade: Chromium's fingerprinting surface
+> isn't hardened. **If your safety depends on it, use the real
+> [Tor Browser](https://www.torproject.org/) — it's much safer.** Requires the
+> `tor` daemon installed. Details: [`docs/tor-onion-mode.md`](docs/tor-onion-mode.md).
 
 Also packaged for **macOS · Windows · Debian/Ubuntu (.deb) · Fedora/RHEL (.rpm) ·
 Arch (AUR) · Gentoo · NixOS · Snap · Flatpak · AppImage · FreeBSD** — and arm64

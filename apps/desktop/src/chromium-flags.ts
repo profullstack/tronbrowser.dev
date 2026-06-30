@@ -11,9 +11,27 @@ export interface LaunchOptions {
   userDataDir?: string;
   /** Opt-in only. Defaults to false — no telemetry by default (PRD §Principles). */
   telemetry?: boolean;
+  /**
+   * Route all traffic through the local Tor SOCKS5 proxy (127.0.0.1:9050).
+   * Hides your IP and lets `.onion` sites resolve. Implies `incognito` unless
+   * explicitly disabled. NOT Tor-Browser-grade anonymity — see
+   * `docs/tor-onion-mode.md`.
+   */
+  tor?: boolean;
+  /**
+   * Open in a fresh incognito (off-the-record) window — no history/cookies
+   * persisted to disk. Tor mode defaults this to true; pass `false` to override
+   * (discouraged).
+   */
+  incognito?: boolean;
+  /** SOCKS5 port the local Tor daemon listens on. Defaults to 9050. */
+  torSocksPort?: number;
   /** Extra flags appended verbatim (escape hatch for power users). */
   extraFlags?: string[];
 }
+
+/** Default SOCKS5 port for the local Tor daemon. */
+export const DEFAULT_TOR_SOCKS_PORT = 9050;
 
 /**
  * Flags that hard-disable phone-home / telemetry / sponsored surfaces. These are
@@ -30,6 +48,24 @@ export const PRIVACY_FLAGS = [
   '--metrics-recording-only=false',
   '--disable-sync',
 ] as const;
+
+/**
+ * Builds the flags that route the browser through the local Tor SOCKS5 proxy.
+ *
+ * Chromium's SOCKS5 proxy performs *remote* DNS resolution (the hostname is
+ * handed to the proxy), so names — including `.onion` — are resolved inside Tor
+ * and never leak to the local resolver. The WebRTC policy stops UDP from
+ * escaping around the proxy and revealing the real IP.
+ */
+export function buildTorFlags(socksPort: number = DEFAULT_TOR_SOCKS_PORT): string[] {
+  return [
+    `--proxy-server=socks5://127.0.0.1:${socksPort}`,
+    // Force everything (incl. loopback) through the proxy; bypass nothing.
+    '--proxy-bypass-list=<-loopback>',
+    // Prevent WebRTC from leaking the real IP via non-proxied UDP.
+    '--force-webrtc-ip-handling-policy=disable_non_proxied_udp',
+  ];
+}
 
 /** Flags that must never appear — ads, sponsored tabs, affiliate injection. */
 export const FORBIDDEN_FLAG_SUBSTRINGS = [
@@ -53,6 +89,15 @@ export function buildLaunchFlags(opts: LaunchOptions = {}): string[] {
     flags.push(`--user-data-dir=${opts.userDataDir}`);
   }
 
+  if (opts.tor) {
+    flags.push(...buildTorFlags(opts.torSocksPort));
+  }
+
+  // Tor implies a fresh, no-trace window unless the caller explicitly opts out.
+  if (incognitoEnabled(opts)) {
+    flags.push('--incognito');
+  }
+
   if (opts.extraFlags) {
     flags.push(...opts.extraFlags);
   }
@@ -72,4 +117,21 @@ export function buildLaunchFlags(opts: LaunchOptions = {}): string[] {
 /** True when telemetry is explicitly enabled. Defaults to false. */
 export function telemetryEnabled(opts: LaunchOptions = {}): boolean {
   return opts.telemetry === true;
+}
+
+/** True when traffic should be routed through Tor. */
+export function torEnabled(opts: LaunchOptions = {}): boolean {
+  return opts.tor === true;
+}
+
+/**
+ * True when the window should be incognito. Tor mode defaults to incognito; the
+ * caller can force it off with `incognito: false` (discouraged). Without Tor,
+ * incognito is opt-in.
+ */
+export function incognitoEnabled(opts: LaunchOptions = {}): boolean {
+  if (opts.incognito !== undefined) {
+    return opts.incognito;
+  }
+  return opts.tor === true;
 }

@@ -20,6 +20,24 @@ done
 DIR="$(CDPATH= cd -- "$(dirname -- "$SELF")" && pwd)"
 EXTBASE_SRC="$DIR/extensions"   # holds ai-sidebar + ublock-origin (uBlock Origin)
 
+# --- Tor mode -------------------------------------------------------------
+# `tron --tor [url...]` routes traffic through a local Tor daemon (SOCKS5) and
+# uses a SEPARATE, wiped profile so clearnet cookies never ride over Tor. This
+# hides your IP and reaches .onion — it is NOT Tor-Browser-grade anonymity (see
+# docs/tor-onion-mode.md). Strip --tor out of the args; the rest passes through
+# to the browser as URLs. (Rotate-through-$@ keeps order and is whitespace-safe.)
+TOR=0
+TOR_SOCKS_PORT="${TRONBROWSER_TOR_PORT:-9050}"
+_argc=$#
+_i=0
+while [ "$_i" -lt "$_argc" ]; do
+  _a="$1"; shift; _i=$((_i + 1))
+  case "$_a" in
+    --tor) TOR=1; continue ;;
+  esac
+  set -- "$@" "$_a"
+done
+
 BROWSER=""        # a binary path, or "flatpak"
 FLATPAK_APP=""
 IS_SNAP=0
@@ -79,6 +97,19 @@ if [ "$IS_SNAP" = "1" ]; then
 else
   DATA="${TRONBROWSER_DATA:-$HOME/.tronbrowser}"
   EXTBASE="$EXTBASE_SRC"
+fi
+
+# Tor uses a dedicated, wiped browser profile (isolates clearnet cookies/history
+# from the Tor session) while the Tor daemon's own state lives under the normal
+# data dir. The wipe = no lasting local trace. We use a separate profile rather
+# than --incognito because command-line --load-extension extensions don't run in
+# incognito windows (would break the de-googled new-tab + AI sidebar).
+TOR_RUNTIME=""
+if [ "$TOR" = "1" ]; then
+  TOR_RUNTIME="$DATA/tor"
+  mkdir -p "$TOR_RUNTIME"
+  DATA="${DATA}-tor"
+  rm -rf "$DATA"
 fi
 
 # Load every bundled extension (each subdir with a manifest.json).
@@ -195,20 +226,98 @@ FLAGS="--user-data-dir=$DATA --class=TronBrowser --no-first-run --no-default-bro
 LOG="${TRONBROWSER_LOG:-$DATA/tron.log}"
 FLAGS="$FLAGS --log-level=2"
 
+# --- Start the Tor daemon (only in --tor mode) ---------------------------
+# Resolve a bundled `tor` next to the launcher, else one on PATH. Start it on a
+# loopback SOCKS port, wait for the circuit to bootstrap, then add the proxy
+# flags. Chromium's SOCKS5 does REMOTE DNS, so names (incl. .onion) resolve
+# inside Tor; the WebRTC policy stops UDP leaking the real IP. The daemon is
+# killed when the browser exits (we don't `exec` in Tor mode).
+TOR_PID=""
+if [ "$TOR" = "1" ]; then
+  TORBIN=""
+  if [ -x "$DIR/tor" ]; then
+    TORBIN="$DIR/tor"
+  else
+    TORBIN="$(command -v tor 2>/dev/null || true)"
+  fi
+  if [ -z "$TORBIN" ]; then
+    cat >&2 <<MSG
+TronBrowser --tor needs the Tor daemon, which isn't installed.
+Install it:
+  macOS:  brew install tor
+  Debian/Ubuntu:  sudo apt install tor
+  Fedora:  sudo dnf install tor
+  Arch:  sudo pacman -S tor
+Then run 'tron --tor' again.
+MSG
+    exit 1
+  fi
+
+  TOR_LOG="$TOR_RUNTIME/tor.log"
+  : > "$TOR_LOG"
+  echo "TronBrowser: starting Tor (SOCKS 127.0.0.1:$TOR_SOCKS_PORT)…" >&2
+  "$TORBIN" --SocksPort "127.0.0.1:$TOR_SOCKS_PORT" \
+            --DataDirectory "$TOR_RUNTIME" \
+            >>"$TOR_LOG" 2>&1 &
+  TOR_PID=$!
+
+  # Make sure Tor dies with us, however we exit.
+  trap 'if [ -n "$TOR_PID" ]; then kill "$TOR_PID" 2>/dev/null || true; fi' EXIT INT TERM
+
+  # Wait (up to ~60s) for "Bootstrapped 100%". Bail if Tor dies first.
+  _waited=0
+  while :; do
+    if grep -q "Bootstrapped 100%" "$TOR_LOG" 2>/dev/null; then
+      echo "TronBrowser: Tor ready." >&2
+      break
+    fi
+    if ! kill -0 "$TOR_PID" 2>/dev/null; then
+      echo "TronBrowser: Tor exited before bootstrapping. See $TOR_LOG" >&2
+      exit 1
+    fi
+    if [ "$_waited" -ge 60 ]; then
+      echo "TronBrowser: Tor failed to bootstrap within 60s. See $TOR_LOG" >&2
+      exit 1
+    fi
+    sleep 1
+    _waited=$((_waited + 1))
+  done
+
+  FLAGS="$FLAGS --proxy-server=socks5://127.0.0.1:$TOR_SOCKS_PORT --proxy-bypass-list=<-loopback> --force-webrtc-ip-handling-policy=disable_non_proxied_udp"
+fi
+
+# In Tor mode we must NOT exec — we keep this shell alive so the EXIT trap can
+# stop the daemon after the browser closes. Otherwise exec (no extra process).
 if [ -n "$MAC_APP" ]; then
   # macOS: launch the .app via LaunchServices (`open`). Running the inner binary
   # directly SIGABRTs, and `-n` gives a separate instance from any running
   # Chromium. `open` detaches, so stderr noise never hits the terminal.
   # shellcheck disable=SC2086
-  exec open -na "$MAC_APP" --args $FLAGS "$@"
+  if [ "$TOR" = "1" ]; then
+    # `open` detaches, so we can't wait to reap Tor — disarm the trap and leave
+    # the daemon running for the detached browser. Tell the user how to stop it.
+    trap - EXIT INT TERM
+    echo "TronBrowser: Tor (pid $TOR_PID) will keep running for the browser. Stop it with: kill $TOR_PID" >&2
+    exec open -na "$MAC_APP" --args $FLAGS "$@"
+  else
+    exec open -na "$MAC_APP" --args $FLAGS "$@"
+  fi
 elif [ "$BROWSER" = "flatpak" ]; then
   # shellcheck disable=SC2086
-  [ "${TRONBROWSER_VERBOSE:-0}" = "1" ] \
-    && exec flatpak run --filesystem="$DATA" --filesystem="$EXTBASE_SRC" "$FLATPAK_APP" $FLAGS "$@" \
-    || exec flatpak run --filesystem="$DATA" --filesystem="$EXTBASE_SRC" "$FLATPAK_APP" $FLAGS "$@" 2>>"$LOG"
+  if [ "$TOR" = "1" ]; then
+    flatpak run --filesystem="$DATA" --filesystem="$EXTBASE_SRC" "$FLATPAK_APP" $FLAGS "$@" 2>>"$LOG"
+  elif [ "${TRONBROWSER_VERBOSE:-0}" = "1" ]; then
+    exec flatpak run --filesystem="$DATA" --filesystem="$EXTBASE_SRC" "$FLATPAK_APP" $FLAGS "$@"
+  else
+    exec flatpak run --filesystem="$DATA" --filesystem="$EXTBASE_SRC" "$FLATPAK_APP" $FLAGS "$@" 2>>"$LOG"
+  fi
 else
   # shellcheck disable=SC2086
-  [ "${TRONBROWSER_VERBOSE:-0}" = "1" ] \
-    && exec "$BROWSER" $FLAGS "$@" \
-    || exec "$BROWSER" $FLAGS "$@" 2>>"$LOG"
+  if [ "$TOR" = "1" ]; then
+    "$BROWSER" $FLAGS "$@" 2>>"$LOG"
+  elif [ "${TRONBROWSER_VERBOSE:-0}" = "1" ]; then
+    exec "$BROWSER" $FLAGS "$@"
+  else
+    exec "$BROWSER" $FLAGS "$@" 2>>"$LOG"
+  fi
 fi
