@@ -13,3 +13,4 @@ export * from './chromium-flags.js';
 export * from './binary.js';
 export * from './launcher.js';
 export * from './tor.js';
+export * from './tor-proxy.js';

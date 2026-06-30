@@ -142,4 +142,71 @@ async function consumePendingQuery() {
   }
 }
 
-(async () => { await loadConfig(); await consumePendingQuery(); })();
+// --- Tor toggle ----------------------------------------------------------
+// Flips the live session through Tor (background uses chrome.proxy). Convenience
+// routing, not Tor-Browser-grade — see docs/tor-onion-mode.md.
+const torBtn = el('tor');
+const torStatusEl = el('tor-status');
+
+function showTorStatus(kind, html) {
+  torStatusEl.className = 'tor-status ' + kind;
+  torStatusEl.innerHTML = html;
+}
+function hideTorStatus() {
+  torStatusEl.className = 'tor-status hidden';
+  torStatusEl.textContent = '';
+}
+function setTorButton(on) {
+  torBtn.setAttribute('aria-pressed', on ? 'true' : 'false');
+  torBtn.textContent = on ? '🧅 Tor ON' : '🧅 Tor';
+}
+// IPs come from check.torproject.org; still strip to IP chars before injecting.
+function safeIp(ip) { return String(ip || '?').replace(/[^0-9a-fA-F.:]/g, ''); }
+
+async function refreshTorState() {
+  try {
+    const res = await chrome.runtime.sendMessage({ type: 'tor-status' });
+    setTorButton(!!(res && res.enabled));
+  } catch (_) { /* background may be asleep */ }
+}
+
+async function toggleTor() {
+  const turningOn = torBtn.getAttribute('aria-pressed') !== 'true';
+  torBtn.classList.add('busy');
+  torBtn.disabled = true;
+  if (turningOn) showTorStatus('', 'Connecting through Tor…');
+  try {
+    const res = await chrome.runtime.sendMessage({ type: 'tor-set', on: turningOn });
+    if (!turningOn) {
+      setTorButton(false);
+      hideTorStatus();
+    } else if (res && res.check && res.check.ok && res.check.isTor) {
+      setTorButton(true);
+      showTorStatus(
+        'ok',
+        `Connected via Tor · exit IP <code>${safeIp(res.check.ip)}</code>. ` +
+          'Not Tor-Browser-grade — for real anonymity use ' +
+          '<a href="https://www.torproject.org/" target="_blank" rel="noreferrer">Tor Browser</a>.',
+      );
+    } else {
+      // Proxy set but no Tor exit → the daemon almost certainly isn't running.
+      // Revert so the user isn't stuck browsing through a dead proxy.
+      await chrome.runtime.sendMessage({ type: 'tor-set', on: false });
+      setTorButton(false);
+      showTorStatus(
+        'warn',
+        'Tor isn’t running. Start it with <code>tron tor</code> (or your system Tor), then toggle again.',
+      );
+    }
+  } catch (e) {
+    setTorButton(false);
+    showTorStatus('warn', 'Could not toggle Tor: ' + ((e && e.message) || e));
+  } finally {
+    torBtn.classList.remove('busy');
+    torBtn.disabled = false;
+  }
+}
+
+torBtn.addEventListener('click', toggleTor);
+
+(async () => { await loadConfig(); await consumePendingQuery(); await refreshTorState(); })();

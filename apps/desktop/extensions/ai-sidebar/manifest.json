@@ -15,7 +15,9 @@
     "tabs",
     "activeTab",
     "scripting",
-    "identity"
+    "identity",
+    "proxy",
+    "privacy"
   ],
   "host_permissions": [
     "https://api.openai.com/*",

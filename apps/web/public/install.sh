@@ -77,10 +77,15 @@ Usage:
   tron <url> [url...]   Open URL(s) in TronBrowser (agent-friendly)
   tron open <url>       Same as above, explicit
   tron                  Launch TronBrowser
+  tron --tor [url]      Launch a dedicated Tor session (separate wiped profile)
+  tron tor              Start a standalone Tor daemon for the in-browser toggle
   tron upgrade          Update to the latest release
   tron remove           Uninstall TronBrowser (keeps your profile data)
   tron version          Print the installed version
   tron help             Show this help
+
+Tor routing hides your IP and reaches .onion — it is NOT Tor-Browser-grade
+anonymity. If your safety depends on it, use the real Tor Browser.
 
 Set TRONBROWSER_AUTO_UPGRADE=0 to skip the once-daily background upgrade check.
 USAGE
@@ -120,6 +125,16 @@ case "${1:-}" in
     shift
     [ "$#" -gt 0 ] || { echo "usage: tron open <url>" >&2; exit 2; }
     launch "$@" ;;
+  tor)
+    # Start a standalone Tor daemon (no browser) on 127.0.0.1:9050 for the
+    # in-browser Tor toggle in the AI sidebar. Ctrl-C to stop. (The `--tor` flag
+    # below, handled by the launcher, instead opens a dedicated Tor session.)
+    TORBIN="$(command -v tor 2>/dev/null || true)"
+    [ -n "$TORBIN" ] || { echo "Tor isn't installed. Install it (e.g. 'sudo apt install tor', 'brew install tor', 'sudo pacman -S tor'), then run: tron tor" >&2; exit 1; }
+    TOR_DATA="${TRONBROWSER_DATA:-$HOME/.tronbrowser}/tor"
+    mkdir -p "$TOR_DATA"
+    echo "Starting Tor on 127.0.0.1:9050 (Ctrl-C to stop). Now flip the 🧅 Tor toggle in the TronBrowser AI sidebar."
+    exec "$TORBIN" --SocksPort 127.0.0.1:9050 --DataDirectory "$TOR_DATA" ;;
   upgrade|update)
     exec sh -c "curl -fsSL '$INSTALL_URL' | sh -s -- upgrade" ;;
   remove|uninstall)

@@ -6,6 +6,43 @@
 
 ---
 
+## Two ways to use Tor
+
+1. **In-browser toggle (🧅 Tor in the AI sidebar)** — flips your *current*
+   session through Tor with one click, no relaunch and no second window. Best
+   for "make this session go through Tor." Needs a running Tor daemon
+   (`tron tor`). See [In-browser toggle](#in-browser-toggle-ai-sidebar).
+2. **`tron --tor` dedicated session** — launches a separate, wiped Tor profile
+   and starts/stops its own daemon for you. Best for a clean, isolated Tor
+   window. See [What this is](#what-this-is).
+
+Both are convenience routing. **Neither is Tor-Browser-grade anonymity** — see
+[What this is NOT](#what-this-is-not--read-this-first).
+
+## In-browser toggle (AI sidebar)
+
+The existing AI-sidebar extension has a **🧅 Tor** button in its header. Clicking
+it routes the live browser session through the local Tor SOCKS5 proxy using
+`chrome.proxy` (plus a WebRTC-leak guard via `chrome.privacy`) — no relaunch, no
+separate instance. A **TOR** badge appears on the toolbar icon while it's on.
+
+Because an extension can re-route traffic but **cannot start the `tor` daemon**,
+the toggle expects Tor to be running on `127.0.0.1:9050`. The easiest way:
+
+```bash
+tron tor        # starts a standalone Tor daemon (Ctrl-C to stop)
+```
+
+Then flip the 🧅 Tor toggle. On enable, the extension verifies real Tor routing
+via `check.torproject.org`; if Tor isn't reachable it reverts (so you're never
+stuck behind a dead proxy) and tells you to run `tron tor`. The toggle does
+**not** use a separate profile, so it does not isolate clearnet cookies — use
+`tron --tor` if you want that isolation.
+
+Implementation: `extensions/ai-sidebar/{background.js,sidepanel.js}` +
+`manifest.json` (`proxy`, `privacy` perms); proxy config mirrors the unit-tested
+`apps/desktop/src/tor-proxy.ts`.
+
 ## What this is
 
 A `--tor` mode for TronBrowser that:
