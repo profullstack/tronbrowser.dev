@@ -316,29 +316,33 @@ download_tor_expert_bundle() { # dest_dir
   rm -rf "$tmp"; return 1
 }
 
-# Make a `tor` daemon available for the in-browser 🧅 Tor toggle. Tries the
-# system package manager first (sudo only when interactive), then falls back to
-# the Tor Expert Bundle download (no sudo, any platform). Skip with
-# TB_NO_TOR_INSTALL=1.
+# Make a `tor` daemon available for the in-browser 🧅 Tor toggle. We install OUR
+# OWN standalone tor (the Tor Expert Bundle) and prefer it, because the system
+# `tor` (/usr/sbin/tor) is AppArmor-confined to /var/lib/tor on Debian/Ubuntu and
+# can't be spawned with a custom DataDirectory — it just exits. The package
+# manager is only a fallback (its tor still works via the helper's reuse path if
+# the distro runs a tor service on 9050). Skip with TB_NO_TOR_INSTALL=1.
 ensure_tor() {
   [ "${TB_NO_TOR_INSTALL:-0}" = "1" ] && return 0
-  command -v tor >/dev/null 2>&1 && return 0
-  # Install Tor right next to the launcher shim so its dir ($DIR/tor-bin) resolves
-  # it — the release tarball extracts the shim into a tronbrowser/ subdir.
+  # Install next to the launcher shim so its dir ($DIR/tor-bin) resolves it — the
+  # release tarball extracts the shim into a tronbrowser/ subdir.
   tordest="$APP_DIR/tor-bin"
   _ldir="$(find "$APP_DIR" -maxdepth 3 -type f -name tronbrowser 2>/dev/null | head -n1)"
   [ -n "$_ldir" ] && tordest="$(dirname "$_ldir")/tor-bin"
-  [ -x "$tordest/tor" ] && return 0
+  [ -x "$tordest/tor" ] && return 0   # our own tor already installed
 
   info "Setting up Tor (for the in-browser Tor toggle)…"
-  # 1) Homebrew (macOS/Linux) — no sudo.
+  # Primary: our own standalone tor (no AppArmor, fully under our control).
+  if download_tor_expert_bundle "$tordest"; then
+    info "Installed Tor to $tordest"
+    return 0
+  fi
+  # Fallback: system package manager (used via the helper's reuse path).
+  if command -v tor >/dev/null 2>&1; then return 0; fi
   if command -v brew >/dev/null 2>&1; then
     brew install tor >/dev/null 2>&1 || true
     command -v tor >/dev/null 2>&1 && return 0
   fi
-  # 2) Linux package managers. Use sudo only if we're root already or have an
-  #    interactive terminal (sudo prompts on /dev/tty). Never block a piped/
-  #    background run.
   uid="$(id -u 2>/dev/null || echo 0)"
   SUDO=""
   if [ "$uid" -ne 0 ] && command -v sudo >/dev/null 2>&1 && { [ -t 1 ] || [ -t 2 ]; }; then SUDO="sudo"; fi
@@ -351,11 +355,6 @@ ensure_tor() {
     elif command -v apk     >/dev/null 2>&1; then $SUDO apk add tor >/dev/null 2>&1 || true
     fi
     command -v tor >/dev/null 2>&1 && return 0
-  fi
-  # 3) No-sudo, any platform: the Tor Expert Bundle, into the app dir.
-  if download_tor_expert_bundle "$APP_DIR/tor-bin"; then
-    info "Installed Tor to $APP_DIR/tor-bin"
-    return 0
   fi
   warn "Couldn't install Tor automatically. The 🧅 Tor toggle needs 'tor' — install it (e.g. 'sudo apt install tor' / 'brew install tor')."
   return 1
