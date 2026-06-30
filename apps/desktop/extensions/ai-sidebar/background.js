@@ -115,13 +115,15 @@ async function setTorBadge(on) {
   } catch (_) { /* action API may be unavailable */ }
 }
 
-async function enableTor() {
+// auto=false → a MANUAL toggle: sticky, stays on until the user turns it off or
+// exits. auto=true → enabled for a .onion site: released when its tabs close.
+async function enableTor(auto = false) {
   await chrome.proxy.settings.set({ value: torProxyConfig(TOR_SOCKS_PORT), scope: 'regular' });
   // Stop WebRTC from leaking the real IP via non-proxied UDP.
   try {
     await chrome.privacy.network.webRTCIPHandlingPolicy.set({ value: 'disable_non_proxied_udp' });
   } catch (_) { /* privacy controlled elsewhere */ }
-  await chrome.storage.local.set({ torEnabled: true });
+  await chrome.storage.local.set({ torEnabled: true, torAuto: auto });
   await setTorBadge(true);
 }
 
@@ -191,8 +193,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
           chrome.runtime.sendMessage({ type: 'tor-progress', pct }).catch(() => {});
         });
         if (result.ready) {
-          await enableTor();
-          await chrome.storage.local.set({ torAuto: false }); // manual toggle = sticky
+          await enableTor(false); // manual toggle = sticky (until exit / turned off)
           const check = await checkTor();
           sendResponse({ enabled: true, check });
         } else {
@@ -238,8 +239,7 @@ chrome.webNavigation.onBeforeNavigate.addListener(async (details) => {
   if (started.error === 'unreachable' || started.error === 'tor-not-installed') return;
   const result = await waitForTor(() => {});
   if (result.ready) {
-    await enableTor();
-    await chrome.storage.local.set({ torAuto: true }); // so it auto-disables later
+    await enableTor(true); // auto: released when the .onion tabs close
     // Re-issue the navigation now that traffic routes through Tor.
     try { await chrome.tabs.update(details.tabId, { url: details.url }); } catch (_) { /* tab gone */ }
   }
