@@ -16,6 +16,11 @@ document.querySelectorAll('.tab').forEach((btn) => {
   });
 });
 
+// CoinPay login can't render in the embed (OAuth provider refuses framing) →
+// open qrypt.chat in a full tab where the top-level redirect works.
+const qo = document.getElementById('qrypt-open');
+if (qo) qo.addEventListener('click', (e) => { e.preventDefault(); chrome.tabs.create({ url: 'https://qrypt.chat/' }); });
+
 // --- IRC ------------------------------------------------------------------
 const STORE_KEY = 'ircConfig';
 const irc = new IrcClient();
