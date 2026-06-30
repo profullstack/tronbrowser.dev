@@ -85,7 +85,40 @@ irc.addEventListener('status', (e) => {
   }
 });
 irc.addEventListener('joined', (e) => { ensureBuffer(e.detail.channel); if (!active) selectChannel(e.detail.channel); });
-irc.addEventListener('message', (e) => appendMsg(e.detail));
+irc.addEventListener('message', (e) => { appendMsg(e.detail); maybeNotify(e.detail); });
+
+// --- web notifications for incoming IRC messages --------------------------
+const isDM = (line) => line.channel && !line.channel.startsWith('#');
+const isMention = (line) =>
+  irc.nick && line.text && line.text.toLowerCase().includes(irc.nick.toLowerCase());
+
+function maybeNotify(line) {
+  // Only real incoming chat — skip our own echo, system lines, and server notices.
+  if (!line || line.self || line.sys || line.notice) return;
+  // Don't nag for the channel the user is actively reading with the panel open.
+  const unattended = document.hidden || line.channel !== active || isDM(line) || isMention(line);
+  if (!unattended) return;
+  if (!chrome?.notifications?.create) return;
+  const dm = isDM(line);
+  chrome.notifications.create('irc:' + line.channel, {
+    type: 'basic',
+    iconUrl: chrome.runtime.getURL('icons/icon-128.png'),
+    title: dm ? `IRC · ${line.from} (DM)` : `IRC · ${line.channel}`,
+    message: `${dm ? '' : line.from + ': '}${line.text}`.slice(0, 240),
+    priority: dm || isMention(line) ? 2 : 0,
+  });
+}
+
+// Clicking a notification focuses the channel it came from.
+if (chrome?.notifications?.onClicked) {
+  chrome.notifications.onClicked.addListener((id) => {
+    if (id.startsWith('irc:')) {
+      const chan = id.slice(4);
+      if (buffers.has(chan)) selectChannel(chan);
+      chrome.notifications.clear(id);
+    }
+  });
+}
 irc.addEventListener('system', (e) => { if (e.detail.channel) appendMsg({ channel: e.detail.channel, sys: true, text: e.detail.text }); });
 irc.addEventListener('topic', (e) => { if (e.detail.channel === active) $('chan-title').textContent = `${e.detail.channel} — ${e.detail.topic}`; });
 
@@ -119,7 +152,7 @@ $('say-form').addEventListener('submit', (e) => {
   $('say-input').value = '';
 });
 
-// Prefill from saved config.
+// Prefill from saved config — and auto-connect if a full account is set up.
 (async () => {
   const { [STORE_KEY]: cfg } = await chrome.storage.local.get(STORE_KEY);
   if (cfg) {
@@ -127,5 +160,11 @@ $('say-form').addEventListener('submit', (e) => {
     $('irc-nick').value = cfg.nick || '';
     $('irc-pass').value = cfg.password || '';
     $('irc-chans').value = (cfg.channels || ['#general']).join(' ');
+    $('irc-remember').checked = true;
+    // Saved nick + password = a configured account → connect without a click.
+    if (cfg.nick && cfg.password) {
+      setStatus('Auto-connecting…');
+      irc.connect(cfg);
+    }
   }
 })();

@@ -1,6 +1,6 @@
 {
   "name": "@tronbrowser/docs",
-  "version": "3.4.1",
+  "version": "3.5.0",
   "private": true,
   "description": "Documentation site",
   "type": "module",

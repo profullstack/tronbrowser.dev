@@ -1,6 +1,6 @@
 {
   "name": "@tronbrowser/scheduler",
-  "version": "3.4.1",
+  "version": "3.5.0",
   "private": true,
   "description": "Scheduled job runner",
   "type": "module",
