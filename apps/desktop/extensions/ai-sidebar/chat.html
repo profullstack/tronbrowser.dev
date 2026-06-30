@@ -49,9 +49,12 @@
     </div>
   </section>
 
-  <!-- ===== qrypt.chat (placeholder) ===== -->
+  <!-- ===== qrypt.chat (embeds the live E2EE app) ===== -->
   <section id="tab-qrypt" class="panel">
-    <div class="soon">🔒 <strong>qrypt.chat</strong> — quantum-resistant E2EE messaging (CoinPay login, contacts, media). Lands once the qrypt.chat backend is live.</div>
+    <iframe id="qrypt-frame"
+      title="qrypt.chat"
+      allow="camera; microphone; clipboard-write; autoplay; fullscreen"
+      referrerpolicy="no-referrer"></iframe>
   </section>
 
   <script type="module" src="chat.js"></script>

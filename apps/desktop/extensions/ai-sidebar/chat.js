@@ -9,6 +9,10 @@ document.querySelectorAll('.tab').forEach((btn) => {
     document.querySelectorAll('.tab').forEach((b) => b.classList.toggle('active', b === btn));
     const name = btn.dataset.tab;
     document.querySelectorAll('.panel').forEach((p) => p.classList.toggle('active', p.id === 'tab-' + name));
+    if (name === 'qrypt') {
+      const f = document.getElementById('qrypt-frame'); // load the live app on first open
+      if (f && !f.getAttribute('src')) f.setAttribute('src', 'https://qrypt.chat/');
+    }
   });
 });
 
