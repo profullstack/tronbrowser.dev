@@ -13,6 +13,10 @@ document.querySelectorAll('.tab').forEach((btn) => {
       const f = document.getElementById('qrypt-frame'); // load the live app on first open
       if (f && !f.getAttribute('src')) f.setAttribute('src', 'https://qrypt.chat/');
     }
+    if (name === 'pair') {
+      const f = document.getElementById('pair-frame'); // load PairUX on first open
+      if (f && !f.getAttribute('src')) f.setAttribute('src', 'https://pairux.com/');
+    }
   });
 });
 
@@ -20,6 +24,10 @@ document.querySelectorAll('.tab').forEach((btn) => {
 // open qrypt.chat in a full tab where the top-level redirect works.
 const qo = document.getElementById('qrypt-open');
 if (qo) qo.addEventListener('click', (e) => { e.preventDefault(); chrome.tabs.create({ url: 'https://qrypt.chat/' }); });
+
+// open pairux.com in a full tab (e.g. for screen-capture permission prompts).
+const po = document.getElementById('pair-open');
+if (po) po.addEventListener('click', (e) => { e.preventDefault(); chrome.tabs.create({ url: 'https://pairux.com/' }); });
 
 // --- IRC ------------------------------------------------------------------
 const STORE_KEY = 'ircConfig';

@@ -13,6 +13,7 @@
     <nav class="tabs">
       <button class="tab active" data-tab="chat">💬 IRC</button>
       <button class="tab" data-tab="qrypt">🔒 qrypt.chat</button>
+      <button class="tab" data-tab="pair">🖥️ PairUX</button>
     </nav>
   </header>
 
@@ -59,6 +60,18 @@
     <iframe id="qrypt-frame"
       title="qrypt.chat"
       allow="camera; microphone; clipboard-write; autoplay; fullscreen"
+      referrerpolicy="no-referrer"></iframe>
+  </section>
+
+  <!-- ===== PairUX (embeds the live screen-share app) ===== -->
+  <section id="tab-pair" class="panel">
+    <div class="qrypt-bar">
+      Sign in with your <strong>pairux.com</strong> account to start or join a
+      screen-share session. <a id="pair-open" href="#">open pairux.com in a full tab ↗</a>
+    </div>
+    <iframe id="pair-frame"
+      title="PairUX"
+      allow="camera; microphone; display-capture; clipboard-write; autoplay; fullscreen"
       referrerpolicy="no-referrer"></iframe>
   </section>
 
