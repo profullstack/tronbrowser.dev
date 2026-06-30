@@ -25,21 +25,39 @@ The existing AI-sidebar extension has a **🧅 Tor** button in its header. Click
 it routes the live browser session through the local Tor SOCKS5 proxy using
 `chrome.proxy` (plus a WebRTC-leak guard via `chrome.privacy`) — no relaunch, no
 separate instance. A **TOR** badge appears on the toolbar icon while it's on.
+**One click — no terminal, no setup.**
 
-Because an extension can re-route traffic but **cannot start the `tor` daemon**,
-the toggle expects Tor to be running on `127.0.0.1:9050`. The easiest way:
+### How it starts Tor on demand
 
-```bash
-tron tor        # starts a standalone Tor daemon (Ctrl-C to stop)
-```
+An extension can re-route traffic but **cannot launch a process**, so it can't
+start the `tor` daemon itself. To make the toggle "just work" without imposing
+always-on Tor on everyone, the launcher runs a tiny **control helper**
+(`launcher/tron-tor-helper`, loopback-only on `127.0.0.1:9061`) at every browser
+launch — both the desktop app entry and the `tron` CLI go through the same shim,
+so both get it. **The helper makes no network connection until asked:** nobody
+connects to Tor unless they flip the toggle on.
 
-Then flip the 🧅 Tor toggle. On enable, the extension verifies real Tor routing
-via `check.torproject.org`; if Tor isn't reachable it reverts (so you're never
-stuck behind a dead proxy) and tells you to run `tron tor`. The toggle does
-**not** use a separate profile, so it does not isolate clearnet cookies — use
-`tron --tor` if you want that isolation.
+Flow when you click 🧅 Tor:
 
-Implementation: `extensions/ai-sidebar/{background.js,sidepanel.js}` +
+1. Background `POST /start` → the helper spawns `tor`, waits for it to bootstrap.
+2. Background sets the SOCKS proxy + WebRTC guard.
+3. It verifies real Tor routing via `check.torproject.org`; if that fails it
+   reverts (never leaves a dead proxy) and shows a plain-language reason
+   (e.g. "Tor isn't installed on this computer yet").
+4. Toggling off clears the proxy and `POST /stop` stops the daemon.
+
+The toggle does **not** use a separate profile, so it does not isolate clearnet
+cookies — use `tron --tor` if you want that isolation. `tron tor` (start a
+standalone daemon) still exists as a manual fallback if the helper can't run
+(e.g. no `python3`).
+
+> **Note:** the helper can only start Tor if a `tor` binary is present (bundled
+> next to the launcher, or on `PATH`). Bundling `tor` across the `distribution/`
+> targets is still pending — until then the toggle needs `tor` installed, and
+> says so plainly if it isn't.
+
+Implementation: `launcher/tron-tor-helper` (Python) + `launcher/tronbrowser`
+(starts it) + `extensions/ai-sidebar/{background.js,sidepanel.js}` +
 `manifest.json` (`proxy`, `privacy` perms); proxy config mirrors the unit-tested
 `apps/desktop/src/tor-proxy.ts`.
 

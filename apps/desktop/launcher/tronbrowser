@@ -112,6 +112,18 @@ if [ "$TOR" = "1" ]; then
   rm -rf "$DATA"
 fi
 
+# On-demand Tor control helper for the in-browser 🧅 Tor toggle (AI sidebar).
+# Loopback-only; it makes NO network connection until the toggle asks it to
+# start Tor — so nobody connects to Tor unless they turn it on. Fire-and-forget
+# + idempotent (a second copy exits when the port is taken), so both the desktop
+# app entry and `tron` (which share this shim) get it. Best-effort: needs
+# python3, and skipped in --tor mode (that path runs its own Tor).
+if [ "$TOR" != "1" ] && command -v python3 >/dev/null 2>&1 && [ -f "$DIR/tron-tor-helper" ]; then
+  mkdir -p "$DATA"
+  TRON_TOR_DATA="$DATA/tor" TRON_TOR_BIN_DIR="$DIR" \
+    python3 "$DIR/tron-tor-helper" >>"$DATA/tor-helper.log" 2>&1 &
+fi
+
 # Load every bundled extension (each subdir with a manifest.json).
 EXT=""
 for d in "$EXTBASE"/*/; do

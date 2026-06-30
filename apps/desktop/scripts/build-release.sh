@@ -56,6 +56,9 @@ stage() { # dest dir
   mkdir -p "$s/extensions"
   install -m 0755 "$DESKTOP/launcher/tronbrowser" "$s/tronbrowser"
   cp "$DESKTOP/launcher/tronbrowser.cmd" "$s/tronbrowser.cmd"
+  # On-demand Tor control helper for the in-browser 🧅 Tor toggle (the launcher
+  # starts it; it starts Tor only when the toggle asks).
+  install -m 0755 "$DESKTOP/launcher/tron-tor-helper" "$s/tron-tor-helper"
   # -L dereferences the branding symlinks (icons/logo.svg -> repo-root logo.svg)
   # so the package contains real files, not dangling links.
   cp -RL "$DESKTOP/extensions/ai-sidebar" "$s/extensions/ai-sidebar"

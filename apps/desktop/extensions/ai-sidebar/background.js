@@ -39,6 +39,34 @@ chrome.runtime.onMessage.addListener((msg, sender) => {
 // docs/tor-onion-mode.md.
 const TOR_SOCKS_PORT = 9050;
 const TOR_CHECK_URL = 'https://check.torproject.org/api/ip';
+// Loopback control helper the launcher runs (launcher/tron-tor-helper). It
+// starts the Tor daemon ON DEMAND so the toggle "just works" — nobody connects
+// to Tor until the user flips it on.
+const TOR_HELPER = 'http://127.0.0.1:9061';
+
+// Ask the helper to start Tor and block until it's bootstrapped. Returns
+// { ok, error? }; { ok:false, error:'unreachable' } when the helper isn't running.
+async function startTorViaHelper() {
+  try {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), 75000); // tor bootstrap can take ~60s
+    const res = await fetch(`${TOR_HELPER}/start`, { method: 'POST', signal: ctrl.signal });
+    clearTimeout(t);
+    const data = await res.json().catch(() => ({}));
+    return { ok: res.ok && data.ready !== false, error: data.error };
+  } catch (_) {
+    return { ok: false, error: 'unreachable' };
+  }
+}
+
+async function stopTorViaHelper() {
+  try {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), 5000);
+    await fetch(`${TOR_HELPER}/stop`, { method: 'POST', signal: ctrl.signal });
+    clearTimeout(t);
+  } catch (_) { /* helper not running — nothing to stop */ }
+}
 
 function torProxyConfig(port) {
   return {
@@ -95,9 +123,19 @@ async function checkTor() {
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg?.type === 'tor-set') {
     (async () => {
-      if (msg.on) await enableTor(); else await disableTor();
-      const check = msg.on ? await checkTor() : { ok: true, isTor: false };
-      sendResponse({ enabled: !!msg.on, check });
+      if (msg.on) {
+        // Start the daemon on demand, route through it, then confirm real Tor.
+        const started = await startTorViaHelper();
+        await enableTor();
+        const check = await checkTor();
+        const ok = check.ok && check.isTor;
+        if (!ok) await disableTor(); // never leave a dead proxy in place
+        sendResponse({ enabled: ok, started, check });
+      } else {
+        await disableTor();
+        await stopTorViaHelper();
+        sendResponse({ enabled: false });
+      }
     })();
     return true; // async sendResponse
   }

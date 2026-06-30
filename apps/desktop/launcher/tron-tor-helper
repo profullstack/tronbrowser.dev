@@ -1,0 +1,172 @@
+#!/usr/bin/env python3
+"""TronBrowser Tor control helper.
+
+A loopback-only HTTP control endpoint the AI-sidebar 🧅 Tor toggle calls to
+start/stop a local Tor daemon ON DEMAND. The launcher starts this helper at
+browser launch (both the desktop app entry and `tron` go through the same
+shim), but it makes NO network connection until the toggle asks it to /start —
+so nobody connects to Tor unless they actually turn it on.
+
+This is convenience routing, NOT Tor-Browser-grade anonymity. See
+docs/tor-onion-mode.md.
+
+Endpoints (POST/GET on 127.0.0.1):
+  /start   start tor, block until bootstrapped → {"ready": true} or error
+  /stop    stop tor → {"stopped": true}
+  /status  {"running": bool, "ready": bool, "torInstalled": bool}
+
+Single-instance: binds a fixed loopback port; a second copy exits cleanly when
+the port is taken, so the launcher can fire-and-forget it every launch.
+"""
+import json
+import os
+import shutil
+import signal
+import subprocess
+import sys
+import threading
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+HOST = "127.0.0.1"
+PORT = int(os.environ.get("TRON_TOR_HELPER_PORT", "9061"))
+SOCKS_PORT = int(os.environ.get("TRON_TOR_SOCKS_PORT", "9050"))
+DATA_DIR = os.environ.get("TRON_TOR_DATA", os.path.expanduser("~/.tronbrowser/tor"))
+BUNDLED_DIR = os.environ.get("TRON_TOR_BIN_DIR", "")
+BOOTSTRAP_TIMEOUT = float(os.environ.get("TRON_TOR_TIMEOUT", "60"))
+
+_lock = threading.Lock()
+_proc = None       # the running tor subprocess (or None)
+_ready = False     # True once tor reported Bootstrapped 100%
+
+
+def tor_binary():
+    """Bundled `tor` next to the helper, else one on PATH (or None)."""
+    if BUNDLED_DIR:
+        cand = os.path.join(BUNDLED_DIR, "tor")
+        if os.access(cand, os.X_OK):
+            return cand
+    return shutil.which("tor")
+
+
+def start_tor():
+    """Start tor and block until bootstrapped. Returns (ok, error)."""
+    global _proc, _ready
+    with _lock:
+        if _proc is not None and _proc.poll() is None and _ready:
+            return True, None  # already up
+        binary = tor_binary()
+        if not binary:
+            return False, "tor-not-installed"
+        try:
+            os.makedirs(DATA_DIR, mode=0o700, exist_ok=True)
+            os.chmod(DATA_DIR, 0o700)  # tor refuses a group/world-readable DataDirectory
+        except OSError as exc:
+            return False, "datadir: %s" % exc
+
+        _ready = False
+        try:
+            _proc = subprocess.Popen(
+                [binary,
+                 "--SocksPort", "%s:%d" % (HOST, SOCKS_PORT),
+                 "--DataDirectory", DATA_DIR],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+            )
+        except OSError as exc:
+            return False, "spawn: %s" % exc
+
+    # Read tor's log (outside the lock) until it bootstraps or dies/timeouts.
+    proc = _proc
+    timer = threading.Timer(BOOTSTRAP_TIMEOUT, lambda: proc.poll() is None and proc.kill())
+    timer.start()
+    try:
+        for line in proc.stdout:
+            if "Bootstrapped 100%" in line:
+                _set_ready(True)
+                return True, None
+        return False, "tor-exited"  # stdout closed before 100%
+    finally:
+        timer.cancel()
+
+
+def _set_ready(value):
+    global _ready
+    with _lock:
+        _ready = value
+
+
+def stop_tor():
+    global _proc, _ready
+    with _lock:
+        proc, _proc, _ready = _proc, None, False
+    if proc is not None and proc.poll() is None:
+        proc.terminate()
+        try:
+            proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+
+
+def status():
+    with _lock:
+        running = _proc is not None and _proc.poll() is None
+        return {"running": running, "ready": running and _ready,
+                "torInstalled": tor_binary() is not None}
+
+
+class Handler(BaseHTTPRequestHandler):
+    def _send(self, code, obj):
+        body = json.dumps(obj).encode("utf-8")
+        self.send_response(code)
+        self.send_header("Content-Type", "application/json")
+        # The toggle (a chrome-extension:// page) is the only intended caller.
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _route(self):
+        path = self.path.split("?", 1)[0].rstrip("/") or "/"
+        if path == "/start":
+            ok, err = start_tor()
+            self._send(200 if ok else 503, {"ready": ok, "error": err})
+        elif path == "/stop":
+            stop_tor()
+            self._send(200, {"stopped": True})
+        elif path in ("/status", "/"):
+            self._send(200, status())
+        else:
+            self._send(404, {"error": "not-found"})
+
+    def do_GET(self):
+        self._route()
+
+    def do_POST(self):
+        self._route()
+
+    def log_message(self, *args):
+        pass  # quiet — the launcher routes our stdout to a log already
+
+
+def _shutdown(*_):
+    stop_tor()
+    sys.exit(0)
+
+
+def main():
+    signal.signal(signal.SIGTERM, _shutdown)
+    signal.signal(signal.SIGINT, _shutdown)
+    try:
+        server = ThreadingHTTPServer((HOST, PORT), Handler)
+    except OSError:
+        # Port already bound → another helper is running. Nothing to do.
+        return
+    try:
+        server.serve_forever()
+    finally:
+        stop_tor()
+
+
+if __name__ == "__main__":
+    main()

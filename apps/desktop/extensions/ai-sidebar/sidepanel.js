@@ -189,14 +189,17 @@ async function toggleTor() {
           '<a href="https://www.torproject.org/" target="_blank" rel="noreferrer">Tor Browser</a>.',
       );
     } else {
-      // Proxy set but no Tor exit → the daemon almost certainly isn't running.
-      // Revert so the user isn't stuck browsing through a dead proxy.
-      await chrome.runtime.sendMessage({ type: 'tor-set', on: false });
+      // Background already reverted the proxy. Explain why, in plain language.
       setTorButton(false);
-      showTorStatus(
-        'warn',
-        'Tor isn’t running. Start it with <code>tron tor</code> (or your system Tor), then toggle again.',
-      );
+      const err = res && res.started && res.started.error;
+      if (err === 'tor-not-installed') {
+        showTorStatus('warn', 'Tor isn’t installed on this computer yet, so it can’t be turned on here.');
+      } else if (err === 'unreachable') {
+        // The on-demand helper isn't running (older launch / no python3).
+        showTorStatus('warn', 'Couldn’t reach the Tor helper. Restart TronBrowser and try again, or run <code>tron tor</code>.');
+      } else {
+        showTorStatus('warn', 'Couldn’t connect through Tor. Please try again in a moment.');
+      }
     }
   } catch (e) {
     setTorButton(false);
