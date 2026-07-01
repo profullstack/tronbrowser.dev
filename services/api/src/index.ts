@@ -11,6 +11,7 @@ import { token, uuid, hashPassword, verifyPassword, SESSION_TTL, EMAIL_TOKEN_TTL
 import { sendEmail } from './email.js';
 import { store } from './store/routes.js';
 import { swarmRoutes } from './swarm.js';
+import { dnsRoutes } from './dns.js';
 
 const CP = {
   clientId: process.env.COINPAY_CLIENT_ID || '',
@@ -52,6 +53,9 @@ app.route('/api/store', store);
 
 /* ---------- Agent swarm (@logicsrc/agentswarm, BYO key) ---------- */
 app.route('/api/swarm', swarmRoutes({ currentUser }));
+
+/* ---------- DNS verifier (signed-in ops tool for /dns) ---------- */
+app.route('/api/dns', dnsRoutes({ currentUser }));
 
 /* ---------- CoinPay OAuth (preferred) ---------- */
 app.get('/api/auth/coinpay/login', (c) => {
