@@ -74,6 +74,28 @@ stage() { # dest dir
   cp -L "$REPO_ROOT/apps/web/public/icons/icon-512x512.png" "$s/tronbrowser.png" 2>/dev/null || true
   printf '%s\n' "$VERSION" > "$s/VERSION"
 
+  # Freedesktop .desktop entry so TronBrowser appears in app grids/menus —
+  # notably the Linux-phone shells (Phosh on Librem 5, Phosh/Plasma Mobile on
+  # PinePhone). The .deb installs this to /usr/share/applications; harmless in
+  # the tarball. StartupWMClass matches the isolated-profile Chromium window.
+  cat > "$s/tronbrowser.desktop" <<'DESKTOP'
+[Desktop Entry]
+Type=Application
+Name=TronBrowser
+GenericName=Web Browser
+Comment=Privacy-first, AI-native browser (Ungoogled Chromium)
+Exec=tron %U
+TryExec=tron
+Icon=tronbrowser
+Terminal=false
+Categories=Network;WebBrowser;
+MimeType=text/html;x-scheme-handler/http;x-scheme-handler/https;
+Keywords=web;browser;privacy;tor;ai;
+StartupNotify=true
+StartupWMClass=tronbrowser
+X-Purism-FormFactor=Workstation;Mobile;
+DESKTOP
+
   # NOTE: we no longer bundle NeverDecaf's chromium-web-store. Its manifest's
   # web_accessible_resources is rejected by some Chromium builds (macOS), which
   # aborts startup when loaded unpacked via --load-extension. Chrome Web Store

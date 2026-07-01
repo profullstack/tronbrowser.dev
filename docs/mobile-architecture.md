@@ -42,19 +42,31 @@ and Play Store. This is the fastest path and the *only* iOS path.
 - Tor on this track is a **later native add-on** (Android: Orbot/`tor` +
   SOCKS5; iOS: Tor.framework), not part of the initial companion.
 
-## Track 2 — Linux phones (full engine parity)
+## Track 2 — Linux phones (full engine parity) — **started**
 
-**Scope:** ship the **real arm64 desktop build** — Ungoogled Chromium + bundled
-`tor` daemon, Chrome extensions, the full feature set — to:
+**Scope:** ship the **real arm64 build** — the noarch `tron` launcher driving
+Ungoogled Chromium + the bundled `tor` SOCKS5 helper, Chrome extensions, the
+full feature set — to Linux phones. This is **packaging, not an app rewrite**:
+the desktop launcher tree is arch-independent (shell + extensions + SVG/PNG), so
+the same staged tree yields amd64 *and* arm64 artifacts.
 
-- **Ubuntu Touch** — package as a **click** app (Clickable). Chromium runs under
-  Libertine / confinement caveats; document the confinement story.
-- **Librem 5 (PureOS)** and **PinePhone (Mobian/postmarketOS)** — standard arm64
-  `.deb`/Flatpak from `distribution/`, adaptive/mobile-friendly window.
+Landed:
 
-This is **distribution/packaging work, not an app rewrite.** It is where "full
-feature set incl. Tor on a phone" actually happens. Lives under `distribution/`
-(new `ubuntu-touch/` for the click packaging).
+- **arm64 `.deb` / `.rpm`** (Librem 5 / PureOS, PinePhone / Mobian,
+  postmarketOS) — `distribution/deb-rpm/` is arch-parameterized; `build.sh`
+  emits amd64+arm64 by default. Adds a `.desktop` entry + icon so TronBrowser
+  shows in the Phosh / Plasma-Mobile app grid; `Depends: chromium | … `,
+  `Recommends: tor`. Built in `release.yml` (attached to releases) and validated
+  per-push in `.github/workflows/linux-phones.yml`.
+- **Ubuntu Touch `click`** — `distribution/ubuntu-touch/` (Clickable `pure`
+  builder). **Constraint:** UT confines apps and ships Morph/Oxide, not desktop
+  Chromium, so the real engine runs inside a **Libertine** container
+  (`tronbrowser-ut` → `libertine-launch` → bundled `tron`). Needs an
+  `unconfined` AppArmor profile → sideload / OpenStore unconfined track. CI
+  stages + JSON-validates the click; a full `.click` needs Clickable installed.
+
+Still open: adaptive/mobile window sizing tweaks; publishing (OpenStore submit,
+arm64 apt repo or Flatpak arm64 on Flathub).
 
 ## Track 3 — Android full engine (native Chromium)
 

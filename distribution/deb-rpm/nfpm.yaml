@@ -1,7 +1,11 @@
 # nfpm config — builds .deb and .rpm from the staged TronBrowser tree.
-# Driven by packaging/build-deb-rpm.sh (sets TB_VERSION + TB_ROOT).
+# Driven by distribution/deb-rpm/build.sh (sets TB_VERSION, TB_ROOT, TB_ARCH).
+#
+# The packaged tree is noarch (POSIX launcher + extensions + SVG/PNG), so the
+# SAME staged tree produces amd64 AND arm64 packages — arm64 is what Linux
+# phones (Librem 5 / PureOS, PinePhone / Mobian, postmarketOS) install.
 name: tronbrowser
-arch: amd64
+arch: ${TB_ARCH}
 platform: linux
 version: ${TB_VERSION}
 section: web
@@ -11,8 +15,13 @@ description: Open-source, privacy-first, AI-native browser (Ungoogled Chromium f
 vendor: Profullstack, Inc.
 homepage: https://tronbrowser.dev
 license: MIT
+# Drives system Ungoogled Chromium / Chromium — accept whichever the distro
+# ships (phone distros vary: Mobian/PureOS ship `chromium`).
 depends:
-  - chromium
+  - chromium | chromium-browser | ungoogled-chromium
+# `tron --tor` needs the tor daemon; optional, so recommend (not depend).
+recommends:
+  - tor
 contents:
   - src: ${TB_ROOT}/
     dst: /usr/lib/tronbrowser
@@ -22,3 +31,9 @@ contents:
   - src: /usr/lib/tronbrowser/tronbrowser
     dst: /usr/bin/tronbrowser
     type: symlink
+  # Desktop entry + icon so TronBrowser shows in the phone app grid
+  # (Phosh on Librem 5, Plasma Mobile / Phosh on PinePhone) and desktops.
+  - src: ${TB_ROOT}/tronbrowser.desktop
+    dst: /usr/share/applications/tronbrowser.desktop
+  - src: ${TB_ROOT}/tronbrowser.png
+    dst: /usr/share/icons/hicolor/512x512/apps/tronbrowser.png

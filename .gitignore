@@ -20,3 +20,7 @@ coverage/
 
 # Bundled at build time (fetched, GPL — not vendored)
 apps/desktop/extensions/ublock-origin/
+
+# Ubuntu Touch click staging (assembled from the release tarball)
+distribution/ubuntu-touch/install/
+distribution/ubuntu-touch/build/
