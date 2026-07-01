@@ -47,6 +47,12 @@
       "@id": "https://profullstack.com/#org",
       "name": "Profullstack, Inc.",
       "url": "https://profullstack.com",
+      "logo": { "@type": "ImageObject", "url": "https://tronbrowser.dev/logo.svg" },
+      "contactPoint": {
+        "@type": "ContactPoint",
+        "contactType": "security",
+        "email": "security@profullstack.com"
+      },
       "sameAs": ["https://github.com/profullstack"]
     },
     {
@@ -134,6 +140,8 @@
   .logo-wrap { margin: 0; line-height: 0; }
   .hero-logo { width: min(420px, 90vw); height: auto; display: block; margin: 0 auto;
     filter: drop-shadow(0 0 44px rgba(52,231,255,.22)); }
+  .headline { color: #fff; font-size: clamp(22px, 4vw, 30px); font-weight: 700;
+    margin: 10px 0 2px; line-height: 1.25; }
   .tag { color: var(--muted); margin-top: 4px; }
   .lede { text-align: center; color: var(--fg); margin: 0 auto 48px; max-width: 680px; }
   .install { background: var(--panel); border: 1px solid var(--line);
@@ -163,12 +171,13 @@
 </style>
 </head>
 <body>
-<div class="topbar"><a class="store-link" href="/store/">Store</a><a class="signin" href="/login">Sign in</a></div>
+<nav class="topbar" aria-label="Primary"><a class="store-link" href="/store/">Store</a><a class="signin" href="/login">Sign in</a></nav>
 <div class="wrap">
   <header>
-    <h1 class="logo-wrap">
-      <img src="/logo.svg" alt="TronBrowser" class="hero-logo" width="640" height="640" />
-    </h1>
+    <div class="logo-wrap">
+      <img src="/logo.svg" alt="TronBrowser — privacy-first, AI-native browser logo" class="hero-logo" width="640" height="640" />
+    </div>
+    <h1 class="headline">TronBrowser — privacy-first, AI-native browser</h1>
     <div class="tag">Open-source · privacy-first · AI-native · built on a Chromium fork</div>
   </header>
 
