@@ -1,0 +1,17 @@
+# TronBrowser Android engine — Android target GN args. Imported after
+# common.gni. $TB_TARGET_CPU is substituted by build.sh (arm64 | arm | x64).
+target_os = "android"
+target_cpu = "${TB_TARGET_CPU}"
+
+# Stable channel branding for the APK.
+android_channel = "stable"
+
+# De-Google Android surfaces that Ungoogled's desktop patches don't cover.
+# GMS/GCM/feedback are stripped by the Android patch series (see patches/series)
+# and the empty API keys above; these keep the rest off.
+enable_vr = false
+enable_arcore = false
+enable_gvr_services = false
+
+# Keep extensions/webview parity where Android supports it. (Full Chrome
+# extension support on Android ships via the fork's patches, Kiwi/Bromite-style.)

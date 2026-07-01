@@ -1,0 +1,15 @@
+# TronBrowser Android patch series — applied in order AFTER the Ungoogled
+# Chromium patch set. One concern per patch. Generate patches with:
+#   git -C <chromium-src> diff > apps/android-engine/chromium/patches/tronbrowser-android/<name>.patch
+#
+# Empty/missing patches are skipped by apply-patches.sh, so this file doubles as
+# the roadmap for the Android fork. Desktop shares 0001-0004 conceptually;
+# 0005+ are Android-specific.
+tronbrowser-android/0001-branding-strings.patch
+tronbrowser-android/0002-disable-telemetry-residual.patch
+tronbrowser-android/0003-remove-sponsored-integrations.patch
+tronbrowser-android/0004-default-search-and-newtab.patch
+tronbrowser-android/0005-strip-gms-gcm-feedback.patch
+tronbrowser-android/0006-enable-extension-support.patch
+tronbrowser-android/0007-tor-proxy-toggle.patch
+tronbrowser-android/0008-always-incognito-and-privacy-defaults.patch

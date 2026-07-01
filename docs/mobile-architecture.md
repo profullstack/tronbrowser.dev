@@ -68,17 +68,36 @@ Landed:
 Still open: adaptive/mobile window sizing tweaks; publishing (OpenStore submit,
 arm64 apt repo or Flatpak arm64 on Flathub).
 
-## Track 3 — Android full engine (native Chromium)
+## Track 3 — Android full engine (native Chromium) — **skeleton started**
 
 **Scope:** a separate **native Android Chromium build** (Bromite/Cromite-style)
-carrying the de-googled engine + hardening + bundled `tor` (SOCKS5). This is the
-*only* way to get the real engine + Chrome-extension-like power on Android.
+carrying the de-googled engine + hardening + bundled `tor` (SOCKS5). The *only*
+way to get the real engine + Chrome-extension power on Android. Lives in
+[`apps/android-engine/`](../apps/android-engine/README.md), the Android
+counterpart of `apps/desktop/chromium/`.
 
-- **Not** an Expo app. Months-long native build pipeline (GN/ninja, patch set),
-  analogous to `apps/desktop/chromium/`.
-- Tor: bundle `tor` via a native lib (e.g. tor-android) or integrate Orbot;
-  reuse the arg-building/bootstrap logic conceptually from `apps/desktop/src/tor.ts`.
-- Deferred behind Track 1 & 2; skeleton/plan tracked here first.
+Landed (skeleton, CI-validated):
+
+- **Build pipeline** `apps/android-engine/chromium/scripts/`: fetch → sync →
+  apply-patches → tor → build → package → sign, all guarded by `TB_RUN=1`
+  (dry-run by default; source lands outside the repo in `$TB_WORKDIR`).
+- **Config**: pinned `version.json` (chromium + ungoogled, `target_os=android`,
+  `chrome_public_apk`/`_bundle`, tor-android), GN args (`common.gni` privacy +
+  `android.gni` target), branding (`dev.tronbrowser.browser` — distinct from the
+  companion's `dev.tronbrowser.app`).
+- **Patch series** (roadmap): branding, telemetry residual, sponsored removal,
+  default search/newtab, **strip GMS/GCM**, **extension support**, **Tor proxy
+  toggle**, privacy defaults.
+- **CI** `.github/workflows/android-engine.yml`: `validate` job proves the
+  skeleton on every push (parses config, `bash -n`, checks the dry-run guard);
+  `build-apk` is a manual opt-in dispatch (needs a large/self-hosted Linux
+  runner — ~50GB checkout, hours).
+
+Still open: fill the `patches/tronbrowser-android/*.patch` bodies; first real
+compile on a big runner; signing keystore + Play/F-Droid publishing.
+
+**Reminder:** iOS can never have this (WebKit-mandated). This + Track 2 are the
+only routes to the real Ungoogled-Chromium engine on a phone.
 
 ---
 
