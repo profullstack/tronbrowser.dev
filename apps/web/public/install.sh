@@ -190,13 +190,27 @@ ensure_browser() {
   [ "${TB_NO_BROWSER_INSTALL:-0}" = "1" ] && return 0
 
   if [ "$(uname -s)" = "Darwin" ]; then
-    # The ungoogled-chromium Homebrew cask installs Chromium.app (notarized).
-    # Check the CASK (authoritative) — a bare Chromium.app might be REGULAR.
+    # The launcher needs BOTH: (1) the Chromium.app actually on disk, and (2) the
+    # Homebrew ungoogled-chromium cask registered (it verifies the cask as proof
+    # the app is de-googled). `brew list --cask` alone LIES — it reports the cask
+    # "installed" even after the .app was deleted/moved out from under brew, which
+    # made us skip the install and then the launcher couldn't find any browser.
+    # So require the .app on disk (at a path the launcher checks) too, and (re)run
+    # the install with --force whenever either half is missing.
+    app=""
+    for a in \
+      "/Applications/Ungoogled Chromium.app" \
+      "/Applications/Chromium.app" \
+      "$HOME/Applications/Ungoogled Chromium.app" \
+      "$HOME/Applications/Chromium.app"; do
+      [ -d "$a" ] && { app="$a"; break; }
+    done
     if command -v brew >/dev/null 2>&1; then
-      if brew list --cask ungoogled-chromium >/dev/null 2>&1; then return 0; fi
+      if [ -n "$app" ] && brew list --cask ungoogled-chromium >/dev/null 2>&1; then return 0; fi
       info "Installing Ungoogled Chromium (brew cask)…"
       # --force so it REPLACES any pre-existing regular Chromium.app rather than
-      # erroring on the conflict. TronBrowser runs Ungoogled Chromium only.
+      # erroring on the conflict, and REINSTALLS when brew's metadata is stale but
+      # the .app is gone. TronBrowser runs Ungoogled Chromium only.
       brew install --cask ungoogled-chromium --force \
         || warn "Auto-install failed. Run it yourself: brew install --cask ungoogled-chromium --force"
     else
