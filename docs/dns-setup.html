@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="robots" content="noindex, nofollow" />
+<title>tronbrowser.dev — DNS records to add (Porkbun)</title>
+<style>
+  :root { --bg:#05070d; --panel:#0b1020; --line:#1b2540; --cyan:#34e7ff;
+    --fg:#cfe8ff; --muted:#6f86b3; --warn:#ffcf6f; --crit:#ff6f8b; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:radial-gradient(1200px 600px at 50% -10%, #0a1430 0%, var(--bg) 60%);
+    color:var(--fg); font:15px/1.6 ui-monospace,"SF Mono",Menlo,monospace; min-height:100vh; }
+  .wrap { max-width:960px; margin:0 auto; padding:32px 20px 96px; }
+  h1 { color:#fff; font-size:24px; margin:0 0 4px; }
+  .sub { color:var(--muted); margin:0 0 8px; }
+  .meta { color:var(--muted); font-size:13px; margin:0 0 28px; }
+  h2 { color:#fff; font-size:18px; margin:40px 0 6px; }
+  h2 .badge { font-size:11px; text-transform:uppercase; letter-spacing:1px;
+    border-radius:6px; padding:2px 8px; margin-left:8px; vertical-align:middle; }
+  .badge.crit { background:rgba(255,111,139,.15); color:var(--crit); border:1px solid var(--crit); }
+  .badge.rec { background:rgba(255,207,111,.13); color:var(--warn); border:1px solid var(--warn); }
+  .note { color:var(--muted); font-size:13px; margin:4px 0 14px; }
+  .rec { background:var(--panel); border:1px solid var(--line); border-radius:12px;
+    padding:16px 18px; margin:14px 0; }
+  .rec .title { color:var(--cyan); font-weight:700; margin-bottom:10px; }
+  .row { display:grid; grid-template-columns:64px 1fr auto; gap:10px; align-items:center;
+    margin:6px 0; }
+  .row .k { color:var(--muted); font-size:12px; text-transform:uppercase; letter-spacing:1px; }
+  .row .v { background:#04060c; border:1px solid var(--line); border-radius:8px;
+    padding:9px 12px; color:var(--fg); overflow-x:auto; white-space:nowrap; }
+  .row .v.val { color:var(--cyan); }
+  button.copy { background:transparent; border:1px solid var(--line); color:var(--fg);
+    border-radius:6px; padding:7px 12px; cursor:pointer; font:inherit; font-size:12px; }
+  button.copy:hover { border-color:var(--cyan); color:var(--cyan); }
+  button.copy.done { border-color:#5fd08b; color:#5fd08b; }
+  .warn { color:var(--warn); font-size:13px; margin:8px 0 0; }
+  a { color:var(--cyan); }
+  code { color:var(--fg); }
+  ol { color:var(--muted); font-size:14px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>DNS records to add — tronbrowser.dev</h1>
+  <p class="sub">Add these in the Porkbun DNS dashboard. Copy buttons grab the exact record value.</p>
+  <p class="meta">Source: AEO audit DNS Analyzer (28/100 — no SPF, DMARC p=none). Order: add SPF + DMARC first, monitor two weeks, then move DMARC to <code>p=reject</code>.</p>
+
+  <h2>Root SPF <span class="badge crit">critical</span></h2>
+  <p class="note">Stops anyone from spoofing <code>@tronbrowser.dev</code>. Add any senders you actually use before <code>-all</code> (e.g. <code>include:amazonses.com</code> for SES, <code>include:_spf.resend.com</code> for Resend).</p>
+  <div class="rec">
+    <div class="title">SPF (TXT on root)</div>
+    <div class="row"><span class="k">Host</span><span class="v">@</span><button class="copy" data-copy="@">copy</button></div>
+    <div class="row"><span class="k">Type</span><span class="v">TXT</span><button class="copy" data-copy="TXT">copy</button></div>
+    <div class="row"><span class="k">Value</span><span class="v val">v=spf1 include:forwardemail.net -all</span><button class="copy" data-copy="v=spf1 include:forwardemail.net -all">copy</button></div>
+  </div>
+
+  <h2>DMARC policy <span class="badge crit">critical</span></h2>
+  <p class="note">Upgrades from <code>p=none</code> (no enforcement) to quarantine, with aggregate reporting. The <code>rua</code> mailbox must exist — set up a catch-all or alias in ForwardEmail first.</p>
+  <div class="rec">
+    <div class="title">DMARC (TXT)</div>
+    <div class="row"><span class="k">Host</span><span class="v">_dmarc</span><button class="copy" data-copy="_dmarc">copy</button></div>
+    <div class="row"><span class="k">Type</span><span class="v">TXT</span><button class="copy" data-copy="TXT">copy</button></div>
+    <div class="row"><span class="k">Value</span><span class="v val">v=DMARC1; p=quarantine; rua=mailto:dmarc-reports@tronbrowser.dev; aspf=r; adkim=r;</span><button class="copy" data-copy="v=DMARC1; p=quarantine; rua=mailto:dmarc-reports@tronbrowser.dev; aspf=r; adkim=r;">copy</button></div>
+  </div>
+
+  <h2>send subdomain SPF <span class="badge rec">harden</span></h2>
+  <p class="note">The <code>send</code> subdomain currently uses <code>~all</code> (softfail). Tighten to <code>-all</code> if it only sends via SES.</p>
+  <div class="rec">
+    <div class="title">send SPF (TXT)</div>
+    <div class="row"><span class="k">Host</span><span class="v">send</span><button class="copy" data-copy="send">copy</button></div>
+    <div class="row"><span class="k">Type</span><span class="v">TXT</span><button class="copy" data-copy="TXT">copy</button></div>
+    <div class="row"><span class="k">Value</span><span class="v val">v=spf1 include:amazonses.com -all</span><button class="copy" data-copy="v=spf1 include:amazonses.com -all">copy</button></div>
+  </div>
+
+  <h2>CAA <span class="badge rec">harden</span></h2>
+  <p class="note">Restricts which CAs may issue certs.</p>
+  <p class="warn">⚠ Verify your host's CA first. Railway/its edge issues the TLS cert for tronbrowser.dev — if it does not use Let's Encrypt, this record will BREAK cert renewal. Confirm before adding.</p>
+  <div class="rec">
+    <div class="title">CAA — issue</div>
+    <div class="row"><span class="k">Host</span><span class="v">@</span><button class="copy" data-copy="@">copy</button></div>
+    <div class="row"><span class="k">Type</span><span class="v">CAA</span><button class="copy" data-copy="CAA">copy</button></div>
+    <div class="row"><span class="k">Value</span><span class="v val">0 issue "letsencrypt.org"</span><button class="copy" data-copy='0 issue "letsencrypt.org"'>copy</button></div>
+  </div>
+  <div class="rec">
+    <div class="title">CAA — issuewild (disallow wildcards)</div>
+    <div class="row"><span class="k">Host</span><span class="v">@</span><button class="copy" data-copy="@">copy</button></div>
+    <div class="row"><span class="k">Type</span><span class="v">CAA</span><button class="copy" data-copy="CAA">copy</button></div>
+    <div class="row"><span class="k">Value</span><span class="v val">0 issuewild ";"</span><button class="copy" data-copy='0 issuewild ";"'>copy</button></div>
+  </div>
+
+  <h2>TLS-RPT <span class="badge rec">harden</span></h2>
+  <p class="note">Reports on inbound TLS delivery failures. Mailbox must exist.</p>
+  <div class="rec">
+    <div class="title">TLS-RPT (TXT)</div>
+    <div class="row"><span class="k">Host</span><span class="v">_smtp._tls</span><button class="copy" data-copy="_smtp._tls">copy</button></div>
+    <div class="row"><span class="k">Type</span><span class="v">TXT</span><button class="copy" data-copy="TXT">copy</button></div>
+    <div class="row"><span class="k">Value</span><span class="v val">v=TLSRPTv1; rua=mailto:tls-reports@tronbrowser.dev</span><button class="copy" data-copy="v=TLSRPTv1; rua=mailto:tls-reports@tronbrowser.dev">copy</button></div>
+  </div>
+
+  <h2>MTA-STS <span class="badge rec">harden</span></h2>
+  <p class="note">Enforces TLS for inbound mail. Also needs an HTTPS policy file served at <code>https://mta-sts.tronbrowser.dev/.well-known/mta-sts.txt</code>. Bump the <code>id</code> whenever the policy changes.</p>
+  <div class="rec">
+    <div class="title">MTA-STS (TXT)</div>
+    <div class="row"><span class="k">Host</span><span class="v">_mta-sts</span><button class="copy" data-copy="_mta-sts">copy</button></div>
+    <div class="row"><span class="k">Type</span><span class="v">TXT</span><button class="copy" data-copy="TXT">copy</button></div>
+    <div class="row"><span class="k">Value</span><span class="v val">v=STSv1; id=20260701000000</span><button class="copy" data-copy="v=STSv1; id=20260701000000">copy</button></div>
+  </div>
+
+  <h2>ForwardEmail DKIM <span class="badge rec">harden</span></h2>
+  <p class="note">Copy the selector name and public key from the ForwardEmail dashboard (app.forwardemail.net), then publish:</p>
+  <div class="rec">
+    <div class="title">ForwardEmail DKIM (TXT)</div>
+    <div class="row"><span class="k">Host</span><span class="v">&lt;selector&gt;._domainkey</span><span></span></div>
+    <div class="row"><span class="k">Type</span><span class="v">TXT</span><button class="copy" data-copy="TXT">copy</button></div>
+    <div class="row"><span class="k">Value</span><span class="v val">v=DKIM1; k=rsa; p=&lt;key from dashboard&gt;</span><span></span></div>
+  </div>
+
+  <h2>How to apply</h2>
+  <ol>
+    <li>Add the two <strong>critical</strong> records (root SPF, DMARC). Create the <code>dmarc-reports@</code> alias in ForwardEmail first.</li>
+    <li>Wait ~48h, confirm mail still delivers and check the DMARC aggregate reports.</li>
+    <li>Add the harden records (send SPF, TLS-RPT, MTA-STS, DKIM). Add CAA only after confirming your cert CA.</li>
+    <li>After ~2 weeks of clean reports, change DMARC to <code>p=reject</code>.</li>
+    <li>Re-run the DNS Analyzer to confirm the score climbs from 28/100.</li>
+  </ol>
+</div>
+<script>
+  document.querySelectorAll("button.copy").forEach(function (b) {
+    b.addEventListener("click", async function () {
+      try {
+        await navigator.clipboard.writeText(b.getAttribute("data-copy"));
+        var t = b.textContent; b.textContent = "copied"; b.classList.add("done");
+        setTimeout(function () { b.textContent = t; b.classList.remove("done"); }, 1200);
+      } catch (e) { /* clipboard blocked under file:// in some browsers */ }
+    });
+  });
+</script>
+</body>
+</html>
