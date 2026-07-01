@@ -1,6 +1,6 @@
 {
   "name": "@tronbrowser/sync-server",
-  "version": "3.7.3",
+  "version": "3.7.4",
   "private": true,
   "description": "Sync backend service",
   "type": "module",

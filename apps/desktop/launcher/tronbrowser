@@ -251,15 +251,29 @@ esac
 # if we can't confirm it, refuse. We never run a plain/unverified Chromium.app.
 # (Advanced users with a manual Ungoogled build can set TRONBROWSER_BROWSER.)
 if [ -n "$MAC_APP" ] && [ -z "${TRONBROWSER_BROWSER:-}" ]; then
-  if ! { command -v brew >/dev/null 2>&1 && brew list --cask ungoogled-chromium >/dev/null 2>&1; }; then
-    cat >&2 <<MSG
+  # Trust a build our own installer downloaded (marker records the verified app).
+  _verified=0
+  if [ -f "$DIR/.ungoogled-macos" ]; then
+    _m="$(cat "$DIR/.ungoogled-macos" 2>/dev/null)"
+    [ "$_m" = "$MAC_APP" ] && _verified=1
+  fi
+  # Otherwise require the Homebrew ungoogled-chromium cask as proof. Probe brew's
+  # known locations — a GUI/non-login launch won't have /opt/homebrew on PATH.
+  if [ "$_verified" = "0" ]; then
+    _brew=""
+    for b in brew /opt/homebrew/bin/brew /usr/local/bin/brew; do
+      command -v "$b" >/dev/null 2>&1 && { _brew="$b"; break; }
+    done
+    if [ -z "$_brew" ] || ! "$_brew" list --cask ungoogled-chromium >/dev/null 2>&1; then
+      cat >&2 <<MSG
 TronBrowser runs Ungoogled Chromium ONLY — it won't run plain/regular Chromium.
-Couldn't confirm '$MAC_APP' is the Ungoogled Chromium cask. Install it:
-  brew install --cask ungoogled-chromium --force
+Couldn't confirm '$MAC_APP' is the Ungoogled Chromium cask. Reinstall it (auto):
+  curl -fsSL https://tronbrowser.dev/install.sh | sh
 (Note: the Ungoogled cask installs as "Chromium.app" — that IS Ungoogled Chromium.)
 Advanced: point at a manual Ungoogled build with TRONBROWSER_BROWSER=/path/to/Chromium
 MSG
-    exit 1
+      exit 1
+    fi
   fi
 fi
 

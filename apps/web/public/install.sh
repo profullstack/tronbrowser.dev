@@ -184,19 +184,68 @@ TRON
   ln -sf "$TRON_CLI" "$ALIAS_CLI"
 }
 
+# (macOS, no Homebrew) Download the OFFICIAL notarized Ungoogled Chromium build
+# straight from the ungoogled-chromium-macos releases and drop it in
+# ~/Applications — no brew, no sudo, nothing manual for the user. Writes a trust
+# marker the launcher reads, so it runs this KNOWN-ungoogled build without the
+# brew-cask proof it otherwise requires. Best-effort. $1 = launcher dir (marker).
+download_ungoogled_macos() { # launcher_dir
+  ldir="$1"
+  case "$(uname -m)" in
+    arm64|aarch64) uc_arch="arm64" ;;
+    x86_64|amd64)  uc_arch="x86-64" ;;
+    *) return 1 ;;
+  esac
+  ucrepo="ungoogled-software/ungoogled-chromium-macos"
+  fetch "https://api.github.com/repos/$ucrepo/releases/latest" /tmp/tb_uc.json || return 1
+  # Pick the .dmg asset for our arch (assets look like *_arm64-macos.dmg).
+  url="$(sed -n 's/.*"browser_download_url":[[:space:]]*"\([^"]*'"$uc_arch"'-macos\.dmg\)".*/\1/p' /tmp/tb_uc.json | head -n1)"
+  [ -n "$url" ] || return 1
+
+  tmp="$(mktemp -d)"; mnt="$tmp/mnt"; mkdir -p "$mnt"
+  info "Downloading Ungoogled Chromium ($uc_arch) — no Homebrew needed…"
+  fetch "$url" "$tmp/uc.dmg" || { rm -rf "$tmp"; return 1; }
+  hdiutil attach -nobrowse -quiet "$tmp/uc.dmg" -mountpoint "$mnt" 2>/dev/null || { rm -rf "$tmp"; return 1; }
+
+  srcapp="$(find "$mnt" -maxdepth 1 -name '*.app' 2>/dev/null | head -n1)"
+  dest="$HOME/Applications/Ungoogled Chromium.app"
+  ok=0
+  if [ -n "$srcapp" ]; then
+    mkdir -p "$HOME/Applications"; rm -rf "$dest"
+    cp -R "$srcapp" "$dest" 2>/dev/null && [ -d "$dest" ] && ok=1
+  fi
+  hdiutil detach -quiet "$mnt" 2>/dev/null || true
+  rm -rf "$tmp"
+  [ "$ok" = "1" ] || return 1
+
+  # Notarized, but clear the quarantine bit so it opens without a Gatekeeper nag.
+  xattr -dr com.apple.quarantine "$dest" 2>/dev/null || true
+  # Trust marker: tells the launcher THIS app is a verified ungoogled build.
+  [ -n "$ldir" ] && printf '%s\n' "$dest" > "$ldir/.ungoogled-macos" 2>/dev/null || true
+  info "Installed Ungoogled Chromium to $dest"
+  return 0
+}
+
 # TronBrowser runs Ungoogled Chromium ONLY (never regular Chrome/Chromium), so
 # we install it as part of setup. Skip with TB_NO_BROWSER_INSTALL=1.
 ensure_browser() {
   [ "${TB_NO_BROWSER_INSTALL:-0}" = "1" ] && return 0
 
   if [ "$(uname -s)" = "Darwin" ]; then
-    # The launcher needs BOTH: (1) the Chromium.app actually on disk, and (2) the
-    # Homebrew ungoogled-chromium cask registered (it verifies the cask as proof
-    # the app is de-googled). `brew list --cask` alone LIES — it reports the cask
-    # "installed" even after the .app was deleted/moved out from under brew, which
-    # made us skip the install and then the launcher couldn't find any browser.
-    # So require the .app on disk (at a path the launcher checks) too, and (re)run
-    # the install with --force whenever either half is missing.
+    # Where our launcher lives (holds the trust marker for the no-brew path).
+    _ldir="$(find "$APP_DIR" -maxdepth 3 -type f -name tronbrowser 2>/dev/null | head -n1)"
+    _ldir="${_ldir:+$(dirname "$_ldir")}"
+
+    # Already have a build WE installed & verified (marker points at a live app)?
+    if [ -n "$_ldir" ] && [ -f "$_ldir/.ungoogled-macos" ]; then
+      _m="$(cat "$_ldir/.ungoogled-macos" 2>/dev/null)"
+      [ -n "$_m" ] && [ -d "$_m" ] && return 0
+    fi
+
+    # The launcher needs the Chromium.app actually on disk AND proof it's the
+    # ungoogled build (the Homebrew cask, or our own marker). `brew list --cask`
+    # alone LIES — it reports the cask "installed" even after the .app was deleted
+    # out from under brew — so we also require the .app at a path the launcher checks.
     app=""
     for a in \
       "/Applications/Ungoogled Chromium.app" \
@@ -205,19 +254,29 @@ ensure_browser() {
       "$HOME/Applications/Chromium.app"; do
       [ -d "$a" ] && { app="$a"; break; }
     done
-    if command -v brew >/dev/null 2>&1; then
-      if [ -n "$app" ] && brew list --cask ungoogled-chromium >/dev/null 2>&1; then return 0; fi
+
+    # Homebrew usually ISN'T on PATH in the non-login shell that `tron upgrade`
+    # spawns (Apple Silicon: /opt/homebrew, Intel: /usr/local), so probe the known
+    # locations directly instead of trusting PATH — otherwise we'd never install.
+    brew=""
+    for b in brew /opt/homebrew/bin/brew /usr/local/bin/brew; do
+      command -v "$b" >/dev/null 2>&1 && { brew="$b"; break; }
+    done
+
+    if [ -n "$brew" ]; then
+      if [ -n "$app" ] && "$brew" list --cask ungoogled-chromium >/dev/null 2>&1; then return 0; fi
       info "Installing Ungoogled Chromium (brew cask)…"
-      # --force so it REPLACES any pre-existing regular Chromium.app rather than
-      # erroring on the conflict, and REINSTALLS when brew's metadata is stale but
-      # the .app is gone. TronBrowser runs Ungoogled Chromium only.
-      brew install --cask ungoogled-chromium --force \
-        || warn "Auto-install failed. Run it yourself: brew install --cask ungoogled-chromium --force"
-    else
-      warn "Homebrew is required to auto-install Ungoogled Chromium. Install brew (https://brew.sh), then re-run:"
-      say  "    curl -fsSL $INSTALL_URL | sh"
-      say  "  (or grab a notarized build: https://github.com/ungoogled-software/ungoogled-chromium-macos/releases)"
+      # --force REPLACES any pre-existing regular Chromium.app rather than erroring,
+      # and REINSTALLS when brew's metadata is stale but the .app is gone.
+      "$brew" install --cask ungoogled-chromium --force && return 0
+      warn "brew cask install failed — falling back to a direct download…"
     fi
+
+    # No Homebrew (or it failed): grab the official notarized build ourselves.
+    # No brew, no sudo, nothing for the user to run by hand.
+    if download_ungoogled_macos "$_ldir"; then return 0; fi
+
+    warn "Couldn't auto-install Ungoogled Chromium (check your network)."
     return 0
   fi
 
