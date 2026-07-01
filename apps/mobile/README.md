@@ -1,28 +1,41 @@
 # @tronbrowser/mobile
 
-TronBrowser mobile app (iOS + Android) — **Expo / React Native**, **Phase 2**
-(PRD §Mobile).
+TronBrowser mobile **companion** app (iOS + Android) — **Expo / React Native**,
+Expo SDK 57. See [`docs/mobile-architecture.md`](../../docs/mobile-architecture.md)
+for how this fits the three mobile tracks.
 
-> Status: **stub**. The Expo config (`app.json`) and entry screen (`App.tsx`)
-> are scaffolded; the React Native toolchain is not installed yet to keep the
-> workspace lockfile light. The `src/` TypeScript stub keeps it a valid
-> workspace member and is what CI typechecks/builds.
+> **This is the companion app, not the engine.** It uses the *system* WebView
+> (WKWebView on iOS — mandatory; system WebView on Android), so it is **not** the
+> Ungoogled Chromium engine and has **no Chrome extensions / no bundled Tor**.
+> The real engine + Tor ship via the desktop/Linux-phone build and the native
+> Android build — again, see the architecture doc.
 
-## Start Phase 2
+## Run
 
 ```bash
 cd apps/mobile
-pnpm add expo react react-native expo-status-bar
 pnpm start            # Expo dev server (then press i / a)
-pnpm ios              # iOS simulator
-pnpm android          # Android emulator
+pnpm ios              # native iOS run (needs Xcode)
+pnpm android          # native Android run (needs Android SDK)
+pnpm export           # bundle JS for all platforms (CI build proof)
+pnpm typecheck        # tsc --noEmit
 ```
 
 Bundle ids: `dev.tronbrowser.app` (iOS + Android).
 
-## Planned features (PRD §Mobile)
+## Features
 
-AI chat · sync · voice · push notifications · agent dashboard.
+Implemented screens (tabbed shell, `App.tsx`):
+
+- **Browse** — in-app browser via `react-native-webview` (system engine),
+  URL/search bar, back/reload, third-party cookies blocked.
+- **Chat** — AI chat UI; the provider seam is `src/lib/ai.ts`
+  (set `EXPO_PUBLIC_AI_ENDPOINT`, else offline echo).
+- **Agents** — agent dashboard (sample data → wire `@tronbrowser/agent-runtime`).
+- **Settings** — sync/privacy/about + Tor status note.
+
+Still to wire (PRD §Mobile): real model provider, sync backend, voice,
+push notifications.
 
 ## EAS (builds & submission)
 
