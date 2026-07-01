@@ -79,3 +79,23 @@ textarea { resize: none; background: #04060c; color: var(--fg);
   border-radius: 8px; padding: 0 16px; height: 38px; font-weight: 700; cursor: pointer; }
 .composer button:disabled { opacity: .5; cursor: default; }
 a { color: var(--cyan); }
+
+.tor-info-btn { width: 24px; padding: 0; border-radius: 50%; font-size: 12px; font-weight: 700;
+  line-height: 1; color: var(--muted); }
+.tor-info-btn:hover { color: var(--fg); border-color: var(--cyan); }
+
+/* Tor risk heads-up modal (shown when turning Tor ON, or via the ? button). */
+.tor-warn { border: 1px solid var(--line); background: var(--panel); color: var(--fg);
+  width: min(90vw, 380px); border-radius: 12px; padding: 0; }
+.tor-warn::backdrop { background: rgba(0, 0, 0, .72); }
+.tor-warn-box { padding: 16px; display: flex; flex-direction: column; gap: 10px; }
+.tor-warn h2 { margin: 0; font-size: 15px; color: #c79be0; }
+.tor-warn p { margin: 0; font-size: 12.5px; line-height: 1.5; }
+.tor-warn .tor-warn-tip { color: var(--muted); }
+.tor-warn code { background: #04060c; border: 1px solid var(--line); border-radius: 4px;
+  padding: 1px 5px; color: var(--cyan); font-size: 12px; }
+.tor-warn-ack { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
+.tor-warn-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
+.tor-warn-actions button { border-radius: 8px; padding: 7px 12px; font: inherit; font-size: 12px; cursor: pointer; }
+.tor-warn .btn-ghost { background: transparent; border: 1px solid var(--line); color: var(--fg); }
+.tor-warn .btn-primary { background: #7d4698; border: 1px solid #7d4698; color: #fff; font-weight: 700; }

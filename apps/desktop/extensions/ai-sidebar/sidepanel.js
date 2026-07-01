@@ -197,8 +197,45 @@ async function refreshTorState() {
   } catch (_) { /* background may be asleep */ }
 }
 
+// Heads-up shown before the FIRST time Tor is turned on: enabling it here
+// reroutes EVERY tab in this profile — including already-signed-in ones — which
+// links anonymous browsing to your real identity via cookies/trackers. Resolves
+// true to proceed. Dismissible ("Don't show this again" → torWarnAck).
+const torWarnDlg = el('tor-warn');
+
+// Two faces of the same dialog: 'gate' (before enabling Tor) offers
+// Cancel / Continue & connect + the "don't show again" opt-out; 'info' (the ?
+// button) is a pure explainer with a single Got it button.
+function setTorWarnMode(mode) {
+  const info = mode === 'info';
+  el('tor-warn-ok').hidden = info;
+  el('tor-warn-ack').hidden = info;
+  el('tor-warn-cancel').textContent = info ? 'Got it' : 'Cancel';
+}
+
+function confirmTorWarning() {
+  return new Promise((resolve) => {
+    chrome.storage.local.get('torWarnAck').then(({ torWarnAck }) => {
+      if (torWarnAck) { resolve(true); return; }
+      setTorWarnMode('gate');
+      const hide = el('tor-warn-hide');
+      hide.checked = false;
+      const onClose = () => {
+        torWarnDlg.removeEventListener('close', onClose);
+        const ok = torWarnDlg.returnValue === 'ok';
+        if (ok && hide.checked) chrome.storage.local.set({ torWarnAck: true }).catch(() => {});
+        resolve(ok);
+      };
+      torWarnDlg.addEventListener('close', onClose);
+      torWarnDlg.returnValue = '';
+      torWarnDlg.showModal();
+    }).catch(() => resolve(true)); // storage unavailable → don't block the toggle
+  });
+}
+
 async function toggleTor() {
   const turningOn = torBtn.getAttribute('aria-pressed') !== 'true';
+  if (turningOn && !(await confirmTorWarning())) return;
   torBtn.classList.add('busy');
   torBtn.disabled = true;
   if (turningOn) {
@@ -246,5 +283,13 @@ async function toggleTor() {
 }
 
 torBtn.addEventListener('click', toggleTor);
+
+// The ? next to the Tor button opens the same explainer on demand (info mode —
+// never enables Tor, whatever button closes it).
+el('tor-info').addEventListener('click', () => {
+  setTorWarnMode('info');
+  torWarnDlg.returnValue = '';
+  torWarnDlg.showModal();
+});
 
 (async () => { await loadConfig(); await consumePendingQuery(); await refreshTorState(); })();
