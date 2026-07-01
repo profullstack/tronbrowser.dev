@@ -13,14 +13,19 @@ PORT=8090 node /api/dist/index.js &
 # The service key lives on a Railway volume at /var/lib/tor/hidden_service, which
 # is what keeps the .onion address stable across deploys. SocksPort 0 disables
 # the SOCKS proxy — this is a hidden-service publisher, not a relay or client.
-HS_DIR=/var/lib/tor/hidden_service
-mkdir -p "$HS_DIR" /var/lib/tor
-# Tor refuses to use the key dir unless it's 0700 and owned by the running user.
-chmod 700 "$HS_DIR" /var/lib/tor 2>/dev/null || true
+# DataDirectory must be owned by the user Tor runs as (root here). The apk `tor`
+# package pre-creates /var/lib/tor owned by its own `tor` user, which Tor rejects
+# when we run as root — so keep DataDirectory on a separate root-owned path and
+# put ONLY the persistent hidden-service key on the volume.
+HS_DIR=/var/lib/tor/hidden_service   # Railway volume mount (persists the .onion)
+DATA_DIR=/var/lib/tor-data
+mkdir -p "$HS_DIR" "$DATA_DIR"
+# Tor refuses these dirs unless they're 0700 and owned by the running user.
+chmod 700 "$HS_DIR" "$DATA_DIR" 2>/dev/null || true
 cat > /tmp/torrc <<EOF
 SocksPort 0
 RunAsDaemon 0
-DataDirectory /var/lib/tor
+DataDirectory $DATA_DIR
 HiddenServiceDir $HS_DIR
 HiddenServicePort 80 127.0.0.1:${PORT:-80}
 EOF
