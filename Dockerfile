@@ -16,7 +16,10 @@ RUN printf '%s' '{"compilerOptions":{"target":"ES2023","module":"NodeNext","modu
 FROM caddy:2-alpine
 # openssh-client: the store provisions BBS publisher accounts and generates
 # ed25519 keypairs via `ssh`/`ssh-keygen` (services/api/src/store/fileshost.ts).
-RUN apk add --no-cache nodejs openssh-client
+# tor: runs a Tor v3 hidden service in this same container so tronbrowser.dev is
+# reachable over a stable .onion (start.sh writes torrc and boots it). The onion
+# key persists on a Railway volume mounted at /var/lib/tor/hidden_service.
+RUN apk add --no-cache nodejs openssh-client tor
 COPY Caddyfile /etc/caddy/Caddyfile
 COPY apps/web/public/ /srv/
 # Extension store (tronbrowser.dev/store) — static frontend; dynamic bits hit
