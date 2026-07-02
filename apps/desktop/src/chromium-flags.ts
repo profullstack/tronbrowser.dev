@@ -49,7 +49,6 @@ export const PRIVACY_FLAGS = [
   '--disable-features=Translate,OptimizationHints,InterestFeedContentSuggestions',
   '--no-default-browser-check',
   '--no-pings',
-  '--metrics-recording-only=false',
   '--disable-sync',
 ] as const;
 
