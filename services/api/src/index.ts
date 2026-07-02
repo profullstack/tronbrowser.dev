@@ -12,6 +12,7 @@ import { sendEmail } from './email.js';
 import { store } from './store/routes.js';
 import { swarmRoutes } from './swarm.js';
 import { dnsRoutes } from './dns.js';
+import { safeRedirect } from './redirect.js';
 
 const CP = {
   clientId: process.env.COINPAY_CLIENT_ID || '',
@@ -76,8 +77,15 @@ app.get('/api/auth/coinpay/login', (c) => {
 app.get('/api/auth/coinpay/callback', async (c) => {
   const code = c.req.query('code');
   const state = c.req.query('state');
-  if (!code || state !== getCookie(c, 'cp_state')) return c.text('invalid oauth state', 400);
-  const redirect = getCookie(c, 'cp_redirect') || '';
+  const expectedState = getCookie(c, 'cp_state');
+  // Require a non-empty state that matches the cookie. Without the `!state`/
+  // `!expectedState` guards, a missing cookie AND missing state param both read
+  // as undefined, so `undefined !== undefined` is false and the CSRF check is
+  // silently bypassed (login CSRF).
+  if (!code || !state || !expectedState || state !== expectedState) {
+    return c.text('invalid oauth state', 400);
+  }
+  const redirect = safeRedirect(getCookie(c, 'cp_redirect'), APP_URL);
 
   const basic = Buffer.from(`${CP.clientId}:${CP.clientSecret}`).toString('base64');
   const tokRes = await fetch(CP.tokenUrl, {
