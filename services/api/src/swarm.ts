@@ -11,6 +11,7 @@ import {
   createLLMJudge,
   type SwarmRunner,
 } from '@logicsrc/agentswarm';
+import { isBlockedHost } from './ssrf-guard.js';
 
 /** OpenAI-compatible provider bases (mirrors /api/models). anthropic is special-cased. */
 const OPENAI_COMPAT_BASE: Record<string, string> = {
@@ -36,8 +37,30 @@ async function buildModel(
     return new ChatAnthropic({ apiKey, model: model || 'claude-sonnet-4-6' });
   }
   const base = (baseUrl || OPENAI_COMPAT_BASE[provider] || '').replace(/\/$/, '');
-  if (!base || /localhost|127\.0\.0\.1/.test(base)) {
+  if (!base) {
     throw new Error(`unsupported or disallowed provider/baseUrl: ${provider}`);
+  }
+  // SSRF guard: a signed-in caller can pass an arbitrary baseUrl, so block
+  // requests to loopback / private / link-local / cloud-metadata targets.
+  let hostname: string;
+  try {
+    hostname = new URL(base).hostname;
+  } catch {
+    throw new Error(`invalid baseUrl: ${provider}`);
+  }
+  if (isBlockedHost(hostname)) {
+    throw new Error(`disallowed baseUrl (private/loopback host): ${provider}`);
+  }
+  // Defense-in-depth against a public hostname that resolves to a private IP.
+  let resolved: string[] = [];
+  try {
+    const dns = await import('node:dns/promises');
+    resolved = (await dns.lookup(hostname, { all: true })).map((a) => a.address);
+  } catch {
+    resolved = []; // transient DNS failure — the request itself will fail later
+  }
+  if (resolved.some((ip) => isBlockedHost(ip))) {
+    throw new Error(`disallowed baseUrl (resolves to a private address): ${provider}`);
   }
   const { ChatOpenAI } = await import('@langchain/openai');
   return new ChatOpenAI({ apiKey, model: model || 'gpt-4o-mini', configuration: { baseURL: base } });
