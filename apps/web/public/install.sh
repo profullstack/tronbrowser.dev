@@ -92,6 +92,7 @@ Usage:
   tron headless <url>   One-shot: --snapshot | --screenshot <p> | --extract <mode>
   tron run <script>     Run a JS/TS script using @tronbrowser/sdk (--headless/--trace)
   tron analyze [goal]   Analyze/fill a form or page (--data, --execute, --json)
+  tron mcp              Run a local MCP server over stdio (--headless)
   tron upgrade          Update to the latest release
   tron remove           Uninstall TronBrowser (keeps your profile data)
   tron version          Print the installed version
@@ -188,6 +189,14 @@ case "${1:-}" in
   headless)
     # One-shot: launch a headless ephemeral session, navigate, act, tear down.
     run_automation "$@" ;;
+  mcp)
+    # Local Model Context Protocol server over stdio (PRD M3.6).
+    shift
+    _ld="$(dirname "$(readlink -f "$CURRENT" 2>/dev/null || echo "$CURRENT")")"
+    ENTRY="$_ld/sdk/mcp-bin.js"
+    command -v node >/dev/null 2>&1 || { echo "tron mcp needs Node.js (>=22) on PATH." >&2; exit 1; }
+    [ -f "$ENTRY" ] || { echo "This TronBrowser build lacks the MCP server. Run: tron upgrade" >&2; exit 1; }
+    exec env TRON_SESSION_BIN="$(session_bin)" node "$_ld/tron-node.mjs" "$ENTRY" "$@" ;;
   run)
     # Execute a JS/TS automation script that imports @tronbrowser/sdk (PRD M3.4).
     shift
