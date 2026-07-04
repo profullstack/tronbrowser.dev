@@ -84,6 +84,9 @@ Usage:
   tron browser status   Show managed-session status (--json for machine output)
   tron browser tabs     List tabs in the managed session (--json)
   tron browser close    Close the managed session
+  tron snapshot         Structured, ref-tagged page snapshot (--json)
+  tron click <ref>      Click a snapshot ref, e.g. @e3
+  tron fill <ref> <val> Fill an input by ref, e.g. tron fill @e4 "hi@x.com"
   tron upgrade          Update to the latest release
   tron remove           Uninstall TronBrowser (keeps your profile data)
   tron version          Print the installed version
@@ -131,6 +134,20 @@ session_bin() {
   echo "$_ld/tron-session"
 }
 
+# Node automation runtime entry for `tron snapshot|click|fill|type` (M3.2).
+automate_entry() {
+  _ld="$(dirname "$(readlink -f "$CURRENT" 2>/dev/null || echo "$CURRENT")")"
+  echo "$_ld/automate/automate-bin.js"
+}
+
+# Route a CDP automation subcommand to the Node runtime, or explain what's missing.
+run_automation() {
+  ENTRY="$(automate_entry)"
+  command -v node >/dev/null 2>&1 || { echo "tron $1 needs Node.js (>=22) on PATH." >&2; exit 1; }
+  [ -f "$ENTRY" ] || { echo "This TronBrowser build lacks the automation runtime. Run: tron upgrade" >&2; exit 1; }
+  exec node "$ENTRY" "$@"
+}
+
 case "${1:-}" in
   open)
     shift
@@ -151,6 +168,9 @@ case "${1:-}" in
     SESSION="$(session_bin)"
     [ -x "$SESSION" ] || { echo "This TronBrowser build has no managed-session support (missing tron-session). Run: tron upgrade" >&2; exit 1; }
     exec "$SESSION" browser "$@" ;;
+  snapshot|click|fill|type)
+    # CDP automation on the managed session's current page (PRD M3.2).
+    run_automation "$@" ;;
   restart)
     # Force-quit any running TronBrowser, then launch fresh. Chromium forwards a
     # new launch to an already-running instance (which keeps the OLD extension
