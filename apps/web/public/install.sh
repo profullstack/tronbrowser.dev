@@ -90,6 +90,7 @@ Usage:
   tron extract <mode>   Extract text|links|forms|tables|main (JSON)
   tron screenshot <p>   Save a PNG of the current page (--full-page)
   tron headless <url>   One-shot: --snapshot | --screenshot <p> | --extract <mode>
+  tron run <script>     Run a JS/TS script using @tronbrowser/sdk (--headless/--trace)
   tron upgrade          Update to the latest release
   tron remove           Uninstall TronBrowser (keeps your profile data)
   tron version          Print the installed version
@@ -178,6 +179,15 @@ case "${1:-}" in
   headless)
     # One-shot: launch a headless ephemeral session, navigate, act, tear down.
     run_automation "$@" ;;
+  run)
+    # Execute a JS/TS automation script that imports @tronbrowser/sdk (PRD M3.4).
+    shift
+    [ "$#" -gt 0 ] || { echo "usage: tron run <script.js|.ts> [--headless] [--profile <name>] [--trace <dir>]" >&2; exit 2; }
+    _ld="$(dirname "$(readlink -f "$CURRENT" 2>/dev/null || echo "$CURRENT")")"
+    RUNNER="$_ld/tron-run.mjs"
+    command -v node >/dev/null 2>&1 || { echo "tron run needs Node.js (>=24) on PATH." >&2; exit 1; }
+    [ -f "$RUNNER" ] || { echo "This TronBrowser build lacks the SDK runtime. Run: tron upgrade" >&2; exit 1; }
+    exec env TRON_SESSION_BIN="$(session_bin)" node "$RUNNER" "$@" ;;
   restart)
     # Force-quit any running TronBrowser, then launch fresh. Chromium forwards a
     # new launch to an already-running instance (which keeps the OLD extension
