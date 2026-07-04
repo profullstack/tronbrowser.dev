@@ -87,6 +87,9 @@ Usage:
   tron snapshot         Structured, ref-tagged page snapshot (--json)
   tron click <ref>      Click a snapshot ref, e.g. @e3
   tron fill <ref> <val> Fill an input by ref, e.g. tron fill @e4 "hi@x.com"
+  tron extract <mode>   Extract text|links|forms|tables|main (JSON)
+  tron screenshot <p>   Save a PNG of the current page (--full-page)
+  tron headless <url>   One-shot: --snapshot | --screenshot <p> | --extract <mode>
   tron upgrade          Update to the latest release
   tron remove           Uninstall TronBrowser (keeps your profile data)
   tron version          Print the installed version
@@ -141,11 +144,12 @@ automate_entry() {
 }
 
 # Route a CDP automation subcommand to the Node runtime, or explain what's missing.
+# TRON_SESSION_BIN lets `tron headless` launch/close its own one-shot session.
 run_automation() {
   ENTRY="$(automate_entry)"
   command -v node >/dev/null 2>&1 || { echo "tron $1 needs Node.js (>=22) on PATH." >&2; exit 1; }
   [ -f "$ENTRY" ] || { echo "This TronBrowser build lacks the automation runtime. Run: tron upgrade" >&2; exit 1; }
-  exec node "$ENTRY" "$@"
+  exec env TRON_SESSION_BIN="$(session_bin)" node "$ENTRY" "$@"
 }
 
 case "${1:-}" in
@@ -168,8 +172,11 @@ case "${1:-}" in
     SESSION="$(session_bin)"
     [ -x "$SESSION" ] || { echo "This TronBrowser build has no managed-session support (missing tron-session). Run: tron upgrade" >&2; exit 1; }
     exec "$SESSION" browser "$@" ;;
-  snapshot|click|fill|type)
-    # CDP automation on the managed session's current page (PRD M3.2).
+  snapshot|click|fill|type|extract|screenshot|pdf)
+    # CDP automation on the managed session's current page (PRD M3.2/M3.3).
+    run_automation "$@" ;;
+  headless)
+    # One-shot: launch a headless ephemeral session, navigate, act, tear down.
     run_automation "$@" ;;
   restart)
     # Force-quit any running TronBrowser, then launch fresh. Chromium forwards a
