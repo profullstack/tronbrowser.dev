@@ -91,6 +91,7 @@ Usage:
   tron screenshot <p>   Save a PNG of the current page (--full-page)
   tron headless <url>   One-shot: --snapshot | --screenshot <p> | --extract <mode>
   tron run <script>     Run a JS/TS script using @tronbrowser/sdk (--headless/--trace)
+  tron analyze [goal]   Analyze/fill a form or page (--data, --execute, --json)
   tron upgrade          Update to the latest release
   tron remove           Uninstall TronBrowser (keeps your profile data)
   tron version          Print the installed version
@@ -176,6 +177,14 @@ case "${1:-}" in
   snapshot|click|fill|type|extract|screenshot|pdf)
     # CDP automation on the managed session's current page (PRD M3.2/M3.3).
     run_automation "$@" ;;
+  analyze)
+    # AI-assisted unknown-interface analysis / form fill (PRD M3.5). Runs via
+    # tron-node.mjs so agent-runtime's @tronbrowser/* imports resolve.
+    _ld="$(dirname "$(readlink -f "$CURRENT" 2>/dev/null || echo "$CURRENT")")"
+    ENTRY="$_ld/analyze/analyze-bin.js"
+    command -v node >/dev/null 2>&1 || { echo "tron analyze needs Node.js (>=22) on PATH." >&2; exit 1; }
+    [ -f "$ENTRY" ] || { echo "This TronBrowser build lacks the analyze runtime. Run: tron upgrade" >&2; exit 1; }
+    exec node "$_ld/tron-node.mjs" "$ENTRY" "$@" ;;
   headless)
     # One-shot: launch a headless ephemeral session, navigate, act, tear down.
     run_automation "$@" ;;

@@ -104,7 +104,14 @@ importers:
         version: 2.1.9(@types/node@24.13.2)(happy-dom@20.10.6)(lightningcss@1.32.0)(terser@5.48.0)
 
   packages/agent-runtime:
+    dependencies:
+      '@tronbrowser/browser-core':
+        specifier: workspace:*
+        version: link:../browser-core
     devDependencies:
+      happy-dom:
+        specifier: ^20.10.6
+        version: 20.10.6
       typescript:
         specifier: ^5.6.3
         version: 5.9.3
@@ -171,6 +178,9 @@ importers:
 
   packages/sdk:
     dependencies:
+      '@tronbrowser/agent-runtime':
+        specifier: workspace:*
+        version: link:../agent-runtime
       '@tronbrowser/browser-core':
         specifier: workspace:*
         version: link:../browser-core

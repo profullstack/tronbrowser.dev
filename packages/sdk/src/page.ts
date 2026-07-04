@@ -20,12 +20,15 @@ import {
   type ScreenshotOptions,
   type SnapshotOptions,
 } from '@tronbrowser/browser-core';
+import {
+  analyze,
+  analyzeFormsExpression,
+  type AnalyzeBrowser,
+  type AnalyzeOptions,
+  type AnalyzeResult,
+  type RawFormsResult,
+} from '@tronbrowser/agent-runtime';
 import type { Tracer } from './trace.js';
-
-/** Analyze/step/runTask land in M3.5; the surface exists so scripts type-check. */
-function notYet(name: string): never {
-  throw new Error(`page.${name}() arrives in M3.5 (AI analyze). Not available yet.`);
-}
 
 export class Page {
   readonly #conn: CdpConnection;
@@ -118,14 +121,32 @@ export class Page {
     return this.eval<string>('document.title');
   }
 
-  analyze(): never {
-    return notYet('analyze');
+  /** Adapter exposing this page to the analyze runtime. */
+  #analyzeBrowser(): AnalyzeBrowser {
+    return {
+      snapshot: () => this.snapshot(),
+      readForms: () => this.eval<RawFormsResult>(analyzeFormsExpression()),
+      fill: (ref, value) => this.fill(ref, value),
+      click: (ref) => this.click(ref),
+    };
   }
-  step(): never {
-    return notYet('step');
+
+  /** Analyze the page / map a form to data (dry-run unless `execute`). */
+  analyze(goal?: string, options: AnalyzeOptions = {}): Promise<AnalyzeResult> {
+    this.#tracer?.record('analyze', goal);
+    return analyze(this.#analyzeBrowser(), { ...options, ...(goal ? { goal } : {}) });
   }
-  runTask(): never {
-    return notYet('runTask');
+
+  /** One bounded step toward a goal (execute, capped). */
+  step(goal: string, options: AnalyzeOptions = {}): Promise<AnalyzeResult> {
+    this.#tracer?.record('step', goal);
+    return analyze(this.#analyzeBrowser(), { ...options, goal, execute: true, maxSteps: 1 });
+  }
+
+  /** Run the bounded analyze loop to completion for a goal. */
+  runTask(goal: string, options: AnalyzeOptions = {}): Promise<AnalyzeResult> {
+    this.#tracer?.record('runTask', goal);
+    return analyze(this.#analyzeBrowser(), { ...options, goal, execute: true });
   }
 
   /** @internal */

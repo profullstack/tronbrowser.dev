@@ -19,6 +19,7 @@
     "lint": "eslint src"
   },
   "dependencies": {
+    "@tronbrowser/agent-runtime": "workspace:*",
     "@tronbrowser/browser-core": "workspace:*"
   },
   "devDependencies": {

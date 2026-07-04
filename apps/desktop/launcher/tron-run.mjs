@@ -10,6 +10,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 const here = dirname(fileURLToPath(import.meta.url));
 const sdkEntry = join(here, 'sdk', 'index.js');
 const coreEntry = join(here, 'automate', 'index.js');
+const agentEntry = join(here, 'analyze', 'index.js');
 
 const argv = process.argv.slice(2);
 let script;
@@ -43,6 +44,7 @@ register(pathToFileURL(join(here, 'tron-run-hooks.mjs')), import.meta.url, {
   data: {
     '@tronbrowser/sdk': pathToFileURL(sdkEntry).href,
     '@tronbrowser/browser-core': pathToFileURL(coreEntry).href,
+    '@tronbrowser/agent-runtime': pathToFileURL(agentEntry).href,
   },
 });
 
