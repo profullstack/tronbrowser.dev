@@ -8,3 +8,10 @@
 export * from './types.js';
 export * from './cdp.js';
 export * from './descriptor.js';
+
+// Snapshots and ref actions (PRD M3.2).
+export * from './cdp-client.js';
+export * from './snapshot-script.js';
+export * from './action-script.js';
+export * from './page-target.js';
+export * from './page.js';
