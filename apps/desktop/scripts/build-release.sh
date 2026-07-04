@@ -59,6 +59,9 @@ stage() { # dest dir
   # On-demand Tor control helper for the in-browser 🧅 Tor toggle (the launcher
   # starts it; it starts Tor only when the toggle asks).
   install -m 0755 "$DESKTOP/launcher/tron-tor-helper" "$s/tron-tor-helper"
+  # Managed-session engine for `tron browser …` / `tron open` (PRD M3.1). Sits
+  # next to the shim; the `tron` dispatcher resolves it relative to $CURRENT.
+  install -m 0755 "$DESKTOP/launcher/tron-session" "$s/tron-session"
   # -L dereferences the branding symlinks (icons/logo.svg -> repo-root logo.svg)
   # so the package contains real files, not dangling links.
   cp -RL "$DESKTOP/extensions/ai-sidebar" "$s/extensions/ai-sidebar"

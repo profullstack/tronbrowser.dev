@@ -75,11 +75,15 @@ tron — TronBrowser CLI
 
 Usage:
   tron <url> [url...]   Open URL(s) in TronBrowser (agent-friendly)
-  tron open <url>       Same as above, explicit
+  tron open <url>       Open a URL (in the managed session if one is running)
   tron                  Launch TronBrowser
   tron restart          Force-quit and relaunch (loads the latest extension)
   tron --tor [url]      Launch a dedicated Tor session (separate wiped profile)
   tron tor              Start a standalone Tor daemon for the in-browser toggle
+  tron browser launch   Start a managed automation session (CDP, loopback-only)
+  tron browser status   Show managed-session status (--json for machine output)
+  tron browser tabs     List tabs in the managed session (--json)
+  tron browser close    Close the managed session
   tron upgrade          Update to the latest release
   tron remove           Uninstall TronBrowser (keeps your profile data)
   tron version          Print the installed version
@@ -121,11 +125,32 @@ launch() {
   exec "$CURRENT" "$@"
 }
 
+# Path to the managed-session engine, which lives next to the versioned shim.
+session_bin() {
+  _ld="$(dirname "$(readlink -f "$CURRENT" 2>/dev/null || echo "$CURRENT")")"
+  echo "$_ld/tron-session"
+}
+
 case "${1:-}" in
   open)
     shift
     [ "$#" -gt 0 ] || { echo "usage: tron open <url>" >&2; exit 2; }
+    # Prefer a running managed session (open URL as a tab there); otherwise fall
+    # back to the classic behavior of opening the URL in a normal window.
+    SESSION="$(session_bin)"
+    if [ -x "$SESSION" ]; then
+      _rc=0
+      "$SESSION" open "$@" || _rc=$?
+      [ "$_rc" = 0 ] && exit 0
+      [ "$_rc" = 3 ] || exit "$_rc"   # 3 = no managed session → legacy launch
+    fi
     launch "$@" ;;
+  browser)
+    # Managed automation sessions (launch/status/tabs/use/current/close).
+    shift
+    SESSION="$(session_bin)"
+    [ -x "$SESSION" ] || { echo "This TronBrowser build has no managed-session support (missing tron-session). Run: tron upgrade" >&2; exit 1; }
+    exec "$SESSION" browser "$@" ;;
   restart)
     # Force-quit any running TronBrowser, then launch fresh. Chromium forwards a
     # new launch to an already-running instance (which keeps the OLD extension
