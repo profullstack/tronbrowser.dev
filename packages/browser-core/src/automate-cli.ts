@@ -22,6 +22,14 @@ import { CdpClient, type CdpConnection } from './automation/cdp-client.js';
 import { cdpListUrl } from './automation/cdp.js';
 import { descriptorPath, parseDescriptor, resolveDataDir } from './automation/descriptor.js';
 import { printPdf, screenshotPng } from './automation/capture.js';
+import {
+  readActiveTrace,
+  readCommands,
+  recordCommand,
+  startTrace,
+  stopTrace,
+} from './automation/trace.js';
+import type { AgentSnapshot } from './automation/snapshot-script.js';
 import { extractExpression, parseFieldSpec, type FieldSpec } from './automation/extract-script.js';
 import {
   captureSnapshot,
@@ -105,6 +113,27 @@ async function attach(deps: CliDeps, dataDir = resolveDataDir(deps.env)): Promis
   const conn = await deps.connect(resolvePageWsUrl(targets, descriptor.activeTabId));
   await enableRuntime(conn);
   return conn;
+}
+
+/** If a trace is active, append this command (+ a fresh snapshot) to it. */
+async function traceRecord(
+  env: NodeJS.ProcessEnv,
+  conn: CdpConnection,
+  name: string,
+  args: Record<string, unknown>,
+  snapshot?: AgentSnapshot,
+): Promise<void> {
+  const active = await readActiveTrace(resolveDataDir(env));
+  if (!active) return;
+  let snap = snapshot;
+  if (!snap) {
+    try {
+      snap = await captureSnapshot(conn);
+    } catch {
+      snap = undefined;
+    }
+  }
+  await recordCommand(active.dir, name, args, snap ? { snapshot: snap } : {});
 }
 
 /** Collect all `--field name=selector[@attr]` specs from an arg list. */
@@ -202,6 +231,7 @@ export async function run(argv: string[], overrides: Partial<CliDeps> = {}): Pro
           conn,
           rest.includes('--include-hidden') ? { includeHidden: true } : {},
         );
+        await traceRecord(deps.env, conn, 'snapshot', {}, snap);
         deps.out(rest.includes('--json') ? JSON.stringify(snap, null, 2) : formatSnapshotText(snap));
         return EXIT.ok;
       }
@@ -212,7 +242,9 @@ export async function run(argv: string[], overrides: Partial<CliDeps> = {}): Pro
           return EXIT.usage;
         }
         conn = await attach(deps);
-        deps.out(`clicked ${(await clickRef(conn, ref)).ref}`);
+        const clicked = await clickRef(conn, ref);
+        await traceRecord(deps.env, conn, 'click', { ref });
+        deps.out(`clicked ${clicked.ref}`);
         return EXIT.ok;
       }
       case 'fill': {
@@ -223,7 +255,9 @@ export async function run(argv: string[], overrides: Partial<CliDeps> = {}): Pro
           return EXIT.usage;
         }
         conn = await attach(deps);
-        deps.out(`filled ${(await fillRef(conn, ref, value)).ref}`);
+        const filled = await fillRef(conn, ref, value);
+        await traceRecord(deps.env, conn, 'fill', { ref, value });
+        deps.out(`filled ${filled.ref}`);
         return EXIT.ok;
       }
       case 'extract': {
@@ -283,6 +317,64 @@ export async function run(argv: string[], overrides: Partial<CliDeps> = {}): Pro
           await deps.closeSession(dataDir).catch(() => {});
           await rm(dataDir, { recursive: true, force: true }).catch(() => {});
         }
+      }
+      case 'trace': {
+        const dataDir = resolveDataDir(deps.env);
+        const sub = rest[0];
+        if (sub === 'start') {
+          const dir = rest[1] ?? join(process.cwd(), `session-${Date.now()}.trontrace`);
+          await startTrace(dataDir, dir);
+          deps.out(`tracing to ${dir}`);
+          return EXIT.ok;
+        }
+        if (sub === 'stop') {
+          const res = await stopTrace(dataDir);
+          if (!res) {
+            deps.err('no active trace');
+            return EXIT.usage;
+          }
+          deps.out(`stopped trace: ${res.dir} (${res.commands} command${res.commands === 1 ? '' : 's'})`);
+          return EXIT.ok;
+        }
+        if (sub === 'status') {
+          const active = await readActiveTrace(dataDir);
+          deps.out(active ? `tracing to ${active.dir}` : 'no active trace');
+          return EXIT.ok;
+        }
+        deps.err('usage: tron trace start [path] | stop | status');
+        return EXIT.usage;
+      }
+      case 'replay': {
+        const dir = rest.find((a) => !a.startsWith('--'));
+        if (!dir) {
+          deps.err('usage: tron replay <trace-dir>');
+          return EXIT.usage;
+        }
+        const commands = await readCommands(dir);
+        conn = await attach(deps);
+        let done = 0;
+        for (const c of commands) {
+          try {
+            if (c.name === 'click') {
+              await clickRef(conn, String(c.args.ref));
+            } else if (c.name === 'fill' || c.name === 'type') {
+              if (c.args.valueRedacted) {
+                deps.out(`skip ${c.name} ${String(c.args.ref)} (value redacted)`);
+                continue;
+              }
+              await fillRef(conn, String(c.args.ref), String(c.args.value));
+            } else {
+              continue; // snapshots and non-mutating records are not replayed
+            }
+            done += 1;
+            deps.out(`replayed ${c.name} ${String(c.args.ref ?? '')}`.trimEnd());
+          } catch (err) {
+            deps.err(`replay stopped at seq ${c.seq}: ${(err as Error).message}`);
+            return EXIT.failed;
+          }
+        }
+        deps.out(`replayed ${done} command${done === 1 ? '' : 's'}`);
+        return EXIT.ok;
       }
       default:
         deps.err(`unknown automation command: ${command}`);
