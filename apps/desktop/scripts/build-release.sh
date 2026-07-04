@@ -51,22 +51,25 @@ fetch_marksyncr() {
   [ -n "$MKS_SRC" ] || echo "  ! MarkSyncr fetch skipped (non-fatal)"
 }
 
-# The Node automation runtime for `tron snapshot|click|fill` (PRD M3.2). The
-# @tronbrowser/browser-core source has no runtime deps, so its compiled dist tree
-# is self-contained; ship it with a {"type":"module"} marker and the shell
-# dispatcher runs it via node. Best-effort like the extension fetches — a build
-# host without node/pnpm simply omits it (the CLI then reports "run tron upgrade").
+# The Node automation runtime for `tron snapshot|click|fill|extract|...` (M3.2/3)
+# and the `@tronbrowser/sdk` used by `tron run` (M3.4). Both packages' source has
+# no runtime deps, so their compiled dist trees are self-contained; ship each with
+# a {"type":"module"} marker and the shell dispatcher / tron-run.mjs run them via
+# node. Best-effort like the extension fetches — a build host without node/pnpm
+# simply omits them (the CLI then reports "run tron upgrade").
 stage_automation() { # dest dir
   local s="$1"
   command -v node >/dev/null 2>&1 && command -v pnpm >/dev/null 2>&1 || {
     echo "  ! automation runtime skipped (needs node + pnpm)"; return; }
-  if ( cd "$REPO_ROOT" && pnpm --filter @tronbrowser/browser-core build >/dev/null 2>&1 ); then
-    rm -rf "$s/automate"
+  if ( cd "$REPO_ROOT" && pnpm --filter @tronbrowser/browser-core --filter @tronbrowser/sdk build >/dev/null 2>&1 ); then
+    rm -rf "$s/automate" "$s/sdk"
     cp -R "$REPO_ROOT/packages/browser-core/dist" "$s/automate"
     printf '{\n  "type": "module"\n}\n' > "$s/automate/package.json"
-    echo "  + bundled automation runtime (tron snapshot/click/fill)"
+    cp -R "$REPO_ROOT/packages/sdk/dist" "$s/sdk"
+    printf '{\n  "type": "module"\n}\n' > "$s/sdk/package.json"
+    echo "  + bundled automation runtime + SDK (tron snapshot/extract/run)"
   else
-    echo "  ! automation runtime skipped (browser-core build failed)"
+    echo "  ! automation runtime skipped (browser-core/sdk build failed)"
   fi
 }
 
@@ -81,6 +84,9 @@ stage() { # dest dir
   # Managed-session engine for `tron browser …` / `tron open` (PRD M3.1). Sits
   # next to the shim; the `tron` dispatcher resolves it relative to $CURRENT.
   install -m 0755 "$DESKTOP/launcher/tron-session" "$s/tron-session"
+  # `tron run` launcher + ESM resolver hook (PRD M3.4).
+  install -m 0644 "$DESKTOP/launcher/tron-run.mjs" "$s/tron-run.mjs"
+  install -m 0644 "$DESKTOP/launcher/tron-run-hooks.mjs" "$s/tron-run-hooks.mjs"
   stage_automation "$s"
   # -L dereferences the branding symlinks (icons/logo.svg -> repo-root logo.svg)
   # so the package contains real files, not dangling links.
