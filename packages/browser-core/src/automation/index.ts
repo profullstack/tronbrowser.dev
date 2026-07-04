@@ -19,3 +19,6 @@ export * from './page.js';
 // Headless one-shot, extraction, and capture (PRD M3.3).
 export * from './extract-script.js';
 export * from './capture.js';
+
+// Trace bundle format (PRD M3.7).
+export * from './trace.js';

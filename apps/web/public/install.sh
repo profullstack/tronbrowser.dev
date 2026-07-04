@@ -93,6 +93,8 @@ Usage:
   tron run <script>     Run a JS/TS script using @tronbrowser/sdk (--headless/--trace)
   tron analyze [goal]   Analyze/fill a form or page (--data, --execute, --json)
   tron mcp              Run a local MCP server over stdio (--headless)
+  tron trace start|stop Record commands into a .trontrace bundle
+  tron replay <bundle>  Replay a recorded trace against the session
   tron upgrade          Update to the latest release
   tron remove           Uninstall TronBrowser (keeps your profile data)
   tron version          Print the installed version
@@ -175,8 +177,8 @@ case "${1:-}" in
     SESSION="$(session_bin)"
     [ -x "$SESSION" ] || { echo "This TronBrowser build has no managed-session support (missing tron-session). Run: tron upgrade" >&2; exit 1; }
     exec "$SESSION" browser "$@" ;;
-  snapshot|click|fill|type|extract|screenshot|pdf)
-    # CDP automation on the managed session's current page (PRD M3.2/M3.3).
+  snapshot|click|fill|type|extract|screenshot|pdf|trace|replay)
+    # CDP automation on the managed session's current page (PRD M3.2/M3.3/M3.7).
     run_automation "$@" ;;
   analyze)
     # AI-assisted unknown-interface analysis / form fill (PRD M3.5). Runs via
