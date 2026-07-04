@@ -44,8 +44,13 @@ interface Mock {
   close: () => Promise<void>;
 }
 
-/** Mock DevTools server: HTTP /json/list + a page WS that answers Runtime.*. */
-async function startMock(evaluate: (expression: string) => unknown): Promise<Mock> {
+/** Mock DevTools server: HTTP /json/list + a page WS that answers Runtime.*.
+ * `evaluate` supplies Runtime.evaluate values; `methodResults` supplies command
+ * results for other CDP methods (e.g. Page.captureScreenshot). */
+async function startMock(
+  evaluate: (expression: string) => unknown,
+  methodResults: Record<string, unknown> = {},
+): Promise<Mock> {
   const sockets = new Set<Socket>();
   const server: Server = createServer((req, res) => {
     if (req.url === '/json/list') {
@@ -73,10 +78,12 @@ async function startMock(evaluate: (expression: string) => unknown): Promise<Moc
       if (text === null) { socket.destroy(); return; }
       const msg = JSON.parse(text) as { id: number; method: string; params?: { expression?: string } };
       // Real CDP nests twice: {result: {result: <RemoteObject>, exceptionDetails?}}.
-      const result =
-        msg.method === 'Runtime.evaluate'
-          ? { result: { result: { value: evaluate(msg.params?.expression ?? '') } } }
-          : {};
+      let result: Record<string, unknown> = {};
+      if (msg.method === 'Runtime.evaluate') {
+        result = { result: { result: { value: evaluate(msg.params?.expression ?? '') } } };
+      } else if (msg.method in methodResults) {
+        result = { result: methodResults[msg.method] };
+      }
       socket.write(encodeFrame(JSON.stringify({ id: msg.id, ...result })));
     });
     socket.on('error', () => {});
@@ -148,5 +155,31 @@ describe('automation CLI end-to-end over HTTP + WebSocket', () => {
     const code = await run(['click', '@e9'], { env: { TRONBROWSER_DATA: dataDir }, err: (t) => err.push(t) });
     expect(code).toBe(EXIT.staleRef);
     expect(err.join('\n')).toMatch(/stale/i);
+  });
+
+  it('extracts links end-to-end', async () => {
+    mock = await startMock(() => [{ text: 'More', href: 'https://example.com/more' }]);
+    writeDescriptor(mock.port);
+    const out: string[] = [];
+    const code = await run(['extract', 'links'], { env: { TRONBROWSER_DATA: dataDir }, out: (t) => out.push(t) });
+    expect(code).toBe(EXIT.ok);
+    expect(JSON.parse(out.join('\n'))[0].href).toBe('https://example.com/more');
+  });
+
+  it('captures a screenshot end-to-end', async () => {
+    mock = await startMock(() => null, {
+      'Page.captureScreenshot': { data: Buffer.from('PNGBYTES').toString('base64') },
+    });
+    writeDescriptor(mock.port);
+    let written: Uint8Array | undefined;
+    const code = await run(['screenshot', 'out.png'], {
+      env: { TRONBROWSER_DATA: dataDir },
+      out: () => {},
+      writeBytes: async (_p, bytes) => {
+        written = bytes;
+      },
+    });
+    expect(code).toBe(EXIT.ok);
+    expect(Buffer.from(written!).toString()).toBe('PNGBYTES');
   });
 });

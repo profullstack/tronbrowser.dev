@@ -58,6 +58,27 @@ export async function enableRuntime(conn: CdpConnection): Promise<void> {
   await conn.send('Runtime.enable');
 }
 
+/** Navigate the page to `url` and wait for load (or `timeoutMs`). */
+export async function goto(
+  conn: CdpConnection,
+  url: string,
+  options: { timeoutMs?: number } = {},
+): Promise<void> {
+  const timeoutMs = options.timeoutMs ?? 30_000;
+  await conn.send('Page.enable');
+  const loaded = new Promise<void>((resolve) => conn.on('Page.loadEventFired', () => resolve()));
+  await conn.send('Page.navigate', { url });
+  await Promise.race([
+    loaded,
+    new Promise<void>((resolve) => setTimeout(resolve, timeoutMs)),
+  ]);
+}
+
+/** Run the extraction expression and return its deterministic JSON value. */
+export async function extract<T = unknown>(conn: CdpConnection, expression: string): Promise<T> {
+  return evaluate<T>(conn, expression);
+}
+
 /** Capture a structured, ref-tagged snapshot of the current page. */
 export async function captureSnapshot(
   conn: CdpConnection,

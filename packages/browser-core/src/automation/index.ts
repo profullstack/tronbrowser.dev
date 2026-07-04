@@ -15,3 +15,7 @@ export * from './snapshot-script.js';
 export * from './action-script.js';
 export * from './page-target.js';
 export * from './page.js';
+
+// Headless one-shot, extraction, and capture (PRD M3.3).
+export * from './extract-script.js';
+export * from './capture.js';
