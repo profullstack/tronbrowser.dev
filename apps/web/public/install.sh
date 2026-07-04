@@ -75,11 +75,21 @@ tron — TronBrowser CLI
 
 Usage:
   tron <url> [url...]   Open URL(s) in TronBrowser (agent-friendly)
-  tron open <url>       Same as above, explicit
+  tron open <url>       Open a URL (in the managed session if one is running)
   tron                  Launch TronBrowser
   tron restart          Force-quit and relaunch (loads the latest extension)
   tron --tor [url]      Launch a dedicated Tor session (separate wiped profile)
   tron tor              Start a standalone Tor daemon for the in-browser toggle
+  tron browser launch   Start a managed automation session (CDP, loopback-only)
+  tron browser status   Show managed-session status (--json for machine output)
+  tron browser tabs     List tabs in the managed session (--json)
+  tron browser close    Close the managed session
+  tron snapshot         Structured, ref-tagged page snapshot (--json)
+  tron click <ref>      Click a snapshot ref, e.g. @e3
+  tron fill <ref> <val> Fill an input by ref, e.g. tron fill @e4 "hi@x.com"
+  tron extract <mode>   Extract text|links|forms|tables|main (JSON)
+  tron screenshot <p>   Save a PNG of the current page (--full-page)
+  tron headless <url>   One-shot: --snapshot | --screenshot <p> | --extract <mode>
   tron upgrade          Update to the latest release
   tron remove           Uninstall TronBrowser (keeps your profile data)
   tron version          Print the installed version
@@ -121,11 +131,53 @@ launch() {
   exec "$CURRENT" "$@"
 }
 
+# Path to the managed-session engine, which lives next to the versioned shim.
+session_bin() {
+  _ld="$(dirname "$(readlink -f "$CURRENT" 2>/dev/null || echo "$CURRENT")")"
+  echo "$_ld/tron-session"
+}
+
+# Node automation runtime entry for `tron snapshot|click|fill|type` (M3.2).
+automate_entry() {
+  _ld="$(dirname "$(readlink -f "$CURRENT" 2>/dev/null || echo "$CURRENT")")"
+  echo "$_ld/automate/automate-bin.js"
+}
+
+# Route a CDP automation subcommand to the Node runtime, or explain what's missing.
+# TRON_SESSION_BIN lets `tron headless` launch/close its own one-shot session.
+run_automation() {
+  ENTRY="$(automate_entry)"
+  command -v node >/dev/null 2>&1 || { echo "tron $1 needs Node.js (>=22) on PATH." >&2; exit 1; }
+  [ -f "$ENTRY" ] || { echo "This TronBrowser build lacks the automation runtime. Run: tron upgrade" >&2; exit 1; }
+  exec env TRON_SESSION_BIN="$(session_bin)" node "$ENTRY" "$@"
+}
+
 case "${1:-}" in
   open)
     shift
     [ "$#" -gt 0 ] || { echo "usage: tron open <url>" >&2; exit 2; }
+    # Prefer a running managed session (open URL as a tab there); otherwise fall
+    # back to the classic behavior of opening the URL in a normal window.
+    SESSION="$(session_bin)"
+    if [ -x "$SESSION" ]; then
+      _rc=0
+      "$SESSION" open "$@" || _rc=$?
+      [ "$_rc" = 0 ] && exit 0
+      [ "$_rc" = 3 ] || exit "$_rc"   # 3 = no managed session → legacy launch
+    fi
     launch "$@" ;;
+  browser)
+    # Managed automation sessions (launch/status/tabs/use/current/close).
+    shift
+    SESSION="$(session_bin)"
+    [ -x "$SESSION" ] || { echo "This TronBrowser build has no managed-session support (missing tron-session). Run: tron upgrade" >&2; exit 1; }
+    exec "$SESSION" browser "$@" ;;
+  snapshot|click|fill|type|extract|screenshot|pdf)
+    # CDP automation on the managed session's current page (PRD M3.2/M3.3).
+    run_automation "$@" ;;
+  headless)
+    # One-shot: launch a headless ephemeral session, navigate, act, tear down.
+    run_automation "$@" ;;
   restart)
     # Force-quit any running TronBrowser, then launch fresh. Chromium forwards a
     # new launch to an already-running instance (which keeps the OLD extension

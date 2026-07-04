@@ -288,6 +288,18 @@ FLAGS="--user-data-dir=$DATA --class=TronBrowser --no-first-run --no-default-bro
 LOG="${TRONBROWSER_LOG:-$DATA/tron.log}"
 FLAGS="$FLAGS --log-level=2"
 
+# --- Automation mode (managed sessions, M3.1) ----------------------------
+# `tron browser launch` (via tron-session) sets these to bring up a CDP-driven
+# managed session on a LOOPBACK DevTools port. Port 0 lets Chromium pick a free
+# port and write it to <profile>/DevToolsActivePort. This is additive: without
+# TRON_AUTOMATION_PORT the normal `tron <url>` launch is unchanged.
+if [ -n "${TRON_AUTOMATION_PORT:-}" ]; then
+  FLAGS="$FLAGS --remote-debugging-port=$TRON_AUTOMATION_PORT"
+  case "${TRON_AUTOMATION_HEADLESS:-0}" in
+    1|true|yes|on) FLAGS="$FLAGS --headless=new --disable-gpu" ;;
+  esac
+fi
+
 # --- Start the Tor daemon (only in --tor mode) ---------------------------
 # Resolve a bundled `tor` next to the launcher, else one on PATH. Start it on a
 # loopback SOCKS port, wait for the circuit to bootstrap, then add the proxy

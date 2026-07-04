@@ -51,6 +51,25 @@ fetch_marksyncr() {
   [ -n "$MKS_SRC" ] || echo "  ! MarkSyncr fetch skipped (non-fatal)"
 }
 
+# The Node automation runtime for `tron snapshot|click|fill` (PRD M3.2). The
+# @tronbrowser/browser-core source has no runtime deps, so its compiled dist tree
+# is self-contained; ship it with a {"type":"module"} marker and the shell
+# dispatcher runs it via node. Best-effort like the extension fetches — a build
+# host without node/pnpm simply omits it (the CLI then reports "run tron upgrade").
+stage_automation() { # dest dir
+  local s="$1"
+  command -v node >/dev/null 2>&1 && command -v pnpm >/dev/null 2>&1 || {
+    echo "  ! automation runtime skipped (needs node + pnpm)"; return; }
+  if ( cd "$REPO_ROOT" && pnpm --filter @tronbrowser/browser-core build >/dev/null 2>&1 ); then
+    rm -rf "$s/automate"
+    cp -R "$REPO_ROOT/packages/browser-core/dist" "$s/automate"
+    printf '{\n  "type": "module"\n}\n' > "$s/automate/package.json"
+    echo "  + bundled automation runtime (tron snapshot/click/fill)"
+  else
+    echo "  ! automation runtime skipped (browser-core build failed)"
+  fi
+}
+
 stage() { # dest dir
   local s="$1"
   mkdir -p "$s/extensions"
@@ -59,6 +78,10 @@ stage() { # dest dir
   # On-demand Tor control helper for the in-browser 🧅 Tor toggle (the launcher
   # starts it; it starts Tor only when the toggle asks).
   install -m 0755 "$DESKTOP/launcher/tron-tor-helper" "$s/tron-tor-helper"
+  # Managed-session engine for `tron browser …` / `tron open` (PRD M3.1). Sits
+  # next to the shim; the `tron` dispatcher resolves it relative to $CURRENT.
+  install -m 0755 "$DESKTOP/launcher/tron-session" "$s/tron-session"
+  stage_automation "$s"
   # -L dereferences the branding symlinks (icons/logo.svg -> repo-root logo.svg)
   # so the package contains real files, not dangling links.
   cp -RL "$DESKTOP/extensions/ai-sidebar" "$s/extensions/ai-sidebar"
