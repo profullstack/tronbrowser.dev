@@ -18,7 +18,11 @@
     "test": "vitest run --passWithNoTests",
     "lint": "eslint src"
   },
+  "dependencies": {
+    "@tronbrowser/browser-core": "workspace:*"
+  },
   "devDependencies": {
+    "happy-dom": "^20.10.6",
     "typescript": "^5.6.3",
     "vitest": "^2.1.4"
   }

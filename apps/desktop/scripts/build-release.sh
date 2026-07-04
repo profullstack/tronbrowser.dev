@@ -61,15 +61,17 @@ stage_automation() { # dest dir
   local s="$1"
   command -v node >/dev/null 2>&1 && command -v pnpm >/dev/null 2>&1 || {
     echo "  ! automation runtime skipped (needs node + pnpm)"; return; }
-  if ( cd "$REPO_ROOT" && pnpm --filter @tronbrowser/browser-core --filter @tronbrowser/sdk build >/dev/null 2>&1 ); then
-    rm -rf "$s/automate" "$s/sdk"
+  if ( cd "$REPO_ROOT" && pnpm --filter @tronbrowser/browser-core --filter @tronbrowser/agent-runtime --filter @tronbrowser/sdk build >/dev/null 2>&1 ); then
+    rm -rf "$s/automate" "$s/analyze" "$s/sdk"
     cp -R "$REPO_ROOT/packages/browser-core/dist" "$s/automate"
     printf '{\n  "type": "module"\n}\n' > "$s/automate/package.json"
+    cp -R "$REPO_ROOT/packages/agent-runtime/dist" "$s/analyze"
+    printf '{\n  "type": "module"\n}\n' > "$s/analyze/package.json"
     cp -R "$REPO_ROOT/packages/sdk/dist" "$s/sdk"
     printf '{\n  "type": "module"\n}\n' > "$s/sdk/package.json"
-    echo "  + bundled automation runtime + SDK (tron snapshot/extract/run)"
+    echo "  + bundled automation + analyze + SDK (tron snapshot/extract/analyze/run)"
   else
-    echo "  ! automation runtime skipped (browser-core/sdk build failed)"
+    echo "  ! automation runtime skipped (browser-core/agent-runtime/sdk build failed)"
   fi
 }
 
@@ -84,9 +86,11 @@ stage() { # dest dir
   # Managed-session engine for `tron browser …` / `tron open` (PRD M3.1). Sits
   # next to the shim; the `tron` dispatcher resolves it relative to $CURRENT.
   install -m 0755 "$DESKTOP/launcher/tron-session" "$s/tron-session"
-  # `tron run` launcher + ESM resolver hook (PRD M3.4).
+  # `tron run` launcher + ESM resolver hook (PRD M3.4) and the generic bin
+  # launcher used by `tron analyze` (PRD M3.5).
   install -m 0644 "$DESKTOP/launcher/tron-run.mjs" "$s/tron-run.mjs"
   install -m 0644 "$DESKTOP/launcher/tron-run-hooks.mjs" "$s/tron-run-hooks.mjs"
+  install -m 0644 "$DESKTOP/launcher/tron-node.mjs" "$s/tron-node.mjs"
   stage_automation "$s"
   # -L dereferences the branding symlinks (icons/logo.svg -> repo-root logo.svg)
   # so the package contains real files, not dangling links.

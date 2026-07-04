@@ -104,11 +104,14 @@ describe('tron.launch lifecycle', () => {
     await browser.close();
   });
 
-  it('surfaces analyze() as an M3.5 feature', async () => {
-    const { deps } = fakeDeps(fakeConn(null));
+  it('analyzes the page via the analyze runtime', async () => {
+    // Runtime.evaluate returns a forms result (readForms); snapshot only needs url/title.
+    const { deps } = fakeDeps(fakeConn({ challenge: false, forms: [] }));
     const browser = await tron.launch({}, deps);
     const page = await browser.newPage();
-    expect(() => page.analyze()).toThrow(/M3\.5/);
+    const result = await page.analyze('Fill contact form');
+    expect(result.mode).toBe('dry-run');
+    expect(result.goal).toBe('Fill contact form');
     await browser.close();
   });
 });

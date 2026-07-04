@@ -26,6 +26,15 @@ export type {
   FieldSpec,
 } from '@tronbrowser/browser-core';
 
+// Analyze types (PRD M3.5) for page.analyze()/step()/runTask().
+export type {
+  AnalyzeResult,
+  AnalyzeOptions,
+  PlannedAction,
+  DetectedForm,
+  FormFieldMapping,
+} from '@tronbrowser/agent-runtime';
+
 import { Browser, type LaunchOptions } from './browser.js';
 import type { SdkDeps } from './deps.js';
 
