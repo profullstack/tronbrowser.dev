@@ -7,6 +7,70 @@ function esc(s) { const d = document.createElement('div'); d.textContent = s == 
 function qs(name) { return new URLSearchParams(location.search).get(name); }
 function initials(name) { return (name || '?').trim().split(/\s+/).slice(0, 2).map((w) => w[0] || '').join('').toUpperCase(); }
 
+// Logo if the listing has one (auto-ingested from the .crx icons), else initials.
+function avatar(ext, px) {
+  const style = px ? ` style="width:${px}px;height:${px}px"` : '';
+  if (ext.iconUrl) return `<img class="avatar" src="${esc(ext.iconUrl)}" alt=""${style} style="object-fit:cover${px ? `;width:${px}px;height:${px}px` : ''}">`;
+  return `<div class="avatar"${px ? ` style="width:${px}px;height:${px}px;font-size:20px"` : ''}>${esc(initials(ext.name))}</div>`;
+}
+
+// ── AI auto-ingest: paste a .crx URL, we fill the form + scan (no forms) ──
+function renderScanResult(scan) {
+  const c = scan.countsBySeverity || {};
+  const chip = (sev, n) => (n ? `<span class="badge ${sev}">${n} ${sev}</span>` : '');
+  const findings = (scan.findings || []).slice(0, 12)
+    .map((f) => `<li><b>${esc(f.severity)}</b> ${esc(f.rule)} — ${esc(f.detail)}${f.file ? ` <span class="muted">(${esc(f.file)})</span>` : ''}</li>`).join('');
+  const verdict = scan.green
+    ? '<p class="success">✅ Green light — passes the security scan and can be published.</p>'
+    : '<p class="error">⛔ Blocked — critical issues must be fixed before publishing.</p>';
+  return `${verdict}
+    <div class="meta">${chip('critical', c.critical)} ${chip('high', c.high)} ${chip('medium', c.medium)} ${chip('low', c.low)}</div>
+    ${findings ? `<ul class="findings">${findings}</ul>` : '<p class="muted">No findings.</p>'}`;
+}
+
+function wireAutoIngest(form) {
+  const wrap = document.createElement('div');
+  wrap.className = 'panel';
+  wrap.style.marginBottom = '14px';
+  wrap.innerHTML = `<h2>1 · Auto-fill from your .crx ✨</h2>
+    <p class="hint">Paste your published <code>.crx</code> URL — we read its manifest, icons, and code to fill everything below and run the security scan. A <b>green scan is required to publish</b>.</p>
+    <div style="display:flex;gap:8px;align-items:flex-start">
+      <input type="url" id="ingestUrl" placeholder="https://…/your-extension.crx" style="flex:1" />
+      <button type="button" class="btn" id="ingestBtn">Ingest &amp; scan</button>
+    </div>
+    <div id="ingestPreview" style="display:flex;gap:12px;align-items:center;margin-top:10px"></div>
+    <div id="ingestOut"></div>`;
+  form.parentNode.insertBefore(wrap, form);
+
+  const submitBtn = form.querySelector('button[type="submit"]');
+  wrap.querySelector('#ingestBtn').addEventListener('click', async () => {
+    const url = wrap.querySelector('#ingestUrl').value.trim();
+    const out = wrap.querySelector('#ingestOut');
+    const preview = wrap.querySelector('#ingestPreview');
+    if (!url) { out.innerHTML = '<p class="error">Paste a .crx URL first.</p>'; return; }
+    out.innerHTML = '<p class="muted">Reading .crx + scanning…</p>';
+    try {
+      const { listing, scan } = await api('/extensions/ingest', {
+        method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ crxUrl: url }),
+      });
+      form.name.value = listing.name || '';
+      form.summary.value = listing.summary || '';
+      form.description.value = listing.description || '';
+      form.manifest.value = listing.manifestJson || '';
+      if (form.crxUrl) form.crxUrl.value = url;
+      form.dataset.iconUrl = listing.iconDataUri || '';
+      preview.innerHTML = `${listing.iconDataUri ? `<img src="${esc(listing.iconDataUri)}" alt="" style="width:48px;height:48px;border-radius:10px;object-fit:cover">` : ''}
+        <div><b>${esc(listing.name)}</b> <span class="badge ver">v${esc(listing.version)}</span><br>
+        <span class="muted">${(listing.permissions || []).length} permission(s)</span></div>`;
+      out.innerHTML = renderScanResult(scan);
+      if (submitBtn) submitBtn.disabled = !scan.green;
+    } catch (e) {
+      out.innerHTML = `<p class="error">${esc(e.message)}</p>`;
+      if (submitBtn) submitBtn.disabled = true;
+    }
+  });
+}
+
 async function api(path, opts = {}) {
   const res = await fetch(API + path, { credentials: 'include', ...opts });
   const data = await res.json().catch(() => ({}));
@@ -31,7 +95,7 @@ function card(ext) {
   const flags = ext.flags > 0 ? `<span class="badge flag" title="community flags">⚑ ${ext.flags}</span>` : '';
   return `<a class="card" href="/store/extension.html?slug=${encodeURIComponent(ext.slug)}">
     <div class="top">
-      <div class="avatar">${esc(initials(ext.name))}</div>
+      ${avatar(ext)}
       <div><h3>${esc(ext.name)}</h3></div>
     </div>
     <p class="summary">${esc(ext.summary || '')}</p>
@@ -73,7 +137,7 @@ async function initDetail() {
     const dl = v ? `${API}/extensions/${encodeURIComponent(ext.slug)}/download` : '#';
     root.innerHTML = `
       <div class="top" style="gap:16px;margin-bottom:8px">
-        <div class="avatar" style="width:56px;height:56px;font-size:20px">${esc(initials(ext.name))}</div>
+        ${avatar(ext, 56)}
         <div>
           <h1 style="margin:0">${esc(ext.name)}</h1>
           <p class="muted" style="margin:4px 0 0">${esc(ext.summary || '')}</p>
@@ -174,6 +238,7 @@ async function initSubmit() {
     return;
   }
   await renderPublisher();
+  wireAutoIngest(form);
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
     out.innerHTML = '<p class="muted">Working…</p>';
@@ -190,7 +255,7 @@ async function initSubmit() {
       // 1) create draft (this assigns the slug we need for the upload path)
       const draft = await api('/extensions', {
         method: 'POST', headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ name: fd.get('name'), summary: fd.get('summary'), description: fd.get('description'), homepageUrl: fd.get('homepageUrl') }),
+        body: JSON.stringify({ name: fd.get('name'), summary: fd.get('summary'), description: fd.get('description'), homepageUrl: fd.get('homepageUrl'), iconUrl: form.dataset.iconUrl || null }),
       });
 
       // If uploading to files.profullstack.com, pause so they can scp to the
