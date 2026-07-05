@@ -19,12 +19,17 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Full history so the three-dot diff below has a merge base with the
+          # base branch (a shallow --depth=1 fetch leaves them with no common
+          # ancestor: "fatal: origin/<base>...HEAD: no merge base").
+          fetch-depth: 0
 
       - name: Find changed listings
         id: changed
         run: |
-          git fetch origin "${{ github.base_ref }}" --depth=1
-          files=$(git diff --name-only "origin/${{ github.base_ref }}"...HEAD -- 'apps/extensions/registry/**/listing.json')
+          git fetch origin "${{ github.base_ref }}"
+          files=$(git diff --name-only "origin/${{ github.base_ref }}...HEAD" -- 'apps/extensions/registry/**/listing.json')
           echo "files<<EOF" >> "$GITHUB_OUTPUT"
           echo "$files" >> "$GITHUB_OUTPUT"
           echo "EOF" >> "$GITHUB_OUTPUT"
