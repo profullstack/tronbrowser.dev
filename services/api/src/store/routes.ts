@@ -23,6 +23,9 @@ import {
 } from './payments.js';
 import { enqueueScan } from './vu1nz.js';
 import { mirrorListing } from './mirror.js';
+import { fetchCrx, extractListingFromCrx } from './crx.js';
+import { scanCrx } from './scanner.js';
+import { createScan, updateScan } from './db.js';
 
 const APP_URL = process.env.APP_URL || 'https://tronbrowser.dev';
 
@@ -118,6 +121,26 @@ store.post('/extensions', async (c) => {
     iconUrl: body.iconUrl ?? null,
   });
   return c.json({ ok: true, id: ext.id, slug: ext.slug });
+});
+
+/* ---------- AI auto-ingest: fill the whole listing from a .crx ----------
+   Point us at a .crx URL and we read its manifest.json + icons + code:
+   auto-fill name/summary/description/version/permissions/logo AND run the
+   security scan. No forms. The publish gate is `scan.green`. */
+store.post('/extensions/ingest', async (c) => {
+  const user = await currentUser(c);
+  if (!user) return c.json({ error: 'unauthorized' }, 401);
+  const body = await c.req.json().catch(() => ({}));
+  const crxUrl = String(body.crxUrl || '').trim();
+  if (!crxUrl) return c.json({ error: 'crxUrl required' }, 400);
+  try {
+    const buf = await fetchCrx(crxUrl);
+    const listing = extractListingFromCrx(buf);
+    const scan = scanCrx(buf, listing.permissions);
+    return c.json({ ok: true, listing, scan });
+  } catch (e: any) {
+    return c.json({ error: e?.message || 'could not ingest .crx' }, 422);
+  }
 });
 
 /* ---------- publisher SSH identity (files.profullstack.com) ----------
@@ -271,6 +294,27 @@ store.post('/extensions/:id/versions', async (c) => {
     }, 400);
   }
 
+  // ── Security scan GATE ──────────────────────────────────────────────
+  // If we can fetch a .crx, scan its code + permissions and BLOCK the submit
+  // on any critical finding (green light required to publish). Zip-only
+  // bundles fall back to the async (non-gating) vu1nz scan.
+  let scanResult: Awaited<ReturnType<typeof scanCrx>> | null = null;
+  if (crxUrl) {
+    try {
+      const buf = await fetchCrx(crxUrl);
+      scanResult = scanCrx(buf, v.permissions);
+    } catch (e: any) {
+      return c.json({ error: `could not scan .crx: ${e?.message || e}` }, 422);
+    }
+    if (!scanResult.green) {
+      return c.json({
+        error: 'scan_failed',
+        message: 'Security scan found blocking (critical) issues. Fix them and resubmit.',
+        scan: scanResult,
+      }, 422);
+    }
+  }
+
   const version = await addVersion({
     extensionId: ext.id,
     version: v.manifest.version,
@@ -284,10 +328,21 @@ store.post('/extensions/:id/versions', async (c) => {
     source: body.source === 'pr' ? 'pr' : 'upload',
   });
 
-  // Fire-and-forget async vu1nz scan (non-gating).
-  await enqueueScan(ext.id, version);
+  if (scanResult) {
+    // Persist the gating scan result for the store badge.
+    const scanId = await createScan(ext.id, version.id);
+    await updateScan(scanId, {
+      status: 'done',
+      score: scanResult.green ? 100 : 40,
+      severity: scanResult.status === 'malicious' ? 'critical' : scanResult.status === 'suspicious' ? 'high' : 'clean',
+      findingsJson: JSON.stringify(scanResult.findings),
+    });
+  } else {
+    // Zip-only: fall back to the async (non-gating) vu1nz scan.
+    await enqueueScan(ext.id, version);
+  }
 
-  return c.json({ ok: true, versionId: version.id, version: version.version, warnings: v.warnings });
+  return c.json({ ok: true, versionId: version.id, version: version.version, warnings: v.warnings, scan: scanResult });
 });
 
 /* ---------- pay the $1 listing fee ---------- */
