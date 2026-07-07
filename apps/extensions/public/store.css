@@ -92,6 +92,15 @@ input:focus, textarea:focus, select:focus { outline: none; border-color: var(--a
   font-weight: 800; color: #04211d; background: linear-gradient(135deg, var(--accent), var(--accent-2));
   flex: 0 0 auto;
 }
+/* Real logo (usually a transparent PNG): contain it in a padded, bordered tile
+   and drop the gradient. The backdrop is chosen from the logo's luminance in
+   store.js (hydrateIcons); a neutral panel shows until then. */
+img.avatar.icon {
+  background: var(--panel); border: 1px solid var(--border);
+  padding: 5px; object-fit: contain;
+}
+img.avatar.icon.icon-dark { background: #0b1018; }
+img.avatar.icon.icon-light { background: #ffffff; border-color: rgba(0, 0, 0, 0.12); }
 .card h3 { margin: 0; font-size: 16px; }
 .card .summary { color: var(--muted); font-size: 14px; margin: 0; min-height: 38px; }
 .card .meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: auto; }

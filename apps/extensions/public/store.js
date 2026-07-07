@@ -8,10 +8,52 @@ function qs(name) { return new URLSearchParams(location.search).get(name); }
 function initials(name) { return (name || '?').trim().split(/\s+/).slice(0, 2).map((w) => w[0] || '').join('').toUpperCase(); }
 
 // Logo if the listing has one (auto-ingested from the .crx icons), else initials.
+// Most logos are transparent PNGs, so we render them CONTAINED (never cropped)
+// and pick a light or dark backdrop from the logo's own luminance in
+// hydrateIcons() — otherwise a transparent logo shows over the gradient avatar
+// and looks muddy.
 function avatar(ext, px) {
-  const style = px ? ` style="width:${px}px;height:${px}px"` : '';
-  if (ext.iconUrl) return `<img class="avatar" src="${esc(ext.iconUrl)}" alt=""${style} style="object-fit:cover${px ? `;width:${px}px;height:${px}px` : ''}">`;
-  return `<div class="avatar"${px ? ` style="width:${px}px;height:${px}px;font-size:20px"` : ''}>${esc(initials(ext.name))}</div>`;
+  const dim = px ? `width:${px}px;height:${px}px` : '';
+  if (ext.iconUrl) return `<img class="avatar icon" data-icon src="${esc(ext.iconUrl)}" alt="" style="object-fit:contain;${dim}">`;
+  return `<div class="avatar"${px ? ` style="${dim};font-size:20px"` : ''}>${esc(initials(ext.name))}</div>`;
+}
+
+// Choose 'dark' or 'light' backdrop for a (usually transparent) logo by the
+// average luminance of its opaque pixels: a bright logo wants a dark tile, a
+// dark logo a light tile. Returns null if unreadable (fully transparent / a
+// CORS-tainted canvas), leaving the default neutral tile.
+function backdropFor(img) {
+  try {
+    const s = 24;
+    const c = document.createElement('canvas');
+    c.width = s; c.height = s;
+    const ctx = c.getContext('2d', { willReadFrequently: true });
+    ctx.drawImage(img, 0, 0, s, s);
+    const { data } = ctx.getImageData(0, 0, s, s);
+    let lum = 0, wsum = 0;
+    for (let i = 0; i < data.length; i += 4) {
+      const a = data[i + 3] / 255;
+      if (a < 0.1) continue;
+      lum += (0.2126 * data[i] + 0.7152 * data[i + 1] + 0.0722 * data[i + 2]) * a;
+      wsum += a;
+    }
+    if (wsum === 0) return null;
+    return lum / wsum > 140 ? 'dark' : 'light';
+  } catch (_) {
+    return 'dark'; // tainted canvas (remote icon) — dark suits the store theme
+  }
+}
+
+function hydrateIcons(root) {
+  root.querySelectorAll('img.avatar.icon[data-icon]').forEach((img) => {
+    const apply = () => {
+      const b = backdropFor(img);
+      if (b) img.classList.add('icon-' + b);
+      img.removeAttribute('data-icon');
+    };
+    if (img.complete && img.naturalWidth) apply();
+    else img.addEventListener('load', apply, { once: true });
+  });
 }
 
 // ── AI auto-ingest: paste a .crx URL, we fill the form + scan (no forms) ──
@@ -115,6 +157,7 @@ async function initBrowse() {
       if (!extensions.length) { grid.innerHTML = ''; empty.classList.remove('hidden'); return; }
       empty.classList.add('hidden');
       grid.innerHTML = extensions.map(card).join('');
+      hydrateIcons(grid);
     } catch (e) {
       grid.innerHTML = `<p class="error">Couldn't load extensions: ${esc(e.message)}</p>`;
     }
@@ -162,6 +205,7 @@ async function initDetail() {
       <h3>Auto-update</h3>
       <p class="hint">Chromium auto-updates this extension from its <code>update_url</code>:</p>
       <pre>${esc(ext.updateUrl)}</pre>`;
+    hydrateIcons(root);
 
     document.getElementById('flagBtn').addEventListener('click', async () => {
       const reason = prompt('Reason? (malware, privacy, broken, spam, other)', 'other');
