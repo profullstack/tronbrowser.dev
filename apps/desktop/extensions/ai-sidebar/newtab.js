@@ -11,8 +11,9 @@ const DEFAULT_TICKERS = 'SPY, AAPL, NVDA, BTC-USD';
 const DEFAULT_LEAGUES = 'nfl, nba';
 const splitList = (s) => String(s || '').split(',').map((x) => x.trim()).filter(Boolean);
 
-// --- Search: Web (Xprivo by default, DuckDuckGo alternative) or AI (sidebar) ---
+// --- Search: Web (NeoSearch by default) or AI (sidebar) ---
 const SEARCH_ENGINES = {
+  neosearch: { name: 'NeoSearch', url: 'https://neosearch.org/?q=' },
   xprivo: { name: 'Xprivo', url: 'https://www.xprivo.com/search/?q=' },
   ddg: { name: 'DuckDuckGo', url: 'https://duckduckgo.com/?q=' },
   // Altpower is a Google Programmable Search — query lives in the URL fragment.
@@ -20,7 +21,7 @@ const SEARCH_ENGINES = {
   oxiverse: { name: 'Oxiverse', url: 'https://search.oxiverse.com/?q=', suffix: '&tab=web' },
 };
 let searchMode = 'web';
-let searchEngine = 'xprivo';
+let searchEngine = 'neosearch';
 
 function setMode(mode) {
   searchMode = mode;
@@ -28,14 +29,14 @@ function setMode(mode) {
   el('mode-ai').classList.toggle('active', mode === 'ai');
   el('mode-web').setAttribute('aria-selected', mode === 'web');
   el('mode-ai').setAttribute('aria-selected', mode === 'ai');
-  const eng = SEARCH_ENGINES[searchEngine] || SEARCH_ENGINES.xprivo;
+  const eng = SEARCH_ENGINES[searchEngine] || SEARCH_ENGINES.neosearch;
   el('q').placeholder = mode === 'ai' ? 'Ask AI anything…' : `Search ${eng.name}…`;
   el('q').focus();
 }
 el('mode-web').addEventListener('click', () => setMode('web'));
 el('mode-ai').addEventListener('click', () => setMode('ai'));
 
-// Load the chosen web search engine (default Xprivo).
+// Load the chosen web search engine (default NeoSearch).
 chrome.storage.local.get('searchEngine').then(({ searchEngine: se }) => {
   if (se && SEARCH_ENGINES[se]) searchEngine = se;
   if (searchMode === 'web') setMode('web');
@@ -51,7 +52,7 @@ el('search').addEventListener('submit', async (e) => {
     chrome.runtime.sendMessage({ type: 'open-sidepanel' });
     el('q').value = '';
   } else {
-    const eng = SEARCH_ENGINES[searchEngine] || SEARCH_ENGINES.xprivo;
+    const eng = SEARCH_ENGINES[searchEngine] || SEARCH_ENGINES.neosearch;
     location.href = eng.url + encodeURIComponent(q) + (eng.suffix || '');
   }
 });
