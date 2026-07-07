@@ -53,6 +53,21 @@ export const PRIVACY_FLAGS = [
 ] as const;
 
 /**
+ * Feature flags that restore standard Chromium UX which our fork does not get
+ * because it never talks to Google's server-side field-trial (Finch) service.
+ *
+ * `EnableTabMuting` (`media::kEnableTabMuting`) makes the tab-strip audio
+ * indicator a clickable mute/unmute control. Upstream the feature is
+ * `FEATURE_DISABLED_BY_DEFAULT` and stock Chrome only turns it on via Finch, so
+ * an ungoogled build ships it OFF: the speaker icon renders but the button is
+ * disabled — you can neither tell which tab is making sound nor mute it from the
+ * tab. Forcing it on here matches stock-Chrome behavior on every platform
+ * (Linux/KDE, macOS, Windows). Applied even when telemetry is opted in — it is a
+ * UI fix, not a phone-home surface.
+ */
+export const UX_FEATURE_FLAGS = ['--enable-features=EnableTabMuting'] as const;
+
+/**
  * Builds the flags that route the browser through the local Tor SOCKS5 proxy.
  *
  * Chromium's SOCKS5 proxy performs *remote* DNS resolution (the hostname is
@@ -83,6 +98,10 @@ export const FORBIDDEN_FLAG_SUBSTRINGS = [
  */
 export function buildLaunchFlags(opts: LaunchOptions = {}): string[] {
   const flags: string[] = [];
+
+  // Standard-UX feature flags first (e.g. clickable tab audio muting). Always
+  // present — these are usability parity with stock Chrome, not telemetry.
+  flags.push(...UX_FEATURE_FLAGS);
 
   if (!opts.telemetry) {
     flags.push(...PRIVACY_FLAGS);

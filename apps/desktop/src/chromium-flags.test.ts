@@ -6,6 +6,7 @@ import {
   torEnabled,
   incognitoEnabled,
   PRIVACY_FLAGS,
+  UX_FEATURE_FLAGS,
   DEFAULT_TOR_SOCKS_PORT,
 } from './chromium-flags.js';
 
@@ -23,6 +24,20 @@ describe('chromium launch flags', () => {
     const flags = buildLaunchFlags({ telemetry: true });
     expect(telemetryEnabled({ telemetry: true })).toBe(true);
     expect(flags).not.toContain('--disable-background-networking');
+  });
+
+  it('enables clickable tab audio muting on every platform', () => {
+    // media::kEnableTabMuting is DISABLED_BY_DEFAULT upstream; without this the
+    // tab speaker icon is inert in an ungoogled build (no Finch to turn it on).
+    expect(UX_FEATURE_FLAGS).toContain('--enable-features=EnableTabMuting');
+    expect(buildLaunchFlags()).toContain('--enable-features=EnableTabMuting');
+  });
+
+  it('keeps tab audio muting even when telemetry is opted in or under tor', () => {
+    expect(buildLaunchFlags({ telemetry: true })).toContain(
+      '--enable-features=EnableTabMuting',
+    );
+    expect(buildLaunchFlags({ tor: true })).toContain('--enable-features=EnableTabMuting');
   });
 
   it('passes through the user data dir', () => {

@@ -282,6 +282,13 @@ fi
 MV2_KEEP="ExtensionManifestV2Disabled,ExtensionManifestV2Unsupported,ExtensionManifestV2DeprecationWarning,ExtensionManifestV2DeprecationUnsupported"
 FLAGS="--user-data-dir=$DATA --class=TronBrowser --no-first-run --no-default-browser-check --no-pings --disable-background-networking --disable-breakpad --disable-domain-reliability --disable-sync --disable-features=Translate,OptimizationHints,InterestFeedContentSuggestions,$MV2_KEEP --load-extension=$EXT"
 
+# Make the tab-strip audio indicator a clickable mute/unmute control. Upstream
+# media::kEnableTabMuting is DISABLED_BY_DEFAULT and stock Chrome only turns it
+# on via Finch, so an ungoogled build ships it OFF — the speaker icon renders
+# but you cannot tell which tab is making sound or mute it from the tab. Force
+# it on to match stock Chrome (Linux/KDE, macOS, Windows).
+FLAGS="$FLAGS --enable-features=EnableTabMuting"
+
 # Chromium spews benign ERROR/WARNING noise to stderr (EV cert OID, mojo
 # WidgetHost, GPU, etc.). Route it to a log so `tron <url>` returns clean;
 # set TRONBROWSER_VERBOSE=1 to see it inline. --log-level=2 trims the rest.
