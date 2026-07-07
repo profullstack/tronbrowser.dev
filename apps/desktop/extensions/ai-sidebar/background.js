@@ -15,8 +15,79 @@ chrome.runtime.onInstalled.addListener(async () => {
   if (!aiConfig || !aiConfig.model) chrome.runtime.openOptionsPage();
 });
 
+// --- Extension store resolution (Tron store first, Chrome Web Store fallback) -
+// The install-helper content script runs on Chrome Web Store detail pages. Since
+// we do NOT publish on the Chrome Web Store, its "Add to TronBrowser" button must
+// prefer the TronBrowser store: given the extension's slug/name, check
+// tronbrowser.dev's store and, when a live listing exists, install from there;
+// otherwise the content script falls back to the Chrome Web Store CRX.
+//
+// We resolve here in the background (not the content script) because the SW has
+// host permissions for tronbrowser.dev, so the fetch isn't blocked by the store
+// page's CSP/CORS.
+const TRON_STORE_API = 'https://tronbrowser.dev/api/store';
+
+// A listing is installable only if it's live and has a downloadable artifact.
+function tronListingUsable(ext) {
+  return !!(ext && ext.status === 'live' && ext.version && (ext.version.crxUrl || ext.version.bundleUrl));
+}
+
+async function fetchTronListing(path) {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), 6000);
+  try {
+    const res = await fetch(`${TRON_STORE_API}${path}`, { signal: ctrl.signal });
+    if (!res.ok) return null;
+    return await res.json().catch(() => null);
+  } catch (_) {
+    return null;
+  } finally {
+    clearTimeout(t);
+  }
+}
+
+// Look the extension up in the TronBrowser store. The Chrome Web Store slug
+// usually matches the store slug for extensions we've republished; if it doesn't,
+// fall back to a name search and require an exact slug/name match (never install
+// an unrelated result). Returns the usable listing, or null.
+async function resolveTronStore(slug, name) {
+  if (slug) {
+    const ext = await fetchTronListing(`/extensions/${encodeURIComponent(slug)}`);
+    if (tronListingUsable(ext)) return ext;
+  }
+  const q = (name || slug || '').trim();
+  if (q) {
+    const data = await fetchTronListing(`/extensions?q=${encodeURIComponent(q)}`);
+    const list = (data && data.extensions) || [];
+    const nlc = (name || '').toLowerCase();
+    const hit =
+      (slug && list.find((e) => e.slug === slug)) ||
+      (nlc && list.find((e) => (e.name || '').toLowerCase() === nlc)) ||
+      null;
+    if (tronListingUsable(hit)) return hit;
+  }
+  return null;
+}
+
 // Let pages (e.g. the new tab) ask to open the side panel.
-chrome.runtime.onMessage.addListener((msg, sender) => {
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (msg?.type === 'resolve-tron-store') {
+    (async () => {
+      const ext = await resolveTronStore(msg.slug, msg.name).catch(() => null);
+      if (ext) {
+        sendResponse({
+          found: true,
+          slug: ext.slug,
+          name: ext.name,
+          downloadUrl: `${TRON_STORE_API}/extensions/${encodeURIComponent(ext.slug)}/download`,
+        });
+      } else {
+        sendResponse({ found: false });
+      }
+    })();
+    return true; // async sendResponse
+  }
+
   if (msg?.type === 'open-sidepanel' && chrome.sidePanel?.open) {
     const opts = sender.tab?.id != null ? { tabId: sender.tab.id } : {};
     chrome.sidePanel.open(opts).catch((err) => console.warn('sidePanel open:', err));
