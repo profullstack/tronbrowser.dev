@@ -42,7 +42,7 @@ export async function mountSettingsSections({ store, el, flash }) {
   const cur = await store.get(['feeds', 'tickers', 'leagues', 'searchEngine']);
 
   // Populate current values (on every mount, e.g. after a cloud pull).
-  if (el('searchEngine')) el('searchEngine').value = cur.searchEngine || 'xprivo';
+  if (el('searchEngine')) el('searchEngine').value = cur.searchEngine || 'neosearch';
   if (el('tickers')) el('tickers').value = cur.tickers ?? '';
   if (el('leagues')) el('leagues').value = cur.leagues ?? '';
   feeds = Array.isArray(cur.feeds) && cur.feeds.length ? cur.feeds.slice() : DEFAULT_FEEDS.slice();

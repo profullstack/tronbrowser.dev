@@ -186,10 +186,9 @@ if flag not in exp:
 PY
 fi
 
-# Default the omnibox to Xprivo. Force this ONCE per profile (older builds
-# defaulted to DuckDuckGo, and seeding-only-when-empty left existing profiles on
-# DDG) via a marker file, then respect the user's chrome://settings/search choice.
-if command -v python3 >/dev/null 2>&1 && [ ! -f "$DATA/.tron-search-xprivo" ]; then
+# Default the omnibox to NeoSearch once per profile, then respect the user's
+# chrome://settings/search choice.
+if command -v python3 >/dev/null 2>&1 && [ ! -f "$DATA/.tron-search-neosearch" ]; then
   TB_PREFS="$DATA/Default/Preferences" python3 - <<'PY' 2>/dev/null || true
 import json, os
 p = os.environ["TB_PREFS"]
@@ -199,15 +198,16 @@ try:
 except Exception:
     d = {}
 d.setdefault("default_search_provider_data", {})["template_url_data"] = {
-    "short_name": "Xprivo",
-    "keyword": "xprivo.com",
-    "url": "https://www.xprivo.com/search/?q={searchTerms}",
-    "favicon_url": "https://www.xprivo.com/favicon.ico",
+    "short_name": "NeoSearch",
+    "keyword": "neosearch.org",
+    "url": "https://neosearch.org/?q={searchTerms}",
+    "suggestions_url": "https://neosearch.org/suggestions?q={searchTerms}",
+    "favicon_url": "https://neosearch.org/favicon-32x32.png",
     "safe_for_autoreplace": False,
 }
 json.dump(d, open(p, "w"))
 PY
-  mkdir -p "$DATA"; : > "$DATA/.tron-search-xprivo"
+  mkdir -p "$DATA"; : > "$DATA/.tron-search-neosearch"
 fi
 
 # Show the feed (ai-sidebar New Tab page) on startup. We can't pass a startup URL —
