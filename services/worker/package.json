@@ -1,6 +1,6 @@
 {
   "name": "@tronbrowser/worker",
-  "version": "3.8.2",
+  "version": "3.8.3",
   "private": true,
   "description": "Background worker (Redis/BullMQ)",
   "type": "module",

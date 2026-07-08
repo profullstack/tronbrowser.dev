@@ -1,6 +1,6 @@
 {
   "name": "@tronbrowser/mobile",
-  "version": "3.8.2",
+  "version": "3.8.3",
   "private": true,
   "description": "TronBrowser mobile companion (Expo / React Native) — browser · AI chat · agents",
   "main": "index.js",

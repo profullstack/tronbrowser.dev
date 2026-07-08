@@ -78,7 +78,7 @@
   <!-- Shared sections (identical to the extension options page, via settings-sections.js) -->
   <h2>Search</h2>
   <p class="hint">Default search engine for the new-tab search box.</p>
-  <label for="searchEngine">New-tab search engine</label>
+  <label for="searchEngine">New-tab search engine (clearnet)</label>
   <select id="searchEngine">
     <option value="neosearch">NeoSearch (private, default)</option>
     <option value="xprivo">Xprivo (private)</option>
@@ -86,6 +86,15 @@
     <option value="altpower">Altpower</option>
     <option value="oxiverse">Oxiverse</option>
   </select>
+  <label for="torSearchEngine">New-tab search engine (Tor 🧅)</label>
+  <select id="torSearchEngine">
+    <option value="ahmia">Ahmia (indexes .onion, default)</option>
+    <option value="torch">Torch (.onion)</option>
+    <option value="haystak">Haystak (.onion)</option>
+    <option value="onionland">OnionLand (.onion)</option>
+    <option value="excavator">Excavator (.onion)</option>
+  </select>
+  <p class="hint">Used automatically on new tabs while the onion toggle is on.</p>
   <div class="row"><button id="saveSearch">Save search</button><span id="savedSearch" class="saved"></span></div>
 
   <h2>Markets &amp; Sports</h2>

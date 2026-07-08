@@ -39,10 +39,11 @@ async function persist() { await ctx.store.set({ feeds }); renderFeeds(); }
  */
 export async function mountSettingsSections({ store, el, flash }) {
   ctx = { store, el, flash };
-  const cur = await store.get(['feeds', 'tickers', 'leagues', 'searchEngine']);
+  const cur = await store.get(['feeds', 'tickers', 'leagues', 'searchEngine', 'torSearchEngine']);
 
   // Populate current values (on every mount, e.g. after a cloud pull).
   if (el('searchEngine')) el('searchEngine').value = cur.searchEngine || 'neosearch';
+  if (el('torSearchEngine')) el('torSearchEngine').value = cur.torSearchEngine || 'ahmia';
   if (el('tickers')) el('tickers').value = cur.tickers ?? '';
   if (el('leagues')) el('leagues').value = cur.leagues ?? '';
   feeds = Array.isArray(cur.feeds) && cur.feeds.length ? cur.feeds.slice() : DEFAULT_FEEDS.slice();
@@ -52,7 +53,9 @@ export async function mountSettingsSections({ store, el, flash }) {
   wired = true;
 
   el('saveSearch')?.addEventListener('click', async () => {
-    await ctx.store.set({ searchEngine: el('searchEngine').value });
+    const patch = { searchEngine: el('searchEngine').value };
+    if (el('torSearchEngine')) patch.torSearchEngine = el('torSearchEngine').value;
+    await ctx.store.set(patch);
     ctx.flash('savedSearch', 'saved ✓');
   });
   el('saveMarkets')?.addEventListener('click', async () => {

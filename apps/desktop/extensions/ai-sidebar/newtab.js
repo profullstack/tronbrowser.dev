@@ -20,8 +20,32 @@ const SEARCH_ENGINES = {
   altpower: { name: 'Altpower', url: 'https://altpower.app/#open-source&gsc.tab=0&gsc.q=', suffix: '&gsc.sort=' },
   oxiverse: { name: 'Oxiverse', url: 'https://search.oxiverse.com/?q=', suffix: '&tab=web' },
 };
+// Tor-network search engines — used automatically when the 🧅 toggle is on
+// (torEnabled in chrome.storage.local, set by background.js). Ahmia is the
+// default: ahmia.fi is a stable clearnet domain reachable over the Tor SOCKS
+// proxy that still indexes/returns .onion results, so it keeps working even
+// when the onion-only mirrors rotate their addresses. The .onion URLs below
+// resolve inside the SOCKS proxy (Chromium does DNS at the proxy for .onion).
+// NOTE: onion addresses drift over time — verify against each engine's current
+// mirror if a result page stops loading.
+const TOR_SEARCH_ENGINES = {
+  ahmia: { name: 'Ahmia', url: 'https://ahmia.fi/search/?q=' },
+  torch: { name: 'Torch', url: 'http://torchdeedp3i2jigzjdmfpn5ttjhthh5wbmda2rr3jvqjg5p77c54dqd.onion/search?query=' },
+  haystak: { name: 'Haystak', url: 'http://haystak5njsmn2hqkewecpaxetahtwhsbsa64jom2k22z5afxhnpxfid.onion/?q=' },
+  onionland: { name: 'OnionLand', url: 'http://3bbad7fauom4d6sgppalyqddsqbf5u5p56b5k5uk2zxsy3d6ey2jobad.onion/search?q=' },
+  excavator: { name: 'Excavator', url: 'http://2fd6cemt4gmccflhm6imvdfvli3nf7zn6rfrwpsy7uhxrgbypvwf5fad.onion/?q=' },
+};
 let searchMode = 'web';
 let searchEngine = 'neosearch';
+let torSearchEngine = 'ahmia';
+let torEnabled = false;
+
+// Resolve the engine to use right now: the Tor default while the onion toggle
+// is on, otherwise the clearnet default.
+function activeEngine() {
+  if (torEnabled) return TOR_SEARCH_ENGINES[torSearchEngine] || TOR_SEARCH_ENGINES.ahmia;
+  return SEARCH_ENGINES[searchEngine] || SEARCH_ENGINES.neosearch;
+}
 
 function setMode(mode) {
   searchMode = mode;
@@ -29,16 +53,31 @@ function setMode(mode) {
   el('mode-ai').classList.toggle('active', mode === 'ai');
   el('mode-web').setAttribute('aria-selected', mode === 'web');
   el('mode-ai').setAttribute('aria-selected', mode === 'ai');
-  const eng = SEARCH_ENGINES[searchEngine] || SEARCH_ENGINES.neosearch;
+  const eng = activeEngine();
   el('q').placeholder = mode === 'ai' ? 'Ask AI anything…' : `Search ${eng.name}…`;
   el('q').focus();
 }
 el('mode-web').addEventListener('click', () => setMode('web'));
 el('mode-ai').addEventListener('click', () => setMode('ai'));
 
-// Load the chosen web search engine (default NeoSearch).
-chrome.storage.local.get('searchEngine').then(({ searchEngine: se }) => {
-  if (se && SEARCH_ENGINES[se]) searchEngine = se;
+// Load the chosen clearnet + Tor search engines and current onion-toggle state.
+chrome.storage.local.get(['searchEngine', 'torSearchEngine', 'torEnabled']).then((v) => {
+  if (v.searchEngine && SEARCH_ENGINES[v.searchEngine]) searchEngine = v.searchEngine;
+  if (v.torSearchEngine && TOR_SEARCH_ENGINES[v.torSearchEngine]) torSearchEngine = v.torSearchEngine;
+  torEnabled = !!v.torEnabled;
+  if (searchMode === 'web') setMode('web');
+});
+
+// Keep the active engine in sync if the 🧅 toggle flips while the tab is open.
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area !== 'local') return;
+  if ('torEnabled' in changes) torEnabled = !!changes.torEnabled.newValue;
+  if ('torSearchEngine' in changes && TOR_SEARCH_ENGINES[changes.torSearchEngine.newValue]) {
+    torSearchEngine = changes.torSearchEngine.newValue;
+  }
+  if ('searchEngine' in changes && SEARCH_ENGINES[changes.searchEngine.newValue]) {
+    searchEngine = changes.searchEngine.newValue;
+  }
   if (searchMode === 'web') setMode('web');
 });
 
@@ -52,7 +91,7 @@ el('search').addEventListener('submit', async (e) => {
     chrome.runtime.sendMessage({ type: 'open-sidepanel' });
     el('q').value = '';
   } else {
-    const eng = SEARCH_ENGINES[searchEngine] || SEARCH_ENGINES.neosearch;
+    const eng = activeEngine();
     location.href = eng.url + encodeURIComponent(q) + (eng.suffix || '');
   }
 });

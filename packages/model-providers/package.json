@@ -1,6 +1,6 @@
 {
   "name": "@tronbrowser/model-providers",
-  "version": "3.8.2",
+  "version": "3.8.3",
   "private": true,
   "description": "Pluggable LLM provider adapters",
   "type": "module",
