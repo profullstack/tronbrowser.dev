@@ -63,6 +63,57 @@ describe('OpenAI-compatible adapter', () => {
     expect(out.join('')).toBe('Hello');
   });
 
+  it('routes OpenAI pro models through /responses', async () => {
+    const fetchImpl = vi.fn(async () =>
+      jsonResponse({
+        output: [{ type: 'message', content: [{ type: 'output_text', text: 'deep answer' }] }],
+        usage: { input_tokens: 7, output_tokens: 4 },
+      }),
+    ) as unknown as typeof fetch;
+
+    const provider = createProvider('openai', { apiKey: 'k', fetchImpl });
+    const res = await provider.complete({ model: 'gpt-5.5-pro', messages: [{ role: 'user', content: 'hi' }] });
+
+    expect(res.text).toBe('deep answer');
+    expect(res.usage).toEqual({ promptTokens: 7, completionTokens: 4 });
+    const [url, init] = (fetchImpl as unknown as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(url).toBe('https://api.openai.com/v1/responses');
+    const sent = JSON.parse((init as RequestInit).body as string);
+    expect(sent.input).toEqual([{ role: 'user', content: 'hi' }]);
+    expect(sent).not.toHaveProperty('messages');
+  });
+
+  it('streams OpenAI pro models from Responses events', async () => {
+    const fetchImpl = vi.fn(async () =>
+      sseResponse([
+        'data: {"type":"response.output_text.delta","delta":"Hel"}\n',
+        'data: {"type":"response.output_text.delta","delta":"lo"}\n',
+        'data: {"type":"response.completed"}\n',
+      ]),
+    ) as unknown as typeof fetch;
+
+    const provider = createProvider('openai', { apiKey: 'k', fetchImpl });
+    const out: string[] = [];
+    for await (const c of provider.stream({ model: 'gpt-5.5-pro', messages: [{ role: 'user', content: 'hi' }] })) {
+      if (c.delta) out.push(c.delta);
+    }
+    expect(out.join('')).toBe('Hello');
+    expect((fetchImpl as unknown as ReturnType<typeof vi.fn>).mock.calls[0][0]).toBe(
+      'https://api.openai.com/v1/responses',
+    );
+  });
+
+  it('keeps non-pro OpenAI models on /chat/completions', async () => {
+    const fetchImpl = vi.fn(async () =>
+      jsonResponse({ choices: [{ message: { content: 'ok' } }] }),
+    ) as unknown as typeof fetch;
+    const provider = createProvider('openai', { apiKey: 'k', fetchImpl });
+    await provider.complete({ model: 'gpt-5.5', messages: [{ role: 'user', content: 'hi' }] });
+    expect((fetchImpl as unknown as ReturnType<typeof vi.fn>).mock.calls[0][0]).toBe(
+      'https://api.openai.com/v1/chat/completions',
+    );
+  });
+
   it('throws on a non-ok response', async () => {
     const fetchImpl = vi.fn(async () => jsonResponse({ error: 'nope' }, false, 401)) as unknown as typeof fetch;
     const provider = createProvider('openai', { apiKey: 'bad', fetchImpl });

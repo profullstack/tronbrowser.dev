@@ -57,6 +57,17 @@ export async function listModels(cfg) {
     .filter(Boolean);
 }
 
+/**
+ * OpenAI's "pro" reasoning models (gpt-5-pro, gpt-5.5-pro, o1-pro, o3-pro) and
+ * the codex models are served only by the Responses API (/v1/responses). Posting
+ * them to /chat/completions 404s with "This is not a chat model...". Route those
+ * to /responses. Only OpenAI itself has this endpoint — the other
+ * OpenAI-compatible providers stay on /chat/completions.
+ */
+export function usesResponsesApi(provider, model) {
+  return provider === 'openai' && /-pro(\b|-)|codex/i.test(model || '');
+}
+
 async function* sse(res) {
   const reader = res.body.getReader();
   const dec = new TextDecoder();
@@ -109,6 +120,32 @@ export async function chatStream(cfg, messages, onDelta) {
 
   const headers = { 'content-type': 'application/json' };
   if (cfg.apiKey) headers['authorization'] = 'Bearer ' + cfg.apiKey;
+
+  if (usesResponsesApi(cfg.provider, cfg.model)) {
+    // Responses API: `input` takes the same role/content messages; pro models
+    // reject `temperature`, so send only model + input. Deltas arrive as
+    // `response.output_text.delta` events instead of chat `choices[].delta`.
+    const res = await fetch(baseUrl + '/responses', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ model: cfg.model, input: messages, stream: true }),
+    });
+    if (!res.ok) throw new Error(cfg.provider + ' ' + res.status + ': ' + (await res.text()));
+    for await (const data of sse(res)) {
+      if (data === '[DONE]') break;
+      try {
+        const evt = JSON.parse(data);
+        if (evt.type === 'response.output_text.delta' && typeof evt.delta === 'string') {
+          full += evt.delta;
+          onDelta(evt.delta);
+        } else if (evt.type === 'response.completed' || evt.type === 'response.failed') {
+          break;
+        }
+      } catch { /* ignore keep-alives */ }
+    }
+    return full;
+  }
+
   const res = await fetch(baseUrl + '/chat/completions', {
     method: 'POST',
     headers,
