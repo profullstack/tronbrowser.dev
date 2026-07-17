@@ -129,6 +129,10 @@ importers:
         version: 2.1.9(@types/node@24.13.2)(happy-dom@20.10.6)(lightningcss@1.32.0)(terser@5.48.0)
 
   packages/auth:
+    dependencies:
+      '@profullstack/stack':
+        specifier: ^0.1.0
+        version: 0.1.0(react@19.2.7)
     devDependencies:
       typescript:
         specifier: ^5.6.3
@@ -1187,6 +1191,33 @@ packages:
   '@nodelib/fs.walk@1.2.8':
     resolution: {integrity: sha512-oGB+UxlgWcgQkgwo8GcEGwemoTFt3FIO9ababBmaGwXIoBKZ+GTy0pP185beGg7Llih/NSHSV2XAs1lnznocSg==}
     engines: {node: '>= 8'}
+
+  '@profullstack/emailer@1.0.1':
+    resolution: {integrity: sha512-/uhHJJGH+1xSSz3mJn6X+m6aruYjMD3JOaRp/d4R/YWlzpy07H9z0/JUleIyRyBPNmaANSIwjTZ7aVjaukOEpg==}
+
+  '@profullstack/referrals@0.1.0':
+    resolution: {integrity: sha512-u66SdBVpsv3kc0N+NWISPoYD5vjCERyv5wfD07iSkZwQeC2IA+ihX5jNA4e7Xr+Y4AUvxLycG+3b4VaROqzgRg==}
+    engines: {node: '>=18'}
+    peerDependencies:
+      react: '>=18'
+    peerDependenciesMeta:
+      react:
+        optional: true
+
+  '@profullstack/stack@0.1.0':
+    resolution: {integrity: sha512-351fCM4if1CtEU34nE/jYNEKVMfkQT5tEPfqx5DyyfafSUCf7DNvyoBdopRRP00bhnWwSjp8SkPiVUwXbHmf/Q==}
+    engines: {node: '>=18'}
+    peerDependencies:
+      '@supabase/ssr': '>=0.5.0'
+      next: '>=13.0.0'
+      react: '>=18.0.0'
+    peerDependenciesMeta:
+      '@supabase/ssr':
+        optional: true
+      next:
+        optional: true
+      react:
+        optional: true
 
   '@react-native/assets-registry@0.86.0':
     resolution: {integrity: sha512-nIaXbm2jX1OTYp0qbviJ3O6KZivoE8z3BnhUQ2LsqfZSWRoOK/n1qsiAr6oALiNKWnXY3j2KPwtYORnZzp8xew==}
@@ -2422,7 +2453,6 @@ packages:
 
   libsql@0.4.7:
     resolution: {integrity: sha512-T9eIRCs6b0J1SHKYIvD8+KCJMcWZ900iZyxdnSCdqxN12Z1ijzT+jY5nrk72Jw4B0HGzms2NgpryArlJqvc3Lw==}
-    cpu: [x64, arm64, wasm32]
     os: [darwin, linux, win32]
 
   lighthouse-logger@1.4.2:
@@ -4558,6 +4588,19 @@ snapshots:
     dependencies:
       '@nodelib/fs.scandir': 2.1.5
       fastq: 1.20.1
+
+  '@profullstack/emailer@1.0.1': {}
+
+  '@profullstack/referrals@0.1.0(react@19.2.7)':
+    optionalDependencies:
+      react: 19.2.7
+
+  '@profullstack/stack@0.1.0(react@19.2.7)':
+    dependencies:
+      '@profullstack/emailer': 1.0.1
+      '@profullstack/referrals': 0.1.0(react@19.2.7)
+    optionalDependencies:
+      react: 19.2.7
 
   '@react-native/assets-registry@0.86.0': {}
 
