@@ -51,7 +51,9 @@ function xmlEscape(s: string): string {
 }
 
 // Make a public listing view (no owner internals), with scan + flag summary.
-async function listingView(ext: any) {
+// `viewer` is optional: when the signed-in user owns the listing we say so, so
+// the detail page can offer an edit form instead of making them reach for curl.
+async function listingView(ext: any, viewer?: User | null) {
   const [ver, scan, flags] = await Promise.all([
     latestVersion(ext.id),
     latestScan(ext.id),
@@ -78,6 +80,7 @@ async function listingView(ext: any) {
     } : null,
     scan: scan ? { status: scan.status, score: scan.score, severity: scan.severity } : null,
     flags,
+    isOwner: !!viewer && viewer.id === ext.owner_user_id,
     updateUrl: `${APP_URL}/api/store/updates.xml?id=${ext.id}`,
   };
 }
@@ -92,13 +95,14 @@ store.get('/extensions', async (c) => {
   const limit = Number(c.req.query('limit') || 50);
   const offset = Number(c.req.query('offset') || 0);
   const rows = await listLiveExtensions({ q, limit, offset });
-  return c.json({ extensions: await Promise.all(rows.map(listingView)) });
+  // Point-free .map would hand the array index in as `viewer`.
+  return c.json({ extensions: await Promise.all(rows.map((row) => listingView(row))) });
 });
 
 store.get('/extensions/:slug', async (c) => {
   const ext = await extensionBySlug(c.req.param('slug'));
   if (!ext || ext.status === 'removed') return c.json({ error: 'not found' }, 404);
-  return c.json(await listingView(ext));
+  return c.json(await listingView(ext, await currentUser(c).catch(() => null)));
 });
 
 /* ---------- publisher: edit listing copy ----------

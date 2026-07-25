@@ -167,6 +167,66 @@ async function initBrowse() {
   load('');
 }
 
+/* Owner-only listing editor. Publishing a new build refreshes the bundle but
+   not the words around it, so without this a listing keeps describing whatever
+   the extension did the day it was created. */
+function editForm(ext) {
+  return `
+  <form class="panel hidden" id="editForm" style="margin-top:18px">
+    <h3 style="margin-top:0">Edit listing</h3>
+    <p class="hint">Only you can see this. Bundle and version come from your next publish — this is the copy around it.</p>
+    <div class="field"><label>Name *</label><input type="text" name="name" required value="${esc(ext.name)}" /></div>
+    <div class="field"><label>Summary <span class="hint">(one line, shown on the browse grid)</span></label><input type="text" name="summary" value="${esc(ext.summary || '')}" /></div>
+    <div class="field"><label>Description</label><textarea name="description" style="min-height:160px">${esc(ext.description || '')}</textarea></div>
+    <div class="field"><label>Source / homepage</label><input type="url" name="homepageUrl" value="${esc(ext.homepageUrl || '')}" /></div>
+    <div class="row">
+      <button class="btn" type="submit">Save changes</button>
+      <button class="btn ghost" type="button" id="editCancel">Cancel</button>
+    </div>
+    <p id="editOut" style="margin:12px 0 0"></p>
+  </form>`;
+}
+
+function wireEditForm(ext, rerender) {
+  const btn = document.getElementById('editBtn');
+  const form = document.getElementById('editForm');
+  if (!btn || !form) return;
+
+  btn.addEventListener('click', () => {
+    form.classList.toggle('hidden');
+    if (!form.classList.contains('hidden')) form.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  });
+  document.getElementById('editCancel').addEventListener('click', () => form.classList.add('hidden'));
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const out = document.getElementById('editOut');
+    const save = form.querySelector('button[type="submit"]');
+    const fd = new FormData(form);
+    // Blank optional fields clear the column; a blank name is rejected server-side.
+    const body = {
+      name: String(fd.get('name') || '').trim(),
+      summary: String(fd.get('summary') || '').trim() || null,
+      description: String(fd.get('description') || '').trim() || null,
+      homepageUrl: String(fd.get('homepageUrl') || '').trim() || null,
+    };
+    save.disabled = true;
+    out.innerHTML = '<span class="muted">Saving…</span>';
+    try {
+      await api(`/extensions/${encodeURIComponent(ext.id)}`, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      out.innerHTML = '<span class="success">Saved — listing updated.</span>';
+      await rerender();
+    } catch (err) {
+      out.innerHTML = `<span class="error">${esc(err.message)}</span>`;
+      save.disabled = false;
+    }
+  });
+}
+
 /* ---------- detail (extension.html) ---------- */
 async function initDetail() {
   const slug = qs('slug');
@@ -174,6 +234,14 @@ async function initDetail() {
   if (!slug) { root.innerHTML = '<p class="error">No extension specified.</p>'; return; }
   if (qs('paid')) document.getElementById('paidNote')?.classList.remove('hidden');
   try {
+    await renderDetail(slug, root);
+  } catch (e) {
+    root.innerHTML = `<p class="error">${e.status === 404 ? 'Extension not found.' : esc(e.message)}</p>`;
+  }
+}
+
+async function renderDetail(slug, root) {
+  {
     const ext = await api(`/extensions/${encodeURIComponent(slug)}`);
     const v = ext.version;
     const perms = (v?.permissions || []).map((p) => `<span class="perm">${esc(p)}</span>`).join('') || '<span class="muted">none requested</span>';
@@ -196,7 +264,9 @@ async function initDetail() {
         <a class="btn" id="installBtn" href="${esc(dl)}">⬇ Install / Download</a>
         <a class="btn secondary" href="/store/install-guide.html">How to install</a>
         <button class="btn ghost" id="flagBtn">⚑ Report</button>
+        ${ext.isOwner ? '<button class="btn secondary" id="editBtn">✎ Edit listing</button>' : ''}
       </div>
+      ${ext.isOwner ? editForm(ext) : ''}
       ${ext.homepageUrl ? `<p class="hint">Homepage: <a href="${esc(ext.homepageUrl)}" rel="noopener noreferrer">${esc(ext.homepageUrl)}</a></p>` : ''}
       <h3>Permissions</h3>
       <div class="perms">${perms}</div>
@@ -213,8 +283,8 @@ async function initDetail() {
       try { await api(`/extensions/${encodeURIComponent(ext.slug)}/flag`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ reason }) }); alert('Thanks — flagged for review.'); }
       catch (e) { alert('Could not flag: ' + e.message); }
     });
-  } catch (e) {
-    root.innerHTML = `<p class="error">${e.status === 404 ? 'Extension not found.' : esc(e.message)}</p>`;
+
+    wireEditForm(ext, () => renderDetail(slug, root));
   }
 }
 
