@@ -10,7 +10,7 @@
 // green (publishable) iff there are no critical findings.
 import { createHash } from 'node:crypto';
 import { unzipSync, strFromU8 } from 'fflate';
-import { crxToZip } from './crx.js';
+import { artifactToZip } from './crx.js';
 
 export type Severity = 'low' | 'medium' | 'high' | 'critical';
 export type ScanStatus = 'clean' | 'suspicious' | 'malicious';
@@ -112,12 +112,17 @@ function summarize(findings: ScanFinding[]): Omit<ExtensionScanResult, 'fileHash
   };
 }
 
-/** Scan a full .crx buffer: unzip, scan code + permissions, verdict. */
-export function scanCrx(buf: Uint8Array, permissions: string[] = []): ExtensionScanResult {
+/** Scan a published bundle — a .crx or a bare .zip: unzip, scan code + permissions, verdict. */
+export function scanArtifact(buf: Uint8Array, permissions: string[] = []): ExtensionScanResult {
   const fileHash = createHash('sha256').update(buf).digest('hex');
-  const files = unzipSync(crxToZip(buf), { filter: (f) => !f.name.endsWith('/') });
+  const files = unzipSync(artifactToZip(buf), { filter: (f) => !f.name.endsWith('/') });
   const base = scanFiles(files);
   const permFindings = scanPermissions(permissions);
   const merged = [...base.findings, ...permFindings];
   return { ...summarize(merged), fileHash };
+}
+
+/** @deprecated use {@link scanArtifact} — kept so .crx callers read naturally. */
+export function scanCrx(buf: Uint8Array, permissions: string[] = []): ExtensionScanResult {
+  return scanArtifact(buf, permissions);
 }

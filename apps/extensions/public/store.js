@@ -265,6 +265,7 @@ async function renderDetail(slug, root) {
         <a class="btn secondary" href="/store/install-guide.html">How to install</a>
         <button class="btn ghost" id="flagBtn">⚑ Report</button>
         ${ext.isOwner ? '<button class="btn secondary" id="editBtn">✎ Edit listing</button>' : ''}
+        ${ext.isOwner ? '<button class="btn ghost" id="rescanBtn">🛡 Re-scan</button>' : ''}
       </div>
       ${ext.isOwner ? editForm(ext) : ''}
       ${ext.homepageUrl ? `<p class="hint">Homepage: <a href="${esc(ext.homepageUrl)}" rel="noopener noreferrer">${esc(ext.homepageUrl)}</a></p>` : ''}
@@ -285,6 +286,22 @@ async function renderDetail(slug, root) {
     });
 
     wireEditForm(ext, () => renderDetail(slug, root));
+
+    // Scans are recorded at publish time, so a listing published before its
+    // bundle could be scanned needs one re-run to earn a badge.
+    document.getElementById('rescanBtn')?.addEventListener('click', async (e) => {
+      const btn = e.currentTarget;
+      btn.disabled = true;
+      btn.textContent = '🛡 Scanning…';
+      try {
+        await api(`/extensions/${encodeURIComponent(ext.id)}/rescan`, { method: 'POST' });
+        await renderDetail(slug, root);
+      } catch (err) {
+        alert('Could not scan: ' + err.message);
+        btn.disabled = false;
+        btn.textContent = '🛡 Re-scan';
+      }
+    });
   }
 }
 
