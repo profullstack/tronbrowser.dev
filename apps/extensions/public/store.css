@@ -174,3 +174,20 @@ footer { border-top: 1px solid var(--border); color: var(--muted); font-size: 13
   /* Footer link list: give it room so it wraps between links, not mid-phrase. */
   footer .wrap { line-height: 2; }
 }
+
+/* ── <dialog> modals (replacing alert/confirm/prompt) ── */
+.modal {
+  border: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--text);
+  border-radius: var(--radius);
+  padding: 0;
+  max-width: 420px;
+  width: calc(100% - 32px);
+}
+.modal::backdrop { background: rgba(3, 7, 13, 0.66); }
+.modal form { padding: 22px; }
+.modal-title { margin: 0 0 8px; font-size: 17px; }
+.modal-text { margin: 0 0 14px; font-size: 14px; color: var(--muted); line-height: 1.5; }
+.modal-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 18px; }
+.btn.danger { background: var(--danger); color: #fff; }
