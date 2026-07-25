@@ -65,6 +65,60 @@ export async function createExtension(x: {
   return (await extensionById(id))!;
 }
 
+/** Editable listing copy. `undefined` leaves a column alone; `null` clears it. */
+export interface ExtensionPatch {
+  name?: string | null;
+  summary?: string | null;
+  description?: string | null;
+  homepageUrl?: string | null;
+  iconUrl?: string | null;
+}
+
+const PATCH_COLUMNS: ReadonlyArray<[keyof ExtensionPatch, string]> = [
+  ['name', 'name'],
+  ['summary', 'summary'],
+  ['description', 'description'],
+  ['homepageUrl', 'homepage_url'],
+  ['iconUrl', 'icon_url'],
+];
+
+/**
+ * Build the SET clause for a listing patch, skipping absent fields. Returns
+ * null when there is nothing to write, so callers can avoid a pointless UPDATE.
+ * Exported for tests — the SQL shape is the part worth pinning down.
+ */
+export function buildExtensionUpdate(patch: ExtensionPatch): { set: string; args: (string | null)[] } | null {
+  const set: string[] = [];
+  const args: (string | null)[] = [];
+
+  for (const [key, column] of PATCH_COLUMNS) {
+    const value = patch[key];
+    if (value === undefined) continue;
+    set.push(`${column} = ?`);
+    args.push(value === null ? null : String(value));
+  }
+
+  if (set.length === 0) return null;
+  set.push("updated_at = datetime('now')");
+  return { set: set.join(', '), args };
+}
+
+/**
+ * Update a listing's copy. Without this a listing is write-once at creation:
+ * every later publish refreshes the bundle but leaves the marketing text
+ * frozen, so a listing keeps advertising whatever the extension did on day one.
+ */
+export async function updateExtension(id: string, patch: ExtensionPatch): Promise<Extension | null> {
+  const update = buildExtensionUpdate(patch);
+  if (!update) return extensionById(id);
+
+  await db().execute({
+    sql: `UPDATE extensions SET ${update.set} WHERE id = ?`,
+    args: [...update.args, id],
+  });
+  return extensionById(id);
+}
+
 export async function extensionById(id: string): Promise<Extension | null> {
   const r = await db().execute({ sql: 'SELECT * FROM extensions WHERE id = ?', args: [id] });
   return (r.rows[0] as unknown as Extension) ?? null;

@@ -12,6 +12,7 @@ import {
   markPaidByRef, hasPaidListing, latestScan, addFlag, openFlagCount,
   publisherKey, handleTaken, upsertPublisherKey,
   createPublisherToken, userByPublisherToken, listPublisherTokens, revokePublisherToken,
+  updateExtension,
 } from './db.js';
 import { validateManifest, slugify } from './manifest.js';
 import {
@@ -98,6 +99,43 @@ store.get('/extensions/:slug', async (c) => {
   const ext = await extensionBySlug(c.req.param('slug'));
   if (!ext || ext.status === 'removed') return c.json({ error: 'not found' }, 404);
   return c.json(await listingView(ext));
+});
+
+/* ---------- publisher: edit listing copy ----------
+   Creation used to be the only chance to set a listing's text, so a listing
+   kept describing whatever the extension did on day one while every later
+   publish quietly refreshed the bundle underneath it. Owners (browser session
+   or CI publisher token) can now keep the copy honest. */
+store.patch('/extensions/:id', async (c) => {
+  const user = await currentUser(c);
+  if (!user) return c.json({ error: 'unauthorized' }, 401);
+  const ext = await extensionById(c.req.param('id'));
+  if (!ext) return c.json({ error: 'not found' }, 404);
+  if (ext.owner_user_id !== user.id) return c.json({ error: 'forbidden' }, 403);
+
+  const body = await c.req.json().catch(() => ({}));
+  const patch: Record<string, string | null> = {};
+  for (const field of ['name', 'summary', 'description', 'homepageUrl', 'iconUrl'] as const) {
+    if (!(field in body)) continue;
+    const raw = body[field];
+    if (raw === null) { patch[field] = null; continue; }
+    if (typeof raw !== 'string') return c.json({ error: `${field} must be a string or null` }, 400);
+    const trimmed = raw.trim();
+    // A blank name would leave the listing untitled; every other field may clear.
+    if (field === 'name' && !trimmed) return c.json({ error: 'name cannot be empty' }, 400);
+    patch[field] = trimmed || null;
+  }
+
+  if (Object.keys(patch).length === 0) return c.json({ error: 'nothing to update' }, 400);
+
+  const updated = await updateExtension(ext.id, patch);
+  if (!updated) return c.json({ error: 'not found' }, 404);
+
+  // Keep the public git trail in step with what the store now serves.
+  const ver = await latestVersion(updated.id);
+  if (ver && updated.status === 'live') await mirrorListing(updated, ver);
+
+  return c.json({ ok: true, listing: await listingView(updated) });
 });
 
 /* ---------- publisher: create draft ---------- */

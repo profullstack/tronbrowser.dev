@@ -20,6 +20,10 @@
 #   SCP_TARGET  default files@files.profullstack.com
 #   MANIFEST    path to manifest.json (default: manifest.json)
 #   BUNDLE      dir to zip, or a .zip/.crx file (default: dist)
+#   LISTING     path to a listing.json — {name?, summary?, description?,
+#               homepageUrl?, iconUrl?}. Sent as a PATCH after the version
+#               lands, so the store copy is versioned alongside the code
+#               instead of frozen at whatever it said the day you created it.
 set -euo pipefail
 
 STORE_URL="${STORE_URL:-https://tronbrowser.dev}"
@@ -61,3 +65,17 @@ resp="$(curl -fsS -X POST "${STORE_URL}/api/store/extensions/${id}/versions" \
   -H 'content-type: application/json' -d "$body")"
 
 echo "published ${STORE_SLUG}: $resp"
+
+# 4) Sync the listing copy, if the repo carries one. Publishing a version only
+#    refreshes the bundle — without this the description keeps describing an
+#    older release.
+if [ -n "${LISTING:-}" ]; then
+  if [ ! -f "$LISTING" ]; then
+    echo "error: LISTING='$LISTING' not found" >&2
+    exit 1
+  fi
+  patch="$(curl -fsS -X PATCH "${STORE_URL}/api/store/extensions/${id}" \
+    -H "authorization: Bearer ${TRONBROWSER_STORE_TOKEN}" \
+    -H 'content-type: application/json' -d @"$LISTING")"
+  echo "listing copy synced: $patch"
+fi
