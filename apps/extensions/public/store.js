@@ -113,6 +113,74 @@ function wireAutoIngest(form) {
   });
 }
 
+
+/* ── <dialog> modals ──────────────────────────────────────────────────────────
+   alert/confirm/prompt render as browser chrome outside the page's styling and
+   block the tab; a signing-key warning that looks like a phishing popup is not
+   the place to ask for an irreversible decision. These resolve like the native
+   calls they replace. */
+function openModal(build) {
+  return new Promise((resolve) => {
+    const dialog = document.createElement('dialog');
+    dialog.className = 'modal';
+    let settled = false;
+    const done = (value) => {
+      if (settled) return;
+      settled = true;
+      resolve(value);
+      if (typeof dialog.close === 'function') dialog.close();
+      else { dialog.removeAttribute('open'); dialog.dispatchEvent(new Event('close')); }
+    };
+    build(dialog, done);
+    document.body.append(dialog);
+    dialog.addEventListener('close', () => {
+      dialog.remove();
+      if (!settled) { settled = true; resolve(undefined); }
+    });
+    if (typeof dialog.showModal === 'function') dialog.showModal();
+    else dialog.setAttribute('open', '');
+  });
+}
+
+function modalShell(title, bodyHtml, actionsHtml) {
+  return `<form method="dialog">
+    <h2 class="modal-title">${esc(title)}</h2>
+    ${bodyHtml}
+    <div class="modal-actions">${actionsHtml}</div>
+  </form>`;
+}
+
+function uiAlert(title, message) {
+  return openModal((dialog, done) => {
+    dialog.innerHTML = modalShell(title, message ? `<p class="modal-text">${esc(message)}</p>` : '',
+      '<button type="button" class="btn" data-ok>OK</button>');
+    dialog.querySelector('[data-ok]').addEventListener('click', () => done());
+  });
+}
+
+function uiConfirm(title, message, { confirmLabel = 'Confirm', danger = false } = {}) {
+  return openModal((dialog, done) => {
+    dialog.innerHTML = modalShell(title, message ? `<p class="modal-text">${esc(message)}</p>` : '',
+      `<button type="button" class="btn secondary" data-cancel>Cancel</button>
+       <button type="button" class="btn${danger ? ' danger' : ''}" data-ok>${esc(confirmLabel)}</button>`);
+    dialog.querySelector('[data-cancel]').addEventListener('click', () => done(false));
+    dialog.querySelector('[data-ok]').addEventListener('click', () => done(true));
+  }).then((v) => v === true);
+}
+
+/** Choose from a fixed set — a <select> beats asking someone to type a keyword. */
+function uiChoose(title, message, options, { confirmLabel = 'Submit' } = {}) {
+  return openModal((dialog, done) => {
+    const opts = options.map((o) => `<option value="${esc(o.value)}">${esc(o.label)}</option>`).join('');
+    dialog.innerHTML = modalShell(title,
+      `${message ? `<p class="modal-text">${esc(message)}</p>` : ''}<select class="acct-select" data-choice>${opts}</select>`,
+      `<button type="button" class="btn secondary" data-cancel>Cancel</button>
+       <button type="button" class="btn" data-ok>${esc(confirmLabel)}</button>`);
+    dialog.querySelector('[data-cancel]').addEventListener('click', () => done(null));
+    dialog.querySelector('[data-ok]').addEventListener('click', () => done(dialog.querySelector('[data-choice]').value));
+  });
+}
+
 async function api(path, opts = {}) {
   const res = await fetch(API + path, { credentials: 'include', ...opts });
   const data = await res.json().catch(() => ({}));
@@ -284,25 +352,38 @@ async function renderDetail(slug, root) {
     hydrateIcons(root);
 
     document.getElementById('flagBtn').addEventListener('click', async () => {
-      const reason = prompt('Reason? (malware, privacy, broken, spam, other)', 'other');
+      const reason = await uiChoose('Report this extension', 'What is wrong with it?', [
+        { value: 'malware', label: 'Malware or malicious code' },
+        { value: 'privacy', label: 'Privacy violation' },
+        { value: 'broken', label: "Broken — doesn't work" },
+        { value: 'spam', label: 'Spam or misleading listing' },
+        { value: 'other', label: 'Something else' },
+      ], { confirmLabel: 'Report' });
       if (!reason) return;
-      try { await api(`/extensions/${encodeURIComponent(ext.slug)}/flag`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ reason }) }); alert('Thanks — flagged for review.'); }
-      catch (e) { alert('Could not flag: ' + e.message); }
+      try {
+        await api(`/extensions/${encodeURIComponent(ext.slug)}/flag`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ reason }) });
+        await uiAlert('Thanks', 'Flagged for review.');
+      } catch (e) { await uiAlert('Could not flag', e.message); }
     });
 
     wireEditForm(ext, () => renderDetail(slug, root));
 
     document.getElementById('keyBtn')?.addEventListener('click', async (e) => {
-      if (!confirm('Generate a signing key for this extension?\n\nThe key permanently sets the extension ID — it cannot be rotated later without every install having to be redone.')) return;
+      const go = await uiConfirm(
+        'Generate a signing key?',
+        'The key permanently sets this extension\u2019s ID. It cannot be rotated later without every existing install having to be redone.',
+        { confirmLabel: 'Generate key', danger: true },
+      );
+      if (!go) return;
       const btn = e.currentTarget;
       btn.disabled = true;
       btn.textContent = '🔑 Generating…';
       try {
         const { crxId } = await api(`/extensions/${encodeURIComponent(ext.id)}/signing-key`, { method: 'POST' });
-        alert(`Signing key created.\n\nExtension ID: ${crxId}\n\nInstall now serves a signed .crx.`);
+        await uiAlert('Signing key created', `Extension ID: ${crxId} — Install now serves a signed .crx.`);
         await renderDetail(slug, root);
       } catch (err) {
-        alert('Could not generate key: ' + err.message);
+        await uiAlert('Could not generate key', err.message);
         btn.disabled = false;
         btn.textContent = '🔑 Generate signing key';
       }
@@ -318,7 +399,7 @@ async function renderDetail(slug, root) {
         await api(`/extensions/${encodeURIComponent(ext.id)}/rescan`, { method: 'POST' });
         await renderDetail(slug, root);
       } catch (err) {
-        alert('Could not scan: ' + err.message);
+        await uiAlert('Could not scan', err.message);
         btn.disabled = false;
         btn.textContent = '🛡 Re-scan';
       }
