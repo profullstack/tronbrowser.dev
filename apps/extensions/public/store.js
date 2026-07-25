@@ -245,7 +245,9 @@ async function renderDetail(slug, root) {
     const ext = await api(`/extensions/${encodeURIComponent(slug)}`);
     const v = ext.version;
     const perms = (v?.permissions || []).map((p) => `<span class="perm">${esc(p)}</span>`).join('') || '<span class="muted">none requested</span>';
-    const dl = v ? `${API}/extensions/${encodeURIComponent(ext.slug)}/download` : '#';
+    // installUrl is the signed .crx once the listing has a signing key; without
+    // one the browser can only download a .zip for manual sideloading.
+    const dl = ext.installUrl || (v ? `${API}/extensions/${encodeURIComponent(ext.slug)}/download` : '#');
     root.innerHTML = `
       <div class="top" style="gap:16px;margin-bottom:8px">
         ${avatar(ext, 56)}
@@ -266,7 +268,10 @@ async function renderDetail(slug, root) {
         <button class="btn ghost" id="flagBtn">⚑ Report</button>
         ${ext.isOwner ? '<button class="btn secondary" id="editBtn">✎ Edit listing</button>' : ''}
         ${ext.isOwner ? '<button class="btn ghost" id="rescanBtn">🛡 Re-scan</button>' : ''}
+        ${ext.isOwner && !ext.crxId ? '<button class="btn ghost" id="keyBtn">🔑 Generate signing key</button>' : ''}
       </div>
+      ${ext.isOwner && !ext.crxId ? `<p class="hint">This listing has no signing key, so Install hands over a .zip that has to be sideloaded. Generating one lets the store serve a signed .crx that installs in one click and auto-updates. The key sets the extension id permanently and can't be rotated.</p>` : ''}
+      ${ext.crxId ? `<p class="hint">Extension ID: <code>${esc(ext.crxId)}</code></p>` : ''}
       ${ext.isOwner ? editForm(ext) : ''}
       ${ext.homepageUrl ? `<p class="hint">Homepage: <a href="${esc(ext.homepageUrl)}" rel="noopener noreferrer">${esc(ext.homepageUrl)}</a></p>` : ''}
       <h3>Permissions</h3>
@@ -286,6 +291,22 @@ async function renderDetail(slug, root) {
     });
 
     wireEditForm(ext, () => renderDetail(slug, root));
+
+    document.getElementById('keyBtn')?.addEventListener('click', async (e) => {
+      if (!confirm('Generate a signing key for this extension?\n\nThe key permanently sets the extension ID — it cannot be rotated later without every install having to be redone.')) return;
+      const btn = e.currentTarget;
+      btn.disabled = true;
+      btn.textContent = '🔑 Generating…';
+      try {
+        const { crxId } = await api(`/extensions/${encodeURIComponent(ext.id)}/signing-key`, { method: 'POST' });
+        alert(`Signing key created.\n\nExtension ID: ${crxId}\n\nInstall now serves a signed .crx.`);
+        await renderDetail(slug, root);
+      } catch (err) {
+        alert('Could not generate key: ' + err.message);
+        btn.disabled = false;
+        btn.textContent = '🔑 Generate signing key';
+      }
+    });
 
     // Scans are recorded at publish time, so a listing published before its
     // bundle could be scanned needs one re-run to earn a badge.
