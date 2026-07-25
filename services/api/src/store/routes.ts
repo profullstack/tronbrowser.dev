@@ -86,6 +86,9 @@ async function listingView(ext: any, viewer?: User | null) {
     // Present once the listing has a signing key: the Chromium extension id, and
     // a real (installable) .crx instead of a zip the browser can only download.
     crxId: key?.crx_id ?? null,
+    // Owner-only: the public key for manifest.json "key". Public by nature, but
+    // there's no reason to hand every visitor a listing's signing material.
+    crxPublicKey: key && viewer && viewer.id === ext.owner_user_id ? key.public_key_der : null,
     installUrl: key && ver
       ? `${APP_URL}/api/store/extensions/${ext.slug}/download.crx`
       : ver ? `${APP_URL}/api/store/extensions/${ext.slug}/download` : null,
@@ -191,7 +194,12 @@ store.post('/extensions/:id/signing-key', async (c) => {
       privateKeyEnc: encryptPrivateKey(key.privateKeyPem),
     });
     // The private key is never returned — the store signs on the publisher's behalf.
-    return c.json({ ok: true, crxId: key.crxId });
+    // The private key is never returned — the store signs on the publisher's
+    // behalf. The PUBLIC half is not secret, and is what pins the extension id:
+    // dropped into manifest.json's "key" field it makes an unpacked install
+    // resolve to the same id as the store-packed .crx, which anything keyed off
+    // that id (an OAuth redirect URI, for one) depends on.
+    return c.json({ ok: true, crxId: key.crxId, publicKey: key.publicKeyDer });
   } catch (e: any) {
     return c.json({ error: e?.message || 'could not generate signing key' }, 500);
   }
