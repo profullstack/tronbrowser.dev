@@ -119,6 +119,41 @@ export async function updateExtension(id: string, patch: ExtensionPatch): Promis
   return extensionById(id);
 }
 
+export interface ExtensionSigningKey {
+  extension_id: string;
+  crx_id: string;
+  public_key_der: string;
+  private_key_enc: string;
+  key_algo: string;
+  created_at: string;
+}
+
+export async function signingKeyFor(extensionId: string): Promise<ExtensionSigningKey | null> {
+  const r = await db().execute({
+    sql: 'SELECT * FROM extension_signing_keys WHERE extension_id = ?',
+    args: [extensionId],
+  });
+  return (r.rows[0] as unknown as ExtensionSigningKey) ?? null;
+}
+
+/**
+ * Store a signing key. INSERT-only on purpose: the key *is* the extension id,
+ * so replacing it would orphan every install that already trusts the old one.
+ */
+export async function insertSigningKey(k: {
+  extensionId: string;
+  crxId: string;
+  publicKeyDer: string;
+  privateKeyEnc: string;
+}): Promise<ExtensionSigningKey> {
+  await db().execute({
+    sql: `INSERT INTO extension_signing_keys (extension_id, crx_id, public_key_der, private_key_enc)
+          VALUES (?, ?, ?, ?)`,
+    args: [k.extensionId, k.crxId, k.publicKeyDer, k.privateKeyEnc],
+  });
+  return (await signingKeyFor(k.extensionId))!;
+}
+
 export async function extensionById(id: string): Promise<Extension | null> {
   const r = await db().execute({ sql: 'SELECT * FROM extensions WHERE id = ?', args: [id] });
   return (r.rows[0] as unknown as Extension) ?? null;

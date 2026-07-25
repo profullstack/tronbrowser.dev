@@ -12,7 +12,7 @@ import {
   markPaidByRef, hasPaidListing, latestScan, addFlag, openFlagCount,
   publisherKey, handleTaken, upsertPublisherKey,
   createPublisherToken, userByPublisherToken, listPublisherTokens, revokePublisherToken,
-  updateExtension,
+  updateExtension, signingKeyFor, insertSigningKey,
 } from './db.js';
 import { validateManifest, slugify } from './manifest.js';
 import {
@@ -24,8 +24,9 @@ import {
 } from './payments.js';
 import { enqueueScan } from './vu1nz.js';
 import { mirrorListing } from './mirror.js';
-import { fetchArtifact, extractListingFromCrx } from './crx.js';
+import { fetchArtifact, artifactToZip, extractListingFromCrx } from './crx.js';
 import { scanArtifact, type ExtensionScanResult } from './scanner.js';
+import { generateSigningKey, encryptPrivateKey, decryptPrivateKey, packCrx } from './signing.js';
 import { createScan, updateScan } from './db.js';
 
 const APP_URL = process.env.APP_URL || 'https://tronbrowser.dev';
@@ -54,10 +55,11 @@ function xmlEscape(s: string): string {
 // `viewer` is optional: when the signed-in user owns the listing we say so, so
 // the detail page can offer an edit form instead of making them reach for curl.
 async function listingView(ext: any, viewer?: User | null) {
-  const [ver, scan, flags] = await Promise.all([
+  const [ver, scan, flags, key] = await Promise.all([
     latestVersion(ext.id),
     latestScan(ext.id),
     openFlagCount(ext.id),
+    signingKeyFor(ext.id),
   ]);
   return {
     id: ext.id,
@@ -81,6 +83,12 @@ async function listingView(ext: any, viewer?: User | null) {
     scan: scan ? { status: scan.status, score: scan.score, severity: scan.severity } : null,
     flags,
     isOwner: !!viewer && viewer.id === ext.owner_user_id,
+    // Present once the listing has a signing key: the Chromium extension id, and
+    // a real (installable) .crx instead of a zip the browser can only download.
+    crxId: key?.crx_id ?? null,
+    installUrl: key && ver
+      ? `${APP_URL}/api/store/extensions/${ext.slug}/download.crx`
+      : ver ? `${APP_URL}/api/store/extensions/${ext.slug}/download` : null,
     updateUrl: `${APP_URL}/api/store/updates.xml?id=${ext.id}`,
   };
 }
@@ -151,6 +159,67 @@ store.patch('/extensions/:id', async (c) => {
   if (ver && updated.status === 'live') await mirrorListing(updated, ver);
 
   return c.json({ ok: true, listing: await listingView(updated) });
+});
+
+/* ---------- publisher: signing key ----------
+   Chromium only installs a signed .crx; a .zip is sideload-only. Generating the
+   key here (rather than making publishers run openssl and guard a .pem) is what
+   turns "Install" into a real install. The key is the extension's identity, so
+   this is create-once — there is deliberately no rotate or delete. */
+store.post('/extensions/:id/signing-key', async (c) => {
+  const user = await currentUser(c);
+  if (!user) return c.json({ error: 'unauthorized' }, 401);
+  const ext = await extensionById(c.req.param('id'));
+  if (!ext) return c.json({ error: 'not found' }, 404);
+  if (ext.owner_user_id !== user.id) return c.json({ error: 'forbidden' }, 403);
+
+  const existing = await signingKeyFor(ext.id);
+  if (existing) {
+    return c.json({
+      error: 'signing key already exists',
+      message: 'The key sets the extension id permanently — rotating it would orphan every install.',
+      crxId: existing.crx_id,
+    }, 409);
+  }
+
+  try {
+    const key = generateSigningKey();
+    await insertSigningKey({
+      extensionId: ext.id,
+      crxId: key.crxId,
+      publicKeyDer: key.publicKeyDer,
+      privateKeyEnc: encryptPrivateKey(key.privateKeyPem),
+    });
+    // The private key is never returned — the store signs on the publisher's behalf.
+    return c.json({ ok: true, crxId: key.crxId });
+  } catch (e: any) {
+    return c.json({ error: e?.message || 'could not generate signing key' }, 500);
+  }
+});
+
+/* ---------- signed .crx download ----------
+   Packs the published .zip on the fly, so a listing becomes installable the
+   moment it has a key — no re-upload, no separate .crx artifact to keep in
+   sync with the bundle. */
+store.get('/extensions/:slug/download.crx', async (c) => {
+  const ext = await extensionBySlug(c.req.param('slug'));
+  if (!ext || ext.status !== 'live') return c.json({ error: 'not found' }, 404);
+  const key = await signingKeyFor(ext.id);
+  if (!key) return c.json({ error: 'this extension has no signing key yet' }, 404);
+  const ver = await latestVersion(ext.id);
+  const url = ver?.crx_url || ver?.bundle_url;
+  if (!url) return c.json({ error: 'no artifact' }, 404);
+
+  try {
+    const buf = await fetchArtifact(url);
+    const crx = packCrx(artifactToZip(buf), decryptPrivateKey(key.private_key_enc), Buffer.from(key.public_key_der, 'base64'));
+    c.header('content-type', 'application/x-chrome-extension');
+    c.header('content-disposition', `attachment; filename="${ext.slug}-${ver!.version}.crx"`);
+    // Hono wants an ArrayBuffer, not a Node Buffer view over a pooled one.
+    return c.body(crx.buffer.slice(crx.byteOffset, crx.byteOffset + crx.byteLength) as ArrayBuffer);
+  } catch (e: any) {
+    return c.json({ error: `could not pack .crx: ${e?.message || e}` }, 500);
+  }
 });
 
 /* ---------- publisher: re-scan the current version ----------
@@ -518,7 +587,14 @@ store.get('/updates.xml', async (c) => {
   const id = c.req.query('id') || '';
   const ext = id ? await extensionById(id) : null;
   const ver = ext && ext.status === 'live' ? await latestVersion(ext.id) : null;
-  const codebase = ver?.crx_url || ver?.bundle_url;
+  const key = ext ? await signingKeyFor(ext.id) : null;
+
+  // Chromium can only install a signed .crx, so only ever advertise one. This
+  // used to fall back to the .zip bundle, which meant zip-only listings served
+  // an update whose codebase the browser could do nothing with.
+  const codebase = key && ver
+    ? `${APP_URL}/api/store/extensions/${ext!.slug}/download.crx`
+    : ver?.crx_url || null;
 
   c.header('content-type', 'application/xml; charset=utf-8');
   if (!ext || !ver || !codebase) {
@@ -527,7 +603,9 @@ store.get('/updates.xml', async (c) => {
   return c.body(
     `<?xml version='1.0' encoding='UTF-8'?>\n` +
     `<gupdate xmlns='http://www.google.com/update2/response' protocol='2.0'>\n` +
-    `  <app appid='${xmlEscape(ext.id)}'>\n` +
+    // appid must be the Chromium extension id (derived from the signing key),
+    // not our internal uuid — the browser matches updates on the former.
+    `  <app appid='${xmlEscape(key?.crx_id || ext.id)}'>\n` +
     `    <updatecheck codebase='${xmlEscape(codebase)}' version='${xmlEscape(ver.version)}' />\n` +
     `  </app>\n` +
     `</gupdate>\n`,
@@ -541,6 +619,11 @@ store.get('/extensions/:slug/download', async (c) => {
   const ver = await latestVersion(ext.id);
   const url = ver?.crx_url || ver?.bundle_url;
   if (!url) return c.json({ error: 'no artifact' }, 404);
+  // Hand over an installable .crx when the listing has a key; the raw .zip is
+  // a sideload artifact the browser can only save to disk.
+  if (await signingKeyFor(ext.id)) {
+    return c.redirect(`${APP_URL}/api/store/extensions/${ext.slug}/download.crx`);
+  }
   return c.redirect(url);
 });
 
