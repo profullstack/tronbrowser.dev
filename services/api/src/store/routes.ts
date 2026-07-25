@@ -24,8 +24,8 @@ import {
 } from './payments.js';
 import { enqueueScan } from './vu1nz.js';
 import { mirrorListing } from './mirror.js';
-import { fetchCrx, extractListingFromCrx } from './crx.js';
-import { scanCrx } from './scanner.js';
+import { fetchArtifact, extractListingFromCrx } from './crx.js';
+import { scanArtifact, type ExtensionScanResult } from './scanner.js';
 import { createScan, updateScan } from './db.js';
 
 const APP_URL = process.env.APP_URL || 'https://tronbrowser.dev';
@@ -85,6 +85,17 @@ async function listingView(ext: any, viewer?: User | null) {
   };
 }
 
+/** Write a scan verdict to the badge store. Shared by publish and rescan. */
+async function persistScan(extensionId: string, versionId: string, result: ExtensionScanResult): Promise<void> {
+  const scanId = await createScan(extensionId, versionId);
+  await updateScan(scanId, {
+    status: 'done',
+    score: result.green ? 100 : 40,
+    severity: result.status === 'malicious' ? 'critical' : result.status === 'suspicious' ? 'high' : 'clean',
+    findingsJson: JSON.stringify(result.findings),
+  });
+}
+
 export const store = new Hono();
 
 store.get('/healthz', (c) => c.json({ ok: true, service: 'store' }));
@@ -142,6 +153,33 @@ store.patch('/extensions/:id', async (c) => {
   return c.json({ ok: true, listing: await listingView(updated) });
 });
 
+/* ---------- publisher: re-scan the current version ----------
+   A scan verdict is written at publish time, so a listing published while the
+   scanner was unavailable (or before zip bundles were scannable) keeps showing
+   "unscanned" until its next release. This re-runs the scan against the
+   artifact already on file — no re-upload, no version bump. */
+store.post('/extensions/:id/rescan', async (c) => {
+  const user = await currentUser(c);
+  if (!user) return c.json({ error: 'unauthorized' }, 401);
+  const ext = await extensionById(c.req.param('id'));
+  if (!ext) return c.json({ error: 'not found' }, 404);
+  if (ext.owner_user_id !== user.id) return c.json({ error: 'forbidden' }, 403);
+
+  const ver = await latestVersion(ext.id);
+  if (!ver) return c.json({ error: 'no published version to scan' }, 404);
+  const target = ver.crx_url || ver.bundle_url;
+  if (!target) return c.json({ error: 'version has no downloadable artifact' }, 400);
+
+  try {
+    const buf = await fetchArtifact(target);
+    const result = scanArtifact(buf, ver.permissions_json ? JSON.parse(ver.permissions_json) : []);
+    await persistScan(ext.id, ver.id, result);
+    return c.json({ ok: true, scan: result });
+  } catch (e: any) {
+    return c.json({ error: `could not scan bundle: ${e?.message || e}` }, 422);
+  }
+});
+
 /* ---------- publisher: create draft ---------- */
 store.post('/extensions', async (c) => {
   const user = await currentUser(c);
@@ -176,9 +214,9 @@ store.post('/extensions/ingest', async (c) => {
   const crxUrl = String(body.crxUrl || '').trim();
   if (!crxUrl) return c.json({ error: 'crxUrl required' }, 400);
   try {
-    const buf = await fetchCrx(crxUrl);
+    const buf = await fetchArtifact(crxUrl);
     const listing = extractListingFromCrx(buf);
-    const scan = scanCrx(buf, listing.permissions);
+    const scan = scanArtifact(buf, listing.permissions);
     return c.json({ ok: true, listing, scan });
   } catch (e: any) {
     return c.json({ error: e?.message || 'could not ingest .crx' }, 422);
@@ -340,13 +378,18 @@ store.post('/extensions/:id/versions', async (c) => {
   // If we can fetch a .crx, scan its code + permissions and BLOCK the submit
   // on any critical finding (green light required to publish). Zip-only
   // bundles fall back to the async (non-gating) vu1nz scan.
-  let scanResult: Awaited<ReturnType<typeof scanCrx>> | null = null;
-  if (crxUrl) {
+  // A .crx is just a header around a ZIP, so scan whichever artifact exists.
+  // Gating only on .crx meant every zip-only listing skipped the scanner and
+  // fell through to the async path — which records 'skipped' when no external
+  // scanner is configured, leaving the listing permanently "unscanned".
+  const scanTarget = crxUrl || bundleUrl;
+  let scanResult: ExtensionScanResult | null = null;
+  if (scanTarget) {
     try {
-      const buf = await fetchCrx(crxUrl);
-      scanResult = scanCrx(buf, v.permissions);
+      const buf = await fetchArtifact(scanTarget);
+      scanResult = scanArtifact(buf, v.permissions);
     } catch (e: any) {
-      return c.json({ error: `could not scan .crx: ${e?.message || e}` }, 422);
+      return c.json({ error: `could not scan bundle: ${e?.message || e}` }, 422);
     }
     if (!scanResult.green) {
       return c.json({
@@ -372,15 +415,10 @@ store.post('/extensions/:id/versions', async (c) => {
 
   if (scanResult) {
     // Persist the gating scan result for the store badge.
-    const scanId = await createScan(ext.id, version.id);
-    await updateScan(scanId, {
-      status: 'done',
-      score: scanResult.green ? 100 : 40,
-      severity: scanResult.status === 'malicious' ? 'critical' : scanResult.status === 'suspicious' ? 'high' : 'clean',
-      findingsJson: JSON.stringify(scanResult.findings),
-    });
+    await persistScan(ext.id, version.id, scanResult);
   } else {
-    // Zip-only: fall back to the async (non-gating) vu1nz scan.
+    // No fetchable artifact at all — fall back to the async vu1nz scan, which
+    // records 'skipped' when no external scanner is configured.
     await enqueueScan(ext.id, version);
   }
 

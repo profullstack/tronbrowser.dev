@@ -43,6 +43,22 @@ export function crxToZip(buf: Uint8Array): Uint8Array {
   throw new Error(`unsupported CRX version ${version}`);
 }
 
+/**
+ * Extract the ZIP payload from whichever artifact a publisher shipped.
+ *
+ * A .crx is a header wrapped around a ZIP, and most publishers upload the bare
+ * .zip instead. Insisting on the CRX header meant zip-only listings skipped the
+ * scanner entirely and sat on an "unscanned" badge forever.
+ */
+export function artifactToZip(buf: Uint8Array): Uint8Array {
+  if (buf.length >= 4 && strFromU8(buf.slice(0, 4)) === CRX_MAGIC) return crxToZip(buf);
+  // Local file header ("PK\x03\x04") — or an empty archive ("PK\x05\x06").
+  if (buf.length >= 4 && buf[0] === 0x50 && buf[1] === 0x4b && (buf[2] === 0x03 || buf[2] === 0x05)) {
+    return buf;
+  }
+  throw new Error('not a .crx or .zip bundle');
+}
+
 function iconToDataUri(path: string, bytes: Uint8Array): string | null {
   if (!bytes || bytes.length === 0 || bytes.length > MAX_ICON_BYTES) return null;
   const ext = path.toLowerCase().split('.').pop() || '';
@@ -108,24 +124,27 @@ export function extractListingFromCrx(buf: Uint8Array): IngestedListing {
 }
 
 /** Download a .crx over http(s) with guards. */
-export async function fetchCrx(url: string, maxBytes = 25 * 1024 * 1024): Promise<Uint8Array> {
+export async function fetchArtifact(url: string, maxBytes = 25 * 1024 * 1024): Promise<Uint8Array> {
   let u: URL;
   try {
     u = new URL(url);
   } catch {
-    throw new Error('crxUrl must be a valid URL');
+    throw new Error('bundle URL must be a valid URL');
   }
   if (u.protocol !== 'https:' && u.protocol !== 'http:') {
-    throw new Error('crxUrl must be http(s)');
+    throw new Error('bundle URL must be http(s)');
   }
   const res = await fetch(u, { redirect: 'follow' });
-  if (!res.ok) throw new Error(`could not fetch crx (${res.status})`);
+  if (!res.ok) throw new Error(`could not fetch bundle (${res.status})`);
   const len = Number(res.headers.get('content-length') || 0);
-  if (len && len > maxBytes) throw new Error('crx is too large');
+  if (len && len > maxBytes) throw new Error('bundle is too large');
   const buf = new Uint8Array(await res.arrayBuffer());
-  if (buf.length > maxBytes) throw new Error('crx is too large');
+  if (buf.length > maxBytes) throw new Error('bundle is too large');
   return buf;
 }
+
+/** @deprecated use {@link fetchArtifact} — same fetch, .crx-flavoured name. */
+export const fetchCrx = fetchArtifact;
 
 /** Download a .crx and extract its listing. */
 export async function ingestCrxUrl(url: string): Promise<IngestedListing> {
