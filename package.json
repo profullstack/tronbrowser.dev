@@ -23,5 +23,20 @@
     "typescript": "^5.6.3",
     "vitest": "^2.1.4",
     "@libsql/client": "^0.14.0"
-  }
+  },
+  "main": "index.js",
+  "directories": {
+    "doc": "docs"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/profullstack/tronbrowser.dev.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/profullstack/tronbrowser.dev/issues"
+  },
+  "homepage": "https://github.com/profullstack/tronbrowser.dev#readme"
 }
