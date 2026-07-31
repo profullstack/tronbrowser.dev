@@ -72,6 +72,15 @@ export interface MoshpitLookup {
   registered: boolean;
   /** Where it actually points once aliases are followed (`foo.agent`). */
   resolved: string;
+  /**
+   * The address the name points at, or null when it has none yet.
+   *
+   * This — not `resolved` — is what "pointed at an IP" means. The registry
+   * echoes the name back in `resolved` whether or not it has a destination, so
+   * testing `resolved` would mark every claimed name as live and nothing would
+   * ever park.
+   */
+  target: string | null;
 }
 
 export interface ResolveInputs {
@@ -152,7 +161,7 @@ export function decideResolution(inputs: ResolveInputs): ResolveDecision {
   }
 
   // Claimed AND pointed somewhere — the precedence rules below apply to it.
-  if (moshpit.registered && moshpit.resolved) {
+  if (moshpit.registered && moshpit.target) {
     if (mode === 'moshpit') {
       return {
         use: 'moshpit',
@@ -251,11 +260,20 @@ export async function lookupMoshpit(
     const url = `${base}/api/moshpit/resolve?name=${encodeURIComponent(`${parsed.label}.${parsed.tld}`)}`;
     const res = await fetchImpl(url, { signal: controller.signal });
     if (!res.ok) return null;
-    const json = (await res.json()) as { registered?: boolean; resolved?: string; name?: string };
-    if (typeof json?.registered !== 'boolean') return null;
+    const json = (await res.json()) as {
+      registered?: boolean;
+      name_registered?: boolean;
+      resolved?: string;
+      target?: string | null;
+    };
+    // `registered` means the TLD is claimed; `name_registered` means THIS name
+    // is. Prefer the specific one, falling back for older registry builds.
+    const claimed = typeof json?.name_registered === 'boolean' ? json.name_registered : json?.registered;
+    if (typeof claimed !== 'boolean') return null;
     return {
-      registered: json.registered,
+      registered: claimed,
       resolved: typeof json.resolved === 'string' ? json.resolved : `${parsed.label}.${parsed.tld}`,
+      target: typeof json.target === 'string' && json.target ? json.target : null,
     };
   } catch {
     return null;

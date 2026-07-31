@@ -46,7 +46,12 @@ describe('moshpit.js is faithful to moshpit-resolve.ts', () => {
   });
 
   it('decideResolution agrees across the whole input space', () => {
-    const lookups = [null, { registered: false, resolved: '' }, { registered: true, resolved: 'r.eggs' }];
+    const lookups = [
+      null,
+      { registered: false, resolved: '', target: null },
+      { registered: true, resolved: 'r.eggs', target: null },   // claimed, unpointed -> parks
+      { registered: true, resolved: 'r.eggs', target: '203.0.113.7' }, // live
+    ];
     for (const hostname of HOSTNAMES) {
       for (const mode of ['clearnet', 'moshpit']) {
         for (const clearnetResolves of [true, false]) {
@@ -101,7 +106,7 @@ describe('destinationFor — the URL a navigation actually ends up at', () => {
     withConfig({ mode: 'clearnet' });
     globalThis.fetch = async () => ({
       ok: true,
-      json: async () => ({ registered: true, resolved: 'original.sploof' }),
+      json: async () => ({ name_registered: true, resolved: 'original.sploof', target: '203.0.113.7' }),
     });
     expect(await js.destinationFor('alias.sploof', false)).toBe(
       'https://pit.moshcode.sh/n/original.sploof',
@@ -121,7 +126,7 @@ describe('destinationFor — the URL a navigation actually ends up at', () => {
     let asked = '';
     globalThis.fetch = async (url) => {
       asked = url;
-      return { ok: true, json: async () => ({ registered: true, resolved: 'a.eggs' }) };
+      return { ok: true, json: async () => ({ name_registered: true, resolved: 'a.eggs', target: '203.0.113.7' }) };
     };
     expect(await js.destinationFor('a.eggs', false)).toBe('https://my.pit/n/a.eggs');
     expect(asked).toContain('https://my.pit/api/moshpit/resolve');
@@ -131,7 +136,7 @@ describe('destinationFor — the URL a navigation actually ends up at', () => {
 describe('destinationFor — parking', () => {
   it('sends an unclaimed name to the parking page', async () => {
     globalThis.chrome = { storage: { local: { get: async () => ({ moshpitConfig: { mode: 'clearnet' } }) } } };
-    globalThis.fetch = async () => ({ ok: true, json: async () => ({ registered: false }) });
+    globalThis.fetch = async () => ({ ok: true, json: async () => ({ name_registered: false, target: null }) });
     expect(await js.destinationFor('california.oranges', false)).toBe(
       'https://moshcoding.com/parking?name=california.oranges',
     );
@@ -139,7 +144,45 @@ describe('destinationFor — parking', () => {
 
   it('leaves a working clearnet domain alone rather than parking it', async () => {
     globalThis.chrome = { storage: { local: { get: async () => ({ moshpitConfig: { mode: 'clearnet' } }) } } };
-    globalThis.fetch = async () => ({ ok: true, json: async () => ({ registered: false }) });
+    globalThis.fetch = async () => ({ ok: true, json: async () => ({ name_registered: false, target: null }) });
     expect(await js.destinationFor('example.com', true)).toBeNull();
+  });
+});
+
+describe('lookupMoshpit — the registry payload as it really is', () => {
+  const asRegistry = (payload) => {
+    globalThis.fetch = async () => ({ ok: true, json: async () => payload });
+  };
+
+  it('parks a claimed-but-unpointed name — the real california.oranges response', async () => {
+    globalThis.chrome = { storage: { local: { get: async () => ({ moshpitConfig: { mode: 'clearnet' } }) } } };
+    // Verbatim from https://pit.moshcode.sh/api/moshpit/resolve?name=california.oranges
+    asRegistry({
+      name: 'california.oranges',
+      resolved: 'california.oranges',
+      aliased: false,
+      registered: true,
+      name_registered: true,
+      target: null,
+      mode: 'clearnet',
+      prefer: 'fallback',
+    });
+    expect(await js.destinationFor('california.oranges', false)).toBe(
+      'https://moshcoding.com/parking?name=california.oranges',
+    );
+  });
+
+  it('reads name_registered, not the TLD-level registered flag', async () => {
+    asRegistry({ registered: true, name_registered: false, resolved: 'x.eggs', target: null });
+    expect(await js.lookupMoshpit('x.eggs')).toEqual({
+      registered: false,
+      resolved: 'x.eggs',
+      target: null,
+    });
+  });
+
+  it('treats a present target as the address the name points at', async () => {
+    asRegistry({ name_registered: true, resolved: 'x.eggs', target: '203.0.113.7' });
+    expect((await js.lookupMoshpit('x.eggs')).target).toBe('203.0.113.7');
   });
 });

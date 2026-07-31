@@ -85,10 +85,15 @@ export async function lookupMoshpit(hostname, { registryBase, timeoutMs = 4000 }
     });
     if (!res.ok) return null;
     const json = await res.json();
-    if (typeof json?.registered !== 'boolean') return null;
+    // `registered` means the TLD is claimed; `name_registered` means THIS name
+    // is. `target` is the address — null until the name points somewhere, which
+    // is what decides parked vs live. `resolved` echoes the name either way.
+    const claimed = typeof json?.name_registered === 'boolean' ? json.name_registered : json?.registered;
+    if (typeof claimed !== 'boolean') return null;
     return {
-      registered: json.registered,
+      registered: claimed,
       resolved: typeof json.resolved === 'string' ? json.resolved : name,
+      target: typeof json.target === 'string' && json.target ? json.target : null,
     };
   } catch {
     return null;
@@ -126,7 +131,7 @@ export function decideResolution({ hostname, mode, clearnetResolves, moshpit, co
   }
 
   // Claimed AND pointed somewhere — the precedence rules apply to it.
-  if (moshpit.registered && moshpit.resolved) {
+  if (moshpit.registered && moshpit.target) {
     if (mode === 'moshpit') {
       return {
         use: 'moshpit',
