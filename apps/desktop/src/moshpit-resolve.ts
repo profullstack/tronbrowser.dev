@@ -112,6 +112,11 @@ export function parseRegistryName(hostname: string): { label: string; tld: strin
   const parts = host.split('.');
   if (parts.length !== 2) return null;
   const [label, tld] = parts;
+  // `parts.length !== 2` above already guarantees both exist, but
+  // noUncheckedIndexedAccess types them as `string | undefined` — TS can't
+  // narrow an array to a 2-tuple from a length check. An empty label would
+  // fail LABEL.test() anyway, so this guard changes no behavior.
+  if (!label || !tld) return null;
   const LABEL = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
   if (!LABEL.test(label) || !LABEL.test(tld)) return null;
   return { label, tld };
