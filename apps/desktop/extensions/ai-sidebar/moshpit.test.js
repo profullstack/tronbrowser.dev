@@ -260,3 +260,34 @@ describe('parking sends a name somewhere that exists', () => {
     expect(js.parkingUrlFor('a b.eggs')).toBe('https://pit.moshcode.sh/n/a%20b.eggs');
   });
 });
+
+describe('a stored setting must not outlive the default it copied', () => {
+  it('ignores a base that is only a superseded default', () => {
+    // The bug this fixes: an install that ever persisted moshcoding.com keeps
+    // pointing at a route that has never existed, through every future
+    // release, and shipping the right default does nothing about it.
+    expect(js.storedBase('https://moshcoding.com', 'https://pit.moshcode.sh'))
+      .toBe('https://pit.moshcode.sh');
+    expect(js.storedBase('http://moshcoding.com', 'https://pit.moshcode.sh'))
+      .toBe('https://pit.moshcode.sh');
+    expect(js.storedBase('https://moshcoding.com/', 'https://pit.moshcode.sh'))
+      .toBe('https://pit.moshcode.sh', 'a trailing slash is the same value');
+  });
+
+  it('keeps a base someone actually chose', () => {
+    // Only stale defaults are on the list, so a real choice is never on it.
+    expect(js.storedBase('https://my.pit', 'https://pit.moshcode.sh')).toBe('https://my.pit');
+    expect(js.storedBase('https://my.pit/', 'https://pit.moshcode.sh')).toBe('https://my.pit');
+  });
+
+  it('falls through to the shipped default when nothing is stored', () => {
+    for (const empty of ['', '   ', null, undefined]) {
+      expect(js.storedBase(empty, 'https://pit.moshcode.sh')).toBe('https://pit.moshcode.sh');
+    }
+  });
+
+  it('lists the base that caused this', () => {
+    expect(js.SUPERSEDED_BASES.has('https://moshcoding.com')).toBe(true);
+    expect(js.SUPERSEDED_BASES.has('https://pit.moshcode.sh')).toBe(false);
+  });
+});
