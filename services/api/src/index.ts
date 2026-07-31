@@ -13,6 +13,7 @@ import { store } from './store/routes.js';
 import { swarmRoutes } from './swarm.js';
 import { dnsRoutes } from './dns.js';
 import { safeRedirect } from './redirect.js';
+import { extLoginTarget } from './ext-login.js';
 
 const CP = {
   clientId: process.env.COINPAY_CLIENT_ID || '',
@@ -57,6 +58,22 @@ app.route('/api/swarm', swarmRoutes({ currentUser }));
 
 /* ---------- DNS verifier (signed-in ops tool for /dns) ---------- */
 app.route('/api/dns', dnsRoutes({ currentUser }));
+
+/* ---------- Extension sign-in (adopts an existing website session) ---------- */
+// The browser extension calls this instead of /coinpay/login directly: it can't
+// use chrome.identity (see ext-login.ts), so it passes an on-origin
+// /ext-callback.html target and picks the token out of the fragment there.
+//
+// Safe against a drive-by navigation from another site: the minted token only
+// ever lands in the fragment of a URL on OUR origin (safeRedirect enforces
+// that), which the navigating site can't read.
+app.get('/api/auth/ext-login', async (c) => {
+  const user = await currentUser(c);
+  const target = extLoginTarget(c.req.query('redirect'), APP_URL, !!user);
+  if (target.kind === 'reject') return c.text('invalid redirect', 400);
+  if (target.kind === 'oauth') return c.redirect(target.url);
+  return await startSession(c, user!.id, target.redirect);
+});
 
 /* ---------- CoinPay OAuth (preferred) ---------- */
 app.get('/api/auth/coinpay/login', (c) => {
