@@ -7,6 +7,7 @@ import {
   lookupMoshpit,
   parseRegistryName,
   type MoshpitLookup,
+  consoleUrlFor,
 } from './moshpit-resolve';
 
 const registered = (resolved: string): MoshpitLookup => ({ registered: true, resolved });
@@ -156,5 +157,80 @@ describe('gatewayUrlFor', () => {
   it('builds a gateway URL and tolerates a trailing slash', () => {
     expect(gatewayUrlFor('fuck.yeah')).toBe('https://pit.moshcode.sh/n/fuck.yeah');
     expect(gatewayUrlFor('fuck.yeah', 'https://my.pit/')).toBe('https://my.pit/n/fuck.yeah');
+  });
+});
+
+describe('consoleUrlFor', () => {
+  it('points mosh.<tld> at the Pit for that TLD', () => {
+    expect(consoleUrlFor('mosh.eggs')).toBe('https://app.moshcode.sh/pit?tld=eggs');
+    expect(consoleUrlFor('MOSH.Whatever')).toBe('https://app.moshcode.sh/pit?tld=whatever');
+  });
+
+  it('tolerates a trailing slash on an overridden console', () => {
+    expect(consoleUrlFor('mosh.eggs', 'https://my.console/')).toBe(
+      'https://my.console/pit?tld=eggs',
+    );
+  });
+
+  it('is null for anything that is not a mosh.<tld> name', () => {
+    expect(consoleUrlFor('eggs.mosh')).toBeNull();   // the other way round
+    expect(consoleUrlFor('moshy.eggs')).toBeNull();  // not the reserved label
+    expect(consoleUrlFor('a.mosh.eggs')).toBeNull(); // too many labels
+    expect(consoleUrlFor('mosh')).toBeNull();        // no TLD
+  });
+});
+
+describe('decideResolution — the registration console', () => {
+  it('sends mosh.<tld> to the Pit when clearnet has no answer', () => {
+    const d = decideResolution({
+      hostname: 'mosh.eggs',
+      mode: 'clearnet',
+      clearnetResolves: false,
+      moshpit: null,
+    });
+    expect(d.use).toBe('register');
+    expect(d.url).toBe('https://app.moshcode.sh/pit?tld=eggs');
+  });
+
+  it('never swallows a real clearnet domain like mosh.org in the default mode', () => {
+    const d = decideResolution({
+      hostname: 'mosh.org',
+      mode: 'clearnet',
+      clearnetResolves: true,
+      moshpit: null,
+    });
+    expect(d.use).toBe('clearnet');
+  });
+
+  it('takes the console over clearnet once the user opts into moshpit mode', () => {
+    const d = decideResolution({
+      hostname: 'mosh.org',
+      mode: 'moshpit',
+      clearnetResolves: true,
+      moshpit: null,
+    });
+    expect(d.use).toBe('register');
+    expect(d.url).toBe('https://app.moshcode.sh/pit?tld=org');
+  });
+
+  it('beats a registered name — the console label is reserved, not claimable', () => {
+    const d = decideResolution({
+      hostname: 'mosh.eggs',
+      mode: 'moshpit',
+      clearnetResolves: false,
+      moshpit: registered('someone-elses-squat.eggs'),
+    });
+    expect(d.use).toBe('register');
+  });
+
+  it('honours an overridden console base', () => {
+    const d = decideResolution({
+      hostname: 'mosh.eggs',
+      mode: 'clearnet',
+      clearnetResolves: false,
+      moshpit: null,
+      consoleBase: 'https://my.console',
+    });
+    expect(d.url).toBe('https://my.console/pit?tld=eggs');
   });
 });

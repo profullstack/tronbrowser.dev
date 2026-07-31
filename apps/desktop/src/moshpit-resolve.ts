@@ -33,6 +33,22 @@ export const DEFAULT_RESOLVE_MODE: ResolveMode = 'clearnet';
 /** The public registry. Overridable so a self-hosted pit can be pointed at. */
 export const DEFAULT_REGISTRY_BASE = 'https://pit.moshcode.sh';
 
+/**
+ * The Pit — the human-facing console where a TLD is claimed and the names under
+ * it are registered. Distinct from DEFAULT_REGISTRY_BASE, which is the resolver
+ * API the browser talks to.
+ */
+export const DEFAULT_CONSOLE_BASE = 'https://app.moshcode.sh';
+
+/**
+ * The one label that means "manage this namespace" instead of "visit a name":
+ * `mosh.eggs` opens the Pit for `.eggs` rather than resolving as a name.
+ *
+ * It has to be reserved rather than resolvable, or whoever claims `.eggs` could
+ * register `mosh.eggs` and own the page people use to check who owns `.eggs`.
+ */
+export const CONSOLE_LABEL = 'mosh';
+
 export interface MoshpitLookup {
   /** The registry holds this name. */
   registered: boolean;
@@ -47,15 +63,36 @@ export interface ResolveInputs {
   clearnetResolves: boolean;
   /** Registry answer, or null when it was not consulted / was unreachable. */
   moshpit: MoshpitLookup | null;
+  /** The Pit console. Overridable alongside a self-hosted registry. */
+  consoleBase?: string;
 }
 
 export interface ResolveDecision {
   /** Which namespace serves this navigation. */
-  use: 'clearnet' | 'moshpit';
+  use: 'clearnet' | 'moshpit' | 'register';
   /** Why — surfaced in the UI so an override never looks like a glitch. */
   reason: string;
   /** The name to fetch through the gateway. Only set when `use` is 'moshpit'. */
   resolved?: string;
+  /** Where to send the browser. Only set when `use` is 'register'. */
+  url?: string;
+}
+
+/**
+ * The Pit URL for the TLD a `mosh.<tld>` hostname refers to, or null when the
+ * hostname isn't one.
+ *
+ * The TLD rides in a query parameter rather than a path segment deliberately:
+ * a console that doesn't (yet) understand `?tld=` still lands the user on a
+ * working registry page, whereas an unknown path segment would 404.
+ */
+export function consoleUrlFor(
+  hostname: string,
+  consoleBase: string = DEFAULT_CONSOLE_BASE,
+): string | null {
+  const parsed = parseRegistryName(hostname);
+  if (!parsed || parsed.label !== CONSOLE_LABEL) return null;
+  return `${consoleBase.replace(/\/+$/, '')}/pit?tld=${encodeURIComponent(parsed.tld)}`;
 }
 
 /**
@@ -66,7 +103,25 @@ export interface ResolveDecision {
  * the whole policy is testable without a network or a browser.
  */
 export function decideResolution(inputs: ResolveInputs): ResolveDecision {
-  const { mode, clearnetResolves, moshpit } = inputs;
+  const { hostname, mode, clearnetResolves, moshpit, consoleBase } = inputs;
+
+  // `mosh.<tld>` is the registration console for `.<tld>`, not a name to fetch.
+  // It obeys the SAME precedence as any other Moshpit answer rather than
+  // getting a special exemption — `mosh.org` and `mosh.com` are real clearnet
+  // domains, and quietly swallowing them to show a registry page would be the
+  // hijack this module's default mode exists to prevent.
+  const consoleUrl = consoleUrlFor(hostname, consoleBase);
+  if (consoleUrl) {
+    if (mode === 'clearnet' && clearnetResolves) {
+      return { use: 'clearnet', reason: 'clearnet answers for this name (Moshpit set to backfill only)' };
+    }
+    const tld = hostname.trim().toLowerCase().replace(/\.$/, '').split('.')[1];
+    return {
+      use: 'register',
+      reason: `${CONSOLE_LABEL}.${tld} is the registration console for .${tld}`,
+      url: consoleUrl,
+    };
+  }
 
   // The registry could not be reached, or was never asked. Falling back to
   // clearnet is the only safe move: a registry outage must not take the
