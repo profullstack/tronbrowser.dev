@@ -66,14 +66,14 @@ export const CONSOLE_LABEL = 'mosh';
  * at an IP, and "this name is unclaimed / unpointed, here's how to take it" is
  * a far more useful answer than ERR_NAME_NOT_RESOLVED.
  */
-export const DEFAULT_PARKING_BASE = 'https://moshcoding.com';
+export const DEFAULT_PARKING_BASE = 'https://pit.moshcode.sh';
 
 /** The parking page for a name with no destination yet. */
 export function parkingUrlFor(
   name: string,
   parkingBase: string = DEFAULT_PARKING_BASE,
 ): string {
-  return `${parkingBase.replace(/\/+$/, '')}/parking?name=${encodeURIComponent(name)}`;
+  return `${parkingBase.replace(/\/+$/, '')}/n/${encodeURIComponent(name)}`;
 }
 
 export interface MoshpitLookup {
