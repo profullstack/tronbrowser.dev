@@ -26,7 +26,31 @@ interface NodeBase<T extends NodeType, C> {
 }
 
 export type PromptNode = NodeBase<'prompt', { template: string }>;
-export type BrowserNode = NodeBase<'browser', { action: string; url?: string; selector?: string }>;
+
+/** Browser node actions map to SDK Page primitives (PRD M3.8 / §21.1). */
+export type BrowserAction =
+  | 'open'
+  | 'snapshot'
+  | 'click'
+  | 'fill'
+  | 'type'
+  | 'extract'
+  | 'screenshot'
+  | 'analyze'
+  | 'runTask';
+
+export interface BrowserNodeConfig {
+  action: BrowserAction;
+  url?: string; // open
+  ref?: string; // click/fill/type
+  value?: string; // fill/type
+  mode?: string; // extract (text|links|forms|tables|main|selector)
+  path?: string; // screenshot destination
+  goal?: string; // analyze/runTask
+  data?: Record<string, unknown>; // analyze/runTask
+  execute?: boolean; // analyze
+}
+export type BrowserNode = NodeBase<'browser', BrowserNodeConfig>;
 export type AiNode = NodeBase<'ai', { provider: string; model: string; system?: string }>;
 export type HttpNode = NodeBase<'http', { method: string; url: string; body?: unknown }>;
 export type ConditionalNode = NodeBase<'conditional', { expression: string; whenTrue: string; whenFalse: string }>;
@@ -70,3 +94,7 @@ export interface NodeHandler<N extends WorkflowNode = WorkflowNode> {
 export interface WorkflowRunner {
   run(workflow: Workflow, ctx: ExecutionContext): Promise<Record<string, NodeResult>>;
 }
+
+// Browser workflow nodes + runner (PRD M3.8).
+export * from './nodes/browser.js';
+export * from './runner.js';

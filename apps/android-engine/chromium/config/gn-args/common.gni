@@ -1,0 +1,34 @@
+# TronBrowser Android engine — common GN args (shared across target CPUs).
+#
+# Mirrors apps/desktop/chromium/config/gn-args/common.gni: enforce the PRD
+# privacy guarantees at COMPILE time on top of the Ungoogled Chromium patch
+# set. Android-target args live in android.gni (imported after this).
+
+# --- Branding -------------------------------------------------------------
+is_official_build = true
+chrome_pgo_phase = 0
+
+# --- Privacy: no telemetry / no phone-home (PRD §Principles) --------------
+google_api_key = ""
+google_default_client_id = ""
+google_default_client_secret = ""
+use_official_google_api_keys = false
+
+enable_reporting = false
+enable_remoting = false
+enable_rlz = false
+enable_hangout_services_extension = false
+safe_browsing_mode = 0          # no Safe Browsing phone-home
+enable_mdns = false
+
+# --- Compatibility: preserve media ---------------------------------------
+proprietary_codecs = true
+ffmpeg_branding = "Chrome"
+enable_widevine = false          # opt-in DRM only; ship without by default
+
+# --- Build size / speed ---------------------------------------------------
+is_debug = false
+symbol_level = 0
+blink_symbol_level = 0
+enable_nacl = false
+is_component_build = false       # release APKs are non-component

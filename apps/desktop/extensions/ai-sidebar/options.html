@@ -9,7 +9,9 @@
   *{ box-sizing:border-box; }
   body { background:var(--bg); color:var(--fg); font:14px/1.6 ui-monospace,Menlo,monospace;
     max-width:640px; margin:0 auto; padding:32px 20px 64px; }
-  h1 { font-size:22px; } h2 { font-size:16px; color:var(--cyan); margin-top:36px;
+  .brand-logo { width:420px; max-width:90%; height:auto; display:block; margin:0 auto 2px; }
+  body > h1 { text-align:center; }
+  h1 { font-size:22px; margin:0 0 8px; } h2 { font-size:16px; color:var(--cyan); margin-top:36px;
     border-bottom:1px solid var(--line); padding-bottom:6px; }
   .accent{color:var(--cyan);}
   label { display:block; margin:14px 0 6px; color:var(--muted); }
@@ -33,21 +35,66 @@
     border:1px solid var(--line); border-radius:8px; margin-bottom:6px; }
   ul.feedlist .x { color:#ff8a9b; cursor:pointer; background:none; border:0; margin:0; padding:0; }
   .cat { color:var(--muted); font-size:12px; }
+  /* Native <dialog> for the masked vault passphrase prompt. */
+  .pw-dialog { background:var(--panel); color:var(--fg); border:1px solid var(--line);
+    border-radius:12px; padding:20px; max-width:420px; width:92%; font:inherit; }
+  .pw-dialog::backdrop { background:rgba(0,0,0,.6); }
+  .pw-dialog .pw-msg { margin:0 0 12px; }
+  .pw-dialog input { width:100%; padding:10px; background:#04060c; color:var(--fg);
+    border:1px solid var(--line); border-radius:8px; font:inherit; }
+  .pw-dialog menu { display:flex; gap:10px; justify-content:flex-end; margin:14px 0 0; padding:0; }
+  .pw-dialog button { border-radius:8px; padding:8px 14px; font:inherit; cursor:pointer;
+    background:transparent; color:var(--fg); border:1px solid var(--line); }
+  .pw-dialog button.primary { background:var(--cyan); color:#04060c; border:0; font-weight:700; }
 </style>
 </head>
 <body>
-  <h1>Tron<span class="accent">Browser</span> settings</h1>
+  <img src="icons/favicon.svg" alt="TronBrowser" class="brand-logo" />
+  <h1>Settings</h1>
 
   <h2>Account</h2>
-  <p class="hint">Sign in with <strong>CoinPay</strong> (fully anonymous — email optional). Your
-  settings &amp; feeds then sync to the cloud SQLite database, or your own self-hosted backend.</p>
+  <p class="hint">Sign in to sync your settings &amp; feeds to the cloud SQLite database (or your own
+  self-hosted backend). <strong>CoinPay</strong> is fully anonymous; email is optional. Use the
+  <em>same</em> account here and on tronbrowser.dev so both stay in sync.</p>
   <div id="account" class="hint">Not signed in.</div>
   <button id="coinpay" class="ghost">Sign in with CoinPay</button>
+
+  <div id="emailAuth">
+    <div class="hint" style="margin:12px 0 2px">or email</div>
+    <label for="authEmail">Email</label>
+    <input id="authEmail" type="email" autocomplete="email" placeholder="you@example.com" />
+    <label for="authPassword">Password</label>
+    <input id="authPassword" type="password" autocomplete="current-password" placeholder="8+ characters" />
+    <div class="row">
+      <button id="emailLogin" class="ghost">Sign in</button>
+      <button id="emailSignup" class="ghost">Create account</button>
+    </div>
+    <div id="emailMsg" class="hint"></div>
+  </div>
 
   <label for="cpClient">CoinPay client id (advanced)</label>
   <input id="cpClient" placeholder="tronbrowser" />
   <label for="syncUrl">Self-hosted sync backend URL (optional)</label>
   <input id="syncUrl" placeholder="leave blank to use the managed cloud" />
+
+  <h2>Name resolution</h2>
+  <p class="hint">
+    Moshpit names (<code>fuck.yeah</code>, <code>original.sploof</code>) always resolve here —
+    clearnet has never heard of those endings. This setting only decides what happens when
+    <em>both</em> namespaces answer, e.g. <code>profullstack.ai</code>.
+  </p>
+  <label for="moshpitMode">When a name exists in both</label>
+  <select id="moshpitMode">
+    <option value="clearnet">Clearnet wins — use Moshpit only to fill gaps (default)</option>
+    <option value="moshpit">Moshpit wins — override the clearnet domain</option>
+  </select>
+  <p class="hint">
+    Overriding means a domain someone else holds on clearnet resolves to <em>your</em> Moshpit
+    registration instead. Left on the default, a domain that already works is never redirected.
+  </p>
+  <label for="moshpitRegistry">Registry (advanced)</label>
+  <input id="moshpitRegistry" placeholder="https://pit.moshcode.sh" />
+  <div id="savedMoshpit" class="hint"></div>
 
   <h2>AI providers (bring your own keys)</h2>
   <p class="hint">Add keys for as many providers as you like, then pick a default for
@@ -75,6 +122,29 @@
   <div id="btrAccount" class="hint">Not connected.</div>
   <button id="btrConnect" class="ghost">Connect bittorrented.com</button>
   <span id="btrMsg" class="saved"></span>
+
+  <h2>Search</h2>
+  <p class="hint">Default search engine for the new-tab search box. NeoSearch is the
+  private default; Xprivo, DuckDuckGo, and others are available as alternatives. (The omnibox default
+  is set separately in <code>chrome://settings/search</code>.)</p>
+  <label for="searchEngine">New-tab search engine (clearnet)</label>
+  <select id="searchEngine">
+    <option value="neosearch">NeoSearch (private, default)</option>
+    <option value="xprivo">Xprivo (private)</option>
+    <option value="ddg">DuckDuckGo</option>
+    <option value="altpower">Altpower</option>
+    <option value="oxiverse">Oxiverse</option>
+  </select>
+  <label for="torSearchEngine">New-tab search engine (Tor 🧅)</label>
+  <select id="torSearchEngine">
+    <option value="ahmia">Ahmia (indexes .onion, default)</option>
+    <option value="torch">Torch (.onion)</option>
+    <option value="haystak">Haystak (.onion)</option>
+    <option value="onionland">OnionLand (.onion)</option>
+    <option value="excavator">Excavator (.onion)</option>
+  </select>
+  <p class="hint">Used automatically on new tabs while the onion toggle is on.</p>
+  <div><button id="saveSearch">Save search</button><span id="savedSearch" class="saved"></span></div>
 
   <h2>Markets &amp; Sports</h2>
   <p class="hint">Shown on the new-tab page. Free &amp; keyless — stock/crypto quotes from

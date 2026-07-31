@@ -1,6 +1,6 @@
 {
   "name": "@tronbrowser/shared",
-  "version": "0.1.26",
+  "version": "3.8.4",
   "private": true,
   "description": "Shared types, utilities, and constants",
   "type": "module",
@@ -16,7 +16,7 @@
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run --passWithNoTests",
-    "lint": "echo \"[lint] shared: stub\""
+    "lint": "eslint src"
   },
   "devDependencies": {
     "typescript": "^5.6.3",

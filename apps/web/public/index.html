@@ -9,7 +9,17 @@
 <meta name="robots" content="index, follow" />
 <meta name="theme-color" content="#05070d" />
 <link rel="canonical" href="https://tronbrowser.dev/" />
+
+<!-- Favicons / app icons (emblem-only mark; the full lockup logo is the hero) -->
 <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+<link rel="icon" type="image/png" sizes="32x32" href="/icons/favicon-32.png" />
+<link rel="icon" type="image/png" sizes="16x16" href="/icons/favicon-16.png" />
+<link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon-180x180.png" />
+<link rel="manifest" href="/manifest.json" />
+<meta name="apple-mobile-web-app-title" content="TronBrowser" />
+<meta name="application-name" content="TronBrowser" />
+<meta name="msapplication-TileColor" content="#05070d" />
+<meta name="msapplication-config" content="/browserconfig.xml" />
 
 <!-- Open Graph -->
 <meta property="og:type" content="website" />
@@ -17,15 +27,16 @@
 <meta property="og:title" content="TronBrowser — privacy-first, AI-native browser" />
 <meta property="og:description" content="Open-source, privacy-first, AI-native browser on Ungoogled Chromium. No telemetry, no ads, no sponsored tabs. Bring your own AI keys." />
 <meta property="og:url" content="https://tronbrowser.dev/" />
-<meta property="og:image" content="https://tronbrowser.dev/og.png" />
-<meta property="og:image:width" content="1200" />
-<meta property="og:image:height" content="630" />
+<meta property="og:image" content="https://tronbrowser.dev/banner.png" />
+<meta property="og:image:width" content="3000" />
+<meta property="og:image:height" content="2000" />
+<meta property="og:logo" content="https://tronbrowser.dev/logo.svg" />
 
 <!-- Twitter -->
 <meta name="twitter:card" content="summary_large_image" />
 <meta name="twitter:title" content="TronBrowser — privacy-first, AI-native browser" />
 <meta name="twitter:description" content="Open-source, privacy-first, AI-native browser on Ungoogled Chromium. No telemetry, no ads. Bring your own AI keys." />
-<meta name="twitter:image" content="https://tronbrowser.dev/og.png" />
+<meta name="twitter:image" content="https://tronbrowser.dev/banner.png" />
 
 <script type="application/ld+json">
 {
@@ -36,6 +47,12 @@
       "@id": "https://profullstack.com/#org",
       "name": "Profullstack, Inc.",
       "url": "https://profullstack.com",
+      "logo": { "@type": "ImageObject", "url": "https://tronbrowser.dev/logo.svg" },
+      "contactPoint": {
+        "@type": "ContactPoint",
+        "contactType": "security",
+        "email": "security@profullstack.com"
+      },
       "sameAs": ["https://github.com/profullstack"]
     },
     {
@@ -104,10 +121,13 @@
     color: var(--fg); font: 16px/1.6 ui-monospace, "SF Mono", Menlo, monospace;
     min-height: 100vh;
   }
-  .topbar { display: flex; justify-content: flex-end; padding: 16px 20px 0; max-width: 1100px; margin: 0 auto; }
+  .topbar { display: flex; justify-content: flex-end; gap: 10px; align-items: center; padding: 16px 20px 0; max-width: 1100px; margin: 0 auto; }
   .topbar .signin { background: var(--cyan); color: #04060c; font-weight: 700; text-decoration: none;
     padding: 8px 16px; border-radius: 8px; font-size: 14px; }
   .topbar .signin:hover { filter: brightness(1.1); }
+  .topbar .store-link { color: var(--fg); text-decoration: none; font-weight: 700; font-size: 14px;
+    padding: 8px 16px; border-radius: 8px; border: 1px solid var(--cyan); }
+  .topbar .store-link:hover { background: rgba(52,231,255,.12); }
   .account { position: relative; }
   .acct-btn { background: var(--panel); color: var(--fg); border: 1px solid var(--line);
     border-radius: 8px; padding: 8px 14px; font: inherit; font-size: 14px; cursor: pointer; }
@@ -116,11 +136,13 @@
   .acct-menu a { display: block; padding: 10px 14px; color: var(--fg); text-decoration: none; font-size: 14px; }
   .acct-menu a:hover { background: #04060c; color: var(--cyan); }
   .wrap { max-width: 860px; margin: 0 auto; padding: 32px 20px 96px; }
-  header { text-align: center; margin-bottom: 40px; }
-  .logo { font-size: 44px; font-weight: 800; letter-spacing: 2px; margin: 0;
-    color: #fff; text-shadow: 0 0 18px var(--cyan); }
-  .logo span { color: var(--cyan); }
-  .tag { color: var(--muted); margin-top: 10px; }
+  header { text-align: center; margin-bottom: 24px; }
+  .logo-wrap { margin: 0; line-height: 0; }
+  .hero-logo { width: min(420px, 90vw); height: auto; display: block; margin: 0 auto;
+    filter: drop-shadow(0 0 44px rgba(52,231,255,.22)); }
+  .headline { color: #fff; font-size: clamp(22px, 4vw, 30px); font-weight: 700;
+    margin: 10px 0 2px; line-height: 1.25; }
+  .tag { color: var(--muted); margin-top: 4px; }
   .lede { text-align: center; color: var(--fg); margin: 0 auto 48px; max-width: 680px; }
   .install { background: var(--panel); border: 1px solid var(--line);
     border-radius: 12px; padding: 22px; box-shadow: 0 0 40px rgba(52,231,255,.06); }
@@ -145,14 +167,21 @@
   footer { text-align: center; margin-top: 64px; color: var(--muted); }
   footer nav a { margin: 0 8px; }
   .copyright { margin-top: 14px; font-size: 13px; color: var(--muted); opacity: .8; }
+  .onion { margin-top: 12px; font-size: 13px; }
+  .onion a { color: var(--muted); word-break: break-all; }
+  .onion .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+    background: #7d4698; margin-right: 6px; vertical-align: middle; }
   a { color: var(--cyan); }
 </style>
 </head>
 <body>
-<div class="topbar"><a class="signin" href="/login">Sign in</a></div>
+<nav class="topbar" aria-label="Primary"><a class="store-link" href="/store/">Store</a><a class="signin" href="/login">Sign in</a></nav>
 <div class="wrap">
   <header>
-    <h1 class="logo">Tron<span>Browser</span></h1>
+    <div class="logo-wrap">
+      <img src="/logo.svg" alt="TronBrowser — privacy-first, AI-native browser logo" class="hero-logo" width="640" height="640" />
+    </div>
+    <h1 class="headline">TronBrowser — privacy-first, AI-native browser</h1>
     <div class="tag">Open-source · privacy-first · AI-native · built on a Chromium fork</div>
   </header>
 
@@ -225,6 +254,7 @@
 
   <footer>
     <nav>
+      <a href="/store/">Store</a> ·
       <a href="/login">Sign in</a> ·
       <a href="/privacy">Privacy</a> ·
       <a href="https://github.com/profullstack/tronbrowser.dev">GitHub</a> ·
@@ -232,6 +262,7 @@
       <a href="https://github.com/profullstack/tronbrowser.dev/releases">Releases</a>
     </nav>
     <div class="copyright">© 2026 <a href="https://profullstack.com">Profullstack, Inc.</a> · MIT License · <time datetime="2026-06-25">Updated June 2026</time></div>
+    <div class="onion"><span class="dot" aria-hidden="true"></span><a href="http://5nlx2hye6lddy4zki4xv3oteoxgerfd3343haizoicmonfb2ediy5gyd.onion" rel="noopener noreferrer">http://5nlx2hye6lddy4zki4xv3oteoxgerfd3343haizoicmonfb2ediy5gyd.onion</a></div>
   </footer>
 </div>
 <script src="/app.js?v=0.1.8"></script>

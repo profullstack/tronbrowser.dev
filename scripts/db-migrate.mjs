@@ -12,7 +12,7 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
-const DIR = join(ROOT, 'packages/storage/migrations');
+const DIR = process.env.MIGRATIONS_DIR || join(ROOT, 'packages/storage/migrations');
 const STATUS_ONLY = process.argv.includes('--status');
 
 function clientFromEnv() {

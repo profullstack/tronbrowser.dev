@@ -25,14 +25,18 @@ jobs:
       - name: Lint
         run: pnpm lint
 
+      # Build first: packages that import another workspace package (e.g.
+      # @tronbrowser/sdk -> @tronbrowser/browser-core) resolve it via its built
+      # dist, so typecheck/test need the dist present. pnpm builds in topological
+      # order, so dependencies compile before their dependents.
+      - name: Build
+        run: pnpm build
+
       - name: Typecheck
         run: pnpm typecheck
 
       - name: Test
         run: pnpm test
-
-      - name: Build
-        run: pnpm build
 
   # package + release jobs are stubbed until the Chromium build lands in CI.
   package:

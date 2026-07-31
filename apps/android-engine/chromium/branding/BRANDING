@@ -1,0 +1,13 @@
+# TronBrowser Android branding. Mirrors chrome/app/theme/<brand>/BRANDING;
+# applied by the branding patch (see ../patches). Replaces all
+# "Chromium"/"Google Chrome" product strings in the APK.
+COMPANY_FULLNAME=Profullstack, Inc.
+COMPANY_SHORTNAME=Profullstack
+PRODUCT_FULLNAME=TronBrowser
+PRODUCT_SHORTNAME=TronBrowser
+PRODUCT_INSTALLER_FULLNAME=TronBrowser Installer
+PRODUCT_INSTALLER_SHORTNAME=TronBrowser Installer
+COPYRIGHT=Copyright 2026 Profullstack, Inc. All Rights Reserved.
+# Distinct from the Expo companion app (dev.tronbrowser.app) so both can
+# coexist on a device / the Play Store. This is the full de-googled engine.
+ANDROID_APP_ID=dev.tronbrowser.browser

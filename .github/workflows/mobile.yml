@@ -1,0 +1,94 @@
+name: Mobile
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'apps/mobile/**'
+      - '.github/workflows/mobile.yml'
+  pull_request:
+    paths:
+      - 'apps/mobile/**'
+      - '.github/workflows/mobile.yml'
+  # EAS cloud builds / store submits are manual so they don't burn build
+  # credits on every push. Trigger from the Actions tab → "Run workflow".
+  workflow_dispatch:
+    inputs:
+      platform:
+        description: 'EAS build platform'
+        type: choice
+        options: [android, ios, all]
+        default: android
+      profile:
+        description: 'EAS build profile (see apps/mobile/eas.json)'
+        type: choice
+        options: [preview, production, development]
+        default: preview
+      submit:
+        description: 'Submit the build to the store after it finishes'
+        type: boolean
+        default: false
+
+defaults:
+  run:
+    working-directory: apps/mobile
+
+jobs:
+  # Fast, free check on every push/PR: typecheck, lint, and prove the JS bundle
+  # builds via `expo export` (no device, no EAS minutes).
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: lts/*
+          cache: pnpm
+
+      - name: Install
+        working-directory: .
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Bundle (expo export)
+        run: pnpm exec expo export --platform android --output-dir dist-export
+
+  # Cloud build + optional store submit via EAS. Requires the EXPO_TOKEN repo
+  # secret (Expo account access token). iOS/Android signing credentials are
+  # managed by EAS (`eas credentials`) — not stored here.
+  eas-build:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: lts/*
+          cache: pnpm
+
+      - name: Install
+        working-directory: .
+        run: pnpm install --frozen-lockfile
+
+      - uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: EAS build
+        run: eas build --platform ${{ inputs.platform }} --profile ${{ inputs.profile }} --non-interactive --no-wait
+
+      - name: EAS submit
+        if: ${{ inputs.submit }}
+        run: eas submit --platform ${{ inputs.platform }} --profile ${{ inputs.profile }} --non-interactive --latest

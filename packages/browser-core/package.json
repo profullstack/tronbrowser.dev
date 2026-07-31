@@ -1,6 +1,6 @@
 {
   "name": "@tronbrowser/browser-core",
-  "version": "0.1.26",
+  "version": "3.8.4",
   "private": true,
   "description": "Browser abstraction over the Chromium fork (tabs, profiles, bookmarks, history)",
   "type": "module",
@@ -16,9 +16,10 @@
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run --passWithNoTests",
-    "lint": "echo \"[lint] browser-core: stub\""
+    "lint": "eslint src"
   },
   "devDependencies": {
+    "happy-dom": "^20.10.6",
     "typescript": "^5.6.3",
     "vitest": "^2.1.4"
   }

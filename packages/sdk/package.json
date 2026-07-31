@@ -1,6 +1,6 @@
 {
   "name": "@tronbrowser/sdk",
-  "version": "0.1.26",
+  "version": "3.8.4",
   "private": true,
   "description": "Public SDK for TronBrowser apps and plugins",
   "type": "module",
@@ -16,7 +16,11 @@
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run --passWithNoTests",
-    "lint": "echo \"[lint] sdk: stub\""
+    "lint": "eslint src"
+  },
+  "dependencies": {
+    "@tronbrowser/agent-runtime": "workspace:*",
+    "@tronbrowser/browser-core": "workspace:*"
   },
   "devDependencies": {
     "typescript": "^5.6.3",

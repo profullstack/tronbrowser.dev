@@ -1,0 +1,63 @@
+name: Linux phones
+
+# Builds/validates the Linux-phone packaging (arm64 .deb/.rpm + Ubuntu Touch
+# click) on every relevant push — the release workflow attaches these to a
+# tagged release, this one just proves they build. See docs/mobile-architecture.md.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'distribution/deb-rpm/**'
+      - 'distribution/ubuntu-touch/**'
+      - 'apps/desktop/**'
+      - '.github/workflows/linux-phones.yml'
+  pull_request:
+    paths:
+      - 'distribution/deb-rpm/**'
+      - 'distribution/ubuntu-touch/**'
+      - 'apps/desktop/**'
+      - '.github/workflows/linux-phones.yml'
+  workflow_dispatch:
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Version
+        id: v
+        run: echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - name: Install nfpm
+        run: |
+          curl -sSfL "https://github.com/goreleaser/nfpm/releases/download/v2.41.0/nfpm_2.41.0_amd64.deb" -o /tmp/nfpm.deb
+          sudo dpkg -i /tmp/nfpm.deb
+
+      - name: Build noarch tarball
+        run: bash apps/desktop/scripts/build-release.sh "v${{ steps.v.outputs.version }}" linux
+
+      - name: Build deb + rpm (amd64 + arm64)
+        run: bash distribution/deb-rpm/build.sh "v${{ steps.v.outputs.version }}"
+
+      - name: Verify arm64 .deb (phones)
+        run: |
+          deb="dist/tronbrowser_${{ steps.v.outputs.version }}_arm64.deb"
+          test -f "$deb" || { echo "missing $deb"; exit 1; }
+          arch="$(dpkg-deb -f "$deb" Architecture)"
+          [ "$arch" = "arm64" ] || { echo "bad arch: $arch"; exit 1; }
+          dpkg-deb -c "$deb" | grep -q 'usr/share/applications/tronbrowser.desktop' \
+            || { echo "missing desktop entry"; exit 1; }
+          echo "arm64 .deb OK: $deb"
+
+      - name: Stage + validate Ubuntu Touch click
+        run: bash distribution/ubuntu-touch/build.sh "v${{ steps.v.outputs.version }}" arm64
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-phone-packages
+          path: |
+            dist/*.deb
+            dist/*.rpm
+            dist/*.click
+          if-no-files-found: warn

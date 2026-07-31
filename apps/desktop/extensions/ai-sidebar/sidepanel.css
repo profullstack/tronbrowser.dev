@@ -13,11 +13,32 @@ header {
   display: flex; align-items: center; gap: 8px;
   padding: 10px 12px; border-bottom: 1px solid var(--line);
 }
+.brand-logo { width: 20px; height: 20px; display: block; filter: drop-shadow(0 0 6px rgba(52,231,255,.4)); }
 .brand { font-weight: 800; letter-spacing: 1px; }
+.brand .accent { color: var(--cyan); }
 .accent { color: var(--cyan); }
-.provider { color: var(--muted); font-size: 12px; flex: 1; }
+.hspace { flex: 1; }
+.provider { color: var(--muted); font-size: 11px; padding: 3px 12px;
+  border-bottom: 1px solid var(--line); white-space: nowrap; overflow: hidden;
+  text-overflow: ellipsis; }
+.provider:empty { display: none; }
 header button { background: transparent; border: 1px solid var(--line); color: var(--fg);
   border-radius: 6px; cursor: pointer; padding: 2px 8px; }
+.tor-btn { font-size: 12px; white-space: nowrap; }
+.tor-btn[aria-pressed="true"] { background: #7d4698; border-color: #7d4698; color: #fff; font-weight: 700; }
+.tor-btn.busy { opacity: .6; cursor: progress; }
+.tor-status { padding: 6px 12px; font-size: 12px; border-bottom: 1px solid var(--line);
+  background: #0b1020; color: var(--muted); }
+.tor-status.ok { color: #6ee7a8; }
+.tor-status.warn { color: #ffcf6e; }
+.tor-status.hidden { display: none; }
+.ext-version { padding: 3px 12px; font-size: 11px; color: var(--muted);
+  border-bottom: 1px solid var(--line); letter-spacing: .5px; }
+.tor-progress { height: 5px; background: #1b2540; overflow: hidden; }
+.tor-progress.hidden { display: none; }
+.tor-progress .bar { height: 100%; width: 0%; background: #7d4698;
+  transition: width .35s ease; box-shadow: 0 0 8px rgba(125,70,152,.7); }
+.tor-status code { color: var(--cyan); }
 .messages { flex: 1; overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 10px; }
 .msg { padding: 8px 10px; border-radius: 8px; white-space: pre-wrap; word-wrap: break-word; }
 .msg.user { background: var(--user); align-self: flex-end; max-width: 90%; }
@@ -58,3 +79,23 @@ textarea { resize: none; background: #04060c; color: var(--fg);
   border-radius: 8px; padding: 0 16px; height: 38px; font-weight: 700; cursor: pointer; }
 .composer button:disabled { opacity: .5; cursor: default; }
 a { color: var(--cyan); }
+
+.tor-info-btn { width: 24px; padding: 0; border-radius: 50%; font-size: 12px; font-weight: 700;
+  line-height: 1; color: var(--muted); }
+.tor-info-btn:hover { color: var(--fg); border-color: var(--cyan); }
+
+/* Tor risk heads-up modal (shown when turning Tor ON, or via the ? button). */
+.tor-warn { border: 1px solid var(--line); background: var(--panel); color: var(--fg);
+  width: min(90vw, 380px); border-radius: 12px; padding: 0; }
+.tor-warn::backdrop { background: rgba(0, 0, 0, .72); }
+.tor-warn-box { padding: 16px; display: flex; flex-direction: column; gap: 10px; }
+.tor-warn h2 { margin: 0; font-size: 15px; color: #c79be0; }
+.tor-warn p { margin: 0; font-size: 12.5px; line-height: 1.5; }
+.tor-warn .tor-warn-tip { color: var(--muted); }
+.tor-warn code { background: #04060c; border: 1px solid var(--line); border-radius: 4px;
+  padding: 1px 5px; color: var(--cyan); font-size: 12px; }
+.tor-warn-ack { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
+.tor-warn-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
+.tor-warn-actions button { border-radius: 8px; padding: 7px 12px; font: inherit; font-size: 12px; cursor: pointer; }
+.tor-warn .btn-ghost { background: transparent; border: 1px solid var(--line); color: var(--fg); }
+.tor-warn .btn-primary { background: #7d4698; border: 1px solid #7d4698; color: #fff; font-weight: 700; }

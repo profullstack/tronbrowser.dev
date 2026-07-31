@@ -1,6 +1,6 @@
 {
   "name": "@tronbrowser/ai-core",
-  "version": "0.1.26",
+  "version": "3.8.4",
   "private": true,
   "description": "AI orchestration core (provider routing, execution modes)",
   "type": "module",
@@ -16,7 +16,7 @@
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run --passWithNoTests",
-    "lint": "echo \"[lint] ai-core: stub\""
+    "lint": "eslint src"
   },
   "devDependencies": {
     "typescript": "^5.6.3",

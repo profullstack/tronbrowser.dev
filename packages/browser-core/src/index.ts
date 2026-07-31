@@ -6,6 +6,9 @@
 
 export const PACKAGE_NAME = '@tronbrowser/browser-core' as const;
 
+// Managed browser-session contracts and CDP helpers (PRD M3.1).
+export * from './automation/index.js';
+
 /** Capabilities that must be preserved from upstream Chromium (PRD §Desktop). */
 export const PRESERVED_CAPABILITIES = [
   'chrome-extensions',

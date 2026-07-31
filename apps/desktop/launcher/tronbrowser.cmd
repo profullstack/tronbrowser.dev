@@ -39,7 +39,11 @@ if not defined BROWSER (
   exit /b 1
 )
 
+rem --enable-features=EnableTabMuting makes the tab audio indicator a clickable
+rem mute/unmute control (media::kEnableTabMuting is DISABLED_BY_DEFAULT upstream;
+rem stock Chrome only enables it via Finch, which an ungoogled build never gets).
 "%BROWSER%" --user-data-dir="%DATA%" --no-first-run --no-default-browser-check --no-pings ^
   --disable-background-networking --disable-breakpad --disable-domain-reliability ^
   --disable-sync --disable-features=Translate,OptimizationHints,InterestFeedContentSuggestions ^
+  --enable-features=EnableTabMuting ^
   --log-level=2 --load-extension="%EXT%" %*

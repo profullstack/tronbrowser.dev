@@ -1,4 +1,4 @@
-// Make Chrome Web Store installs work on Ungoogled Chromium.
+// Make extension installs work on Ungoogled Chromium.
 //
 // Google disables its native "Add to Chrome" button on non-official Chrome, so
 // it stays greyed out. We inject our own working button on extension detail
@@ -7,15 +7,28 @@
 // `extension-mime-request-handling = Always prompt for install` flag. If the
 // flag isn't active for some reason, the CRX simply downloads and can be
 // dragged onto chrome://extensions (Developer mode) instead.
+//
+// TronBrowser does NOT publish on the Chrome Web Store, so the button checks the
+// TronBrowser store FIRST (by the page's slug/name, resolved in the background
+// service worker which has host permissions). When a live TronBrowser-store
+// listing exists we install from there; only when it doesn't do we fall back to
+// the Chrome Web Store CRX.
 
 (function () {
   // Chrome extension IDs are 32 chars in a-p. New store URL:
   //   https://chromewebstore.google.com/detail/<slug>/<id>
-  const ID_RE = /\/detail\/(?:[^/]+\/)?([a-p]{32})/;
+  const DETAIL_RE = /\/detail\/(?:([^/]+)\/)?([a-p]{32})/;
 
-  function extId() {
-    const m = location.pathname.match(ID_RE);
-    return m ? m[1] : '';
+  function parseDetail() {
+    const m = location.pathname.match(DETAIL_RE);
+    if (!m) return null;
+    return { slug: m[1] || '', id: m[2] };
+  }
+
+  // The listing's human name, from the tab title ("uBlock Origin - Chrome Web
+  // Store"), used as a secondary lookup key when the slug doesn't match.
+  function extName() {
+    return (document.title || '').replace(/\s*[-–|]\s*Chrome Web Store\s*$/i, '').trim();
   }
 
   function chromeVersion() {
@@ -29,9 +42,31 @@
       '&x=' + encodeURIComponent('id=' + id + '&installsource=ondemand&uc');
   }
 
+  // Ask the background worker whether the TronBrowser store has this extension.
+  // Resolves to a Tron-store download URL, or null to use the Chrome CRX. Never
+  // rejects — any failure (SW asleep, offline, not listed) falls back to Chrome.
+  function resolveTronDownload(slug, name) {
+    return new Promise((resolve) => {
+      let settled = false;
+      const done = (v) => { if (!settled) { settled = true; resolve(v); } };
+      const timer = setTimeout(() => done(null), 5000); // never hang the click
+      try {
+        chrome.runtime.sendMessage({ type: 'resolve-tron-store', slug, name }, (resp) => {
+          clearTimeout(timer);
+          if (chrome.runtime.lastError || !resp || !resp.found || !resp.downloadUrl) { done(null); return; }
+          done(resp.downloadUrl);
+        });
+      } catch (_) {
+        clearTimeout(timer);
+        done(null);
+      }
+    });
+  }
+
   function addButton() {
-    const id = extId();
-    if (!id || document.getElementById('tron-install-btn')) return;
+    const detail = parseDetail();
+    if (!detail || document.getElementById('tron-install-btn')) return;
+    const { slug, id } = detail;
     const btn = document.createElement('button');
     btn.id = 'tron-install-btn';
     btn.type = 'button';
@@ -44,7 +79,22 @@
       'padding:12px 18px', 'font:700 14px ui-monospace,Menlo,monospace',
       'cursor:pointer', 'box-shadow:0 6px 24px rgba(0,0,0,.5)',
     ].join(';');
-    btn.addEventListener('click', () => { window.location.href = crxUrl(id); });
+
+    // Resolve the TronBrowser store up front so the button reflects where the
+    // install will come from; cache the promise so a click never re-resolves.
+    const tronTarget = resolveTronDownload(slug, extName());
+    tronTarget.then((url) => {
+      if (url) {
+        btn.textContent = '⬇ Add from TronBrowser Store';
+        btn.title = 'Install from the TronBrowser store (not published on the Chrome Web Store)';
+      }
+    });
+
+    btn.addEventListener('click', async () => {
+      // Tron store FIRST, Chrome Web Store CRX as the fallback.
+      const url = (await tronTarget) || crxUrl(id);
+      window.location.href = url;
+    });
     document.body.appendChild(btn);
   }
 

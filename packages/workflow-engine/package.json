@@ -1,6 +1,6 @@
 {
   "name": "@tronbrowser/workflow-engine",
-  "version": "0.1.26",
+  "version": "3.8.4",
   "private": true,
   "description": "Typed node-based workflow engine",
   "type": "module",
@@ -16,7 +16,10 @@
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run --passWithNoTests",
-    "lint": "echo \"[lint] workflow-engine: stub\""
+    "lint": "eslint src"
+  },
+  "dependencies": {
+    "@tronbrowser/sdk": "workspace:*"
   },
   "devDependencies": {
     "typescript": "^5.6.3",

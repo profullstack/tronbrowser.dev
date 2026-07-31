@@ -24,8 +24,11 @@ async function initAuth() {
   if (!me || !me.signedIn) return;
 
   const label = me.email || (me.id ? me.id.slice(0, 8) : 'Account');
+  // Keep the Store link in the header even when signed in (this rebuild replaces
+  // the static topbar markup).
   topbar.innerHTML =
-    `<div class="account">
+    `<a class="store-link" href="/store/">Store</a>
+     <div class="account">
        <button class="acct-btn" id="acctBtn" aria-haspopup="true" aria-expanded="false">${esc(label)} ▾</button>
        <div class="acct-menu" id="acctMenu" hidden>
          <a href="/settings">Settings</a>

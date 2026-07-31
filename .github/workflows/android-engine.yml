@@ -1,0 +1,96 @@
+name: Android engine
+
+# Track 3 (docs/mobile-architecture.md): native de-googled Chromium APK.
+# The `validate` job proves the build skeleton is wired on every push. The real
+# compile is a ~50GB checkout + hours on a large/self-hosted Linux runner, so
+# it is manual (workflow_dispatch) and opt-in.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'apps/android-engine/**'
+      - '.github/workflows/android-engine.yml'
+  pull_request:
+    paths:
+      - 'apps/android-engine/**'
+      - '.github/workflows/android-engine.yml'
+  workflow_dispatch:
+    inputs:
+      real_build:
+        description: 'Run the REAL Chromium build (needs a large/self-hosted Linux runner)'
+        type: boolean
+        default: false
+      runner:
+        description: 'Runner label for the real build'
+        type: string
+        default: ubuntu-latest
+      target_cpu:
+        description: 'Target CPU'
+        type: choice
+        options: [arm64, arm, x64]
+        default: arm64
+
+defaults:
+  run:
+    working-directory: apps/android-engine/chromium
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: version.json parses + has required keys
+        run: |
+          node -e "const c=require('./config/version.json');
+            for (const k of ['chromiumVersion','ungoogledChromiumTag','targetOs','ninjaTargets'])
+              if (c[k]===undefined) { console.error('missing key:',k); process.exit(1); }
+            console.log('version.json OK — chromium', c.chromiumVersion, '→', c.ninjaTargets.join(', '));"
+
+      - name: GN arg files present
+        run: test -f config/gn-args/common.gni && test -f config/gn-args/android.gni
+
+      - name: Shell scripts parse (bash -n)
+        run: |
+          for s in scripts/*.sh; do bash -n "$s" && echo "ok $s"; done
+
+      - name: Scripts dry-run without TB_RUN (guard works)
+        run: |
+          for s in fetch sync apply-patches build package tor; do
+            out="$(./scripts/$s.sh)"
+            echo "$out" | grep -q 'dry-run' || { echo "guard failed: $s did not dry-run"; exit 1; }
+            echo "guard ok: $s"
+          done
+
+  build-apk:
+    # Real, heavy build — opt-in via workflow_dispatch with real_build=true.
+    if: github.event_name == 'workflow_dispatch' && inputs.real_build
+    runs-on: ${{ inputs.runner }}
+    timeout-minutes: 720
+    steps:
+      - uses: actions/checkout@v5
+      - name: Toolchain note
+        run: |
+          echo "Building native Android Chromium (cpu=${{ inputs.target_cpu }})."
+          echo "Requires ~50GB+ disk, many GB RAM, hours. GitHub-hosted runners"
+          echo "will run out of disk — use a large self-hosted Linux runner."
+      - name: fetch
+        env: { TB_RUN: '1', TB_TARGET_CPU: '${{ inputs.target_cpu }}' }
+        run: ./scripts/fetch.sh
+      - name: sync
+        env: { TB_RUN: '1', TB_TARGET_CPU: '${{ inputs.target_cpu }}' }
+        run: ./scripts/sync.sh
+      - name: apply-patches
+        env: { TB_RUN: '1', TB_TARGET_CPU: '${{ inputs.target_cpu }}' }
+        run: ./scripts/apply-patches.sh
+      - name: build
+        env: { TB_RUN: '1', TB_TARGET_CPU: '${{ inputs.target_cpu }}' }
+        run: ./scripts/build.sh
+      - name: package
+        env: { TB_RUN: '1', TB_TARGET_CPU: '${{ inputs.target_cpu }}' }
+        run: ./scripts/package.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tronbrowser-android-${{ inputs.target_cpu }}
+          path: ~/.cache/tronbrowser-android-chromium/dist/*
+          if-no-files-found: warn

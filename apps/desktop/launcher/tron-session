@@ -1,0 +1,370 @@
+#!/bin/sh
+# tron-session — managed browser sessions for the `tron` CLI (PRD M3.1).
+#
+# Launches a CDP-controllable TronBrowser session and drives it through the
+# DevTools HTTP endpoints (loopback only). The session descriptor written under
+# ~/.tronbrowser/automation/session.json records the port, pid, profile and the
+# browser WebSocket endpoint — the attach point for programmatic tooling (M3.2+).
+#
+# This is the running implementation; the portable schema + tab-mapping contract
+# it mirrors lives (and is unit-tested) in packages/browser-core/src/automation.
+#
+# Subcommands (invoked by the `tron` dispatcher):
+#   tron browser launch [--headless] [--profile <name|ephemeral>] [--port N] [--force]
+#   tron browser status  [--json]
+#   tron browser tabs    [--json]
+#   tron browser use <tab-id>
+#   tron browser current
+#   tron browser close
+#   tron open <url>        # opens in the managed session; exits 3 if none (legacy fallback)
+set -eu
+
+# Resolve our own real directory (we sit next to the `tronbrowser` shim).
+SELF="$0"
+while [ -L "$SELF" ]; do
+  link="$(readlink "$SELF")"
+  case "$link" in
+    /*) SELF="$link" ;;
+    *)  SELF="$(dirname "$SELF")/$link" ;;
+  esac
+done
+DIR="$(CDPATH= cd -- "$(dirname -- "$SELF")" && pwd)"
+SHIM="${TRONBROWSER_SHIM:-$DIR/tronbrowser}"
+
+DATA_ROOT="${TRONBROWSER_DATA:-$HOME/.tronbrowser}"
+STATE_DIR="$DATA_ROOT/automation"
+DESCRIPTOR="$STATE_DIR/session.json"
+
+PY="$(command -v python3 2>/dev/null || command -v python 2>/dev/null || true)"
+
+die() { echo "tron: $*" >&2; exit 1; }
+
+session_usage() {
+  cat <<USAGE
+tron browser — managed browser sessions
+
+  tron browser launch [--headless] [--profile <name|ephemeral>] [--port N]
+  tron browser status [--json]
+  tron browser tabs   [--json]
+  tron browser use <tab-id>
+  tron browser current
+  tron browser close
+  tron open <url>       Open a URL in the managed session
+USAGE
+}
+
+# --- descriptor helpers (python-backed JSON) -----------------------------
+desc_field() { # <field> -> value on stdout, nonzero if absent/missing file
+  [ -f "$DESCRIPTOR" ] || return 1
+  "$PY" - "$DESCRIPTOR" "$1" <<'PY'
+import json, sys
+try:
+    d = json.load(open(sys.argv[1]))
+    v = d.get(sys.argv[2])
+except Exception:
+    sys.exit(1)
+if v is None:
+    sys.exit(1)
+print("1" if v is True else "0" if v is False else v)
+PY
+}
+
+write_descriptor() { # pid host port profileDir profileName headless eph createdAt ws
+  mkdir -p "$STATE_DIR"
+  D_PID="$1" D_HOST="$2" D_PORT="$3" D_PDIR="$4" D_PNAME="$5" \
+  D_HL="$6" D_EPH="$7" D_CREATED="$8" D_WS="${9:-}" \
+    "$PY" - "$DESCRIPTOR" <<'PY'
+import json, os, sys
+d = {
+    "version": 1,
+    "pid": int(os.environ["D_PID"]),
+    "host": os.environ["D_HOST"],
+    "port": int(os.environ["D_PORT"]),
+    "profileDir": os.environ["D_PDIR"],
+    "profileName": os.environ["D_PNAME"],
+    "headless": os.environ["D_HL"] == "1",
+    "ephemeral": os.environ["D_EPH"] == "1",
+    "createdAt": os.environ["D_CREATED"],
+}
+ws = os.environ.get("D_WS", "")
+if ws:
+    d["webSocketDebuggerUrl"] = ws
+open(sys.argv[1], "w").write(json.dumps(d, indent=2) + "\n")
+PY
+}
+
+set_active() { # <tab-id>
+  TRON_ACTIVE="$1" "$PY" - "$DESCRIPTOR" <<'PY'
+import json, os, sys
+p = sys.argv[1]
+d = json.load(open(p))
+d["activeTabId"] = os.environ["TRON_ACTIVE"]
+open(p, "w").write(json.dumps(d, indent=2) + "\n")
+PY
+}
+
+# --- CDP liveness --------------------------------------------------------
+endpoint_alive() { # <port>
+  [ -n "${1:-}" ] || return 1
+  curl -fsS --max-time 1 "http://127.0.0.1:$1/json/version" >/dev/null 2>&1
+}
+
+session_state() { # -> running | stale | none
+  [ -f "$DESCRIPTOR" ] || { echo none; return 0; }
+  _p="$(desc_field port 2>/dev/null || echo '')"
+  if endpoint_alive "$_p"; then echo running; else echo stale; fi
+}
+
+ws_url() { # <port> -> webSocketDebuggerUrl
+  # Data goes through an env var, not stdin: `python - <<'PY'` already consumes
+  # stdin for the script, so a piped body would never reach json.load.
+  _v="$(curl -fsS --max-time 2 "http://127.0.0.1:$1/json/version" 2>/dev/null || true)"
+  [ -n "$_v" ] || return 0
+  TRON_VER="$_v" "$PY" - <<'PY'
+import json, os
+try:
+    print(json.loads(os.environ["TRON_VER"]).get("webSocketDebuggerUrl", ""))
+except Exception:
+    pass
+PY
+}
+
+wait_ready() { # <activePortFile> <pid> <timeout> -> prints resolved port
+  _apf="$1"; _pid="$2"; _timeout="$3"; _n=0
+  while [ "$_n" -lt "$_timeout" ]; do
+    if [ -f "$_apf" ]; then
+      _p="$(head -n1 "$_apf" 2>/dev/null || true)"
+      case "$_p" in
+        ''|*[!0-9]*) : ;;
+        *) if endpoint_alive "$_p"; then echo "$_p"; return 0; fi ;;
+      esac
+    fi
+    # On Linux the shim exec-replaces itself with the browser, so a dead pid
+    # means it failed to start. (macOS `open` detaches, so we rely on the port
+    # file there instead of the pid.)
+    if [ "$(uname -s 2>/dev/null || echo)" != "Darwin" ] && ! kill -0 "$_pid" 2>/dev/null; then
+      return 1
+    fi
+    sleep 1; _n=$((_n + 1))
+  done
+  return 1
+}
+
+# --- subcommands ---------------------------------------------------------
+cmd_launch() {
+  _hl=0; _profile=""; _req_port=0; _force=0
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --headless) _hl=1 ;;
+      --headed) _hl=0 ;;
+      --profile) shift; _profile="${1:-}"; [ -n "$_profile" ] || die "--profile needs a value" ;;
+      --profile=*) _profile="${1#--profile=}" ;;
+      --port) shift; _req_port="${1:-0}" ;;
+      --port=*) _req_port="${1#--port=}" ;;
+      --force) _force=1 ;;
+      *) die "unknown option for 'browser launch': $1" ;;
+    esac
+    shift
+  done
+
+  if [ "$(session_state)" = running ] && [ "$_force" != 1 ]; then
+    echo "managed session already running (port $(desc_field port 2>/dev/null || echo '?')). Run 'tron browser close' first, or pass --force."
+    return 0
+  fi
+  [ -f "$DESCRIPTOR" ] && rm -f "$DESCRIPTOR"
+
+  # Resolve profile. Headless defaults to an ephemeral profile (PRD §8).
+  [ -z "$_profile" ] && [ "$_hl" = 1 ] && _profile="ephemeral"
+  _eph=0
+  case "$_profile" in
+    ""|default) _pname="agent"; _pdir="${DATA_ROOT}-agent" ;;
+    ephemeral)  _pname="ephemeral"; _eph=1; _pdir="$(mktemp -d "${TMPDIR:-/tmp}/tronbrowser-agent-XXXXXX")" ;;
+    *)          _pname="$_profile"; _pdir="${DATA_ROOT}-${_profile}" ;;
+  esac
+
+  mkdir -p "$STATE_DIR" "$_pdir"
+  _log="$STATE_DIR/session-browser.log"
+  : > "$_log" 2>/dev/null || true
+  _apf="$_pdir/DevToolsActivePort"
+  rm -f "$_apf" 2>/dev/null || true
+
+  _hlmsg=""; [ "$_hl" = 1 ] && _hlmsg=", headless"
+  echo "launching managed TronBrowser session (${_pname} profile${_hlmsg})…" >&2
+  TRON_AUTOMATION_PORT="$_req_port" TRON_AUTOMATION_HEADLESS="$_hl" \
+    TRONBROWSER_DATA="$_pdir" TRONBROWSER_LOG="$_log" \
+    nohup "$SHIM" >>"$_log" 2>&1 &
+  _bpid=$!
+
+  _port="$(wait_ready "$_apf" "$_bpid" 30 || true)"
+  if [ -z "$_port" ]; then
+    kill "$_bpid" 2>/dev/null || true
+    [ "$_eph" = 1 ] && rm -rf "$_pdir" 2>/dev/null || true
+    die "managed session failed to become ready within 30s (see $_log)"
+  fi
+  _ws="$(ws_url "$_port" || true)"
+  _created="$(date -u +%Y-%m-%dT%H:%M:%S.000Z 2>/dev/null || date -u +%Y-%m-%dT%H:%M:%SZ)"
+  write_descriptor "$_bpid" "127.0.0.1" "$_port" "$_pdir" "$_pname" "$_hl" "$_eph" "$_created" "$_ws"
+  echo "managed session ready on 127.0.0.1:$_port (pid $_bpid, profile $_pname)"
+}
+
+cmd_status() {
+  _json=0; [ "${1:-}" = "--json" ] && _json=1
+  _st="$(session_state)"
+  if [ "$_json" = 1 ]; then
+    if [ -f "$DESCRIPTOR" ]; then
+      TRON_STATE="$_st" "$PY" - "$DESCRIPTOR" <<'PY'
+import json, os, sys
+d = json.load(open(sys.argv[1]))
+d["state"] = os.environ["TRON_STATE"]
+print(json.dumps(d, indent=2))
+PY
+    else
+      printf '{\n  "state": "none"\n}\n'
+    fi
+    return 0
+  fi
+  case "$_st" in
+    none) echo "no managed session" ;;
+    stale) echo "managed session: stale (descriptor present, endpoint unreachable) — run 'tron browser close' to clean up" ;;
+    running)
+      _hl="$(desc_field headless 2>/dev/null || echo 0)"
+      echo "managed session: running"
+      echo "  endpoint : 127.0.0.1:$(desc_field port 2>/dev/null || echo '?')"
+      echo "  profile  : $(desc_field profileName 2>/dev/null || echo '?')"
+      echo "  headless : $([ "$_hl" = 1 ] && echo yes || echo no)"
+      echo "  pid      : $(desc_field pid 2>/dev/null || echo '?')" ;;
+  esac
+}
+
+cmd_tabs() {
+  _json=0; [ "${1:-}" = "--json" ] && _json=1
+  [ "$(session_state)" = running ] || die "no managed session (run: tron browser launch)"
+  _port="$(desc_field port 2>/dev/null || echo '')"
+  _active="$(desc_field activeTabId 2>/dev/null || echo '')"
+  _list="$(curl -fsS --max-time 3 "http://127.0.0.1:$_port/json/list" 2>/dev/null || true)"
+  [ -n "$_list" ] || die "could not query tabs"
+  TRON_LIST="$_list" TRON_ACTIVE="$_active" TRON_JSON="$_json" "$PY" - <<'PY'
+import json, os
+data = json.loads(os.environ["TRON_LIST"])
+pages = [t for t in data if t.get("type") == "page"]
+active = os.environ.get("TRON_ACTIVE", "")
+has = bool(active) and any(t.get("id") == active for t in pages)
+rows = []
+for i, t in enumerate(pages):
+    cur = (t.get("id") == active) if has else (i == 0)
+    rows.append({"id": t.get("id"), "title": t.get("title", ""), "url": t.get("url", ""), "current": cur})
+if os.environ.get("TRON_JSON") == "1":
+    print(json.dumps(rows, indent=2))
+else:
+    if not rows:
+        print("(no tabs)")
+    for r in rows:
+        mark = "*" if r["current"] else " "
+        title = (r["title"] or "")[:40]
+        print(f"{mark} {r['id']}  {title}  {r['url']}")
+PY
+}
+
+cmd_current() {
+  [ "$(session_state)" = running ] || die "no managed session"
+  _port="$(desc_field port 2>/dev/null || echo '')"
+  _active="$(desc_field activeTabId 2>/dev/null || echo '')"
+  _list="$(curl -fsS --max-time 3 "http://127.0.0.1:$_port/json/list" 2>/dev/null || true)"
+  [ -n "$_list" ] || die "could not query tabs"
+  TRON_LIST="$_list" TRON_ACTIVE="$_active" "$PY" - <<'PY'
+import json, os
+data = json.loads(os.environ["TRON_LIST"])
+pages = [t for t in data if t.get("type") == "page"]
+active = os.environ.get("TRON_ACTIVE", "")
+cur = next((t for t in pages if t.get("id") == active), None) if active else None
+if cur is None and pages:
+    cur = pages[0]
+if cur is None:
+    print("(no tabs)")
+else:
+    print(f"{cur.get('id')}  {cur.get('title', '')}  {cur.get('url', '')}")
+PY
+}
+
+cmd_use() {
+  _id="${1:-}"; [ -n "$_id" ] || die "usage: tron browser use <tab-id>"
+  [ "$(session_state)" = running ] || die "no managed session"
+  _port="$(desc_field port 2>/dev/null || echo '')"
+  curl -fsS --max-time 2 "http://127.0.0.1:$_port/json/activate/$_id" >/dev/null 2>&1 \
+    || die "no such tab: $_id (run: tron browser tabs)"
+  set_active "$_id"
+  echo "active tab: $_id"
+}
+
+cmd_close() {
+  [ -f "$DESCRIPTOR" ] || { echo "no managed session"; return 0; }
+  _pid="$(desc_field pid 2>/dev/null || echo '')"
+  _port="$(desc_field port 2>/dev/null || echo '')"
+  _eph="$(desc_field ephemeral 2>/dev/null || echo 0)"
+  _pdir="$(desc_field profileDir 2>/dev/null || echo '')"
+  if [ -n "$_pid" ] && kill -0 "$_pid" 2>/dev/null; then
+    kill "$_pid" 2>/dev/null || true
+    _n=0
+    while kill -0 "$_pid" 2>/dev/null && [ "$_n" -lt 10 ]; do sleep 1; _n=$((_n + 1)); done
+    kill -0 "$_pid" 2>/dev/null && kill -9 "$_pid" 2>/dev/null || true
+  fi
+  # macOS `open` detaches, so the stored pid may not be the browser — fall back
+  # to matching the profile's user-data-dir if the endpoint is still up.
+  if endpoint_alive "$_port" && [ -n "$_pdir" ]; then
+    pkill -f "user-data-dir=$_pdir" 2>/dev/null || true
+  fi
+  rm -f "$DESCRIPTOR"
+  if [ "$_eph" = 1 ] && [ -n "$_pdir" ]; then
+    case "$_pdir" in
+      /tmp/*|"${TMPDIR:-/tmp}"/*) rm -rf "$_pdir" 2>/dev/null || true ;;
+    esac
+  fi
+  echo "closed managed session"
+}
+
+cmd_open() { # <url> ; returns 3 when no managed session (legacy fallback)
+  _url="${1:-}"; [ -n "$_url" ] || die "usage: tron open <url>"
+  [ "$(session_state)" = running ] || return 3
+  _port="$(desc_field port 2>/dev/null || echo '')"
+  _resp="$(curl -fsS --max-time 5 -X PUT "http://127.0.0.1:$_port/json/new?$_url" 2>/dev/null \
+           || curl -fsS --max-time 5 "http://127.0.0.1:$_port/json/new?$_url" 2>/dev/null || true)"
+  [ -n "$_resp" ] || die "could not open tab in managed session"
+  _id="$(TRON_RESP="$_resp" "$PY" - <<'PY'
+import json, os
+try:
+    print(json.loads(os.environ["TRON_RESP"]).get("id", ""))
+except Exception:
+    pass
+PY
+)"
+  [ -n "$_id" ] && set_active "$_id"
+  echo "opened $_url${_id:+ (tab $_id)}"
+}
+
+# --- entrypoint ----------------------------------------------------------
+[ -n "$PY" ] || die "managed sessions need python3 (or python) on PATH"
+command -v curl >/dev/null 2>&1 || die "managed sessions need curl on PATH"
+
+case "${1:-}" in
+  browser)
+    shift
+    case "${1:-}" in
+      launch)  shift; cmd_launch "$@" ;;
+      status)  shift; cmd_status "$@" ;;
+      tabs)    shift; cmd_tabs "$@" ;;
+      use)     shift; cmd_use "$@" ;;
+      current) shift; cmd_current ;;
+      close)   shift; cmd_close ;;
+      ""|help|-h|--help) session_usage ;;
+      *) die "unknown 'tron browser' subcommand: ${1:-}" ;;
+    esac ;;
+  open)
+    shift
+    if cmd_open "$@"; then :; else
+      _rc=$?
+      [ "$_rc" = 3 ] && exit 3
+      exit "$_rc"
+    fi ;;
+  ""|help|-h|--help) session_usage ;;
+  *) die "unknown 'tron-session' command: ${1:-}" ;;
+esac

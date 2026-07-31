@@ -14,12 +14,27 @@ RUN printf '%s' '{"compilerOptions":{"target":"ES2023","module":"NodeNext","modu
 
 # --- final: caddy + node ---
 FROM caddy:2-alpine
-RUN apk add --no-cache nodejs
+# openssh-client: the store provisions BBS publisher accounts and generates
+# ed25519 keypairs via `ssh`/`ssh-keygen` (services/api/src/store/fileshost.ts).
+# tor: runs a Tor v3 hidden service in this same container so tronbrowser.dev is
+# reachable over a stable .onion (start.sh writes torrc and boots it). The onion
+# key persists on a Railway volume mounted at /var/lib/tor/hidden_service.
+RUN apk add --no-cache nodejs openssh-client tor
 COPY Caddyfile /etc/caddy/Caddyfile
 COPY apps/web/public/ /srv/
+# Extension store (tronbrowser.dev/store) — static frontend; dynamic bits hit
+# /api/store on the bundled API.
+COPY apps/extensions/public/ /srv/store/
+# Branding lives at the repo root (single source of truth). apps/web/public has
+# symlinks to them for local dev, but Docker COPY won't follow symlinks pointing
+# outside the copied dir — so copy the real files in (these override the links).
+COPY logo.svg favicon.svg hero.svg banner.png /srv/
 COPY --from=api /api/dist /api/dist
 COPY --from=api /api/node_modules /api/node_modules
 COPY --from=api /api/package.json /api/package.json
+# DB migrations run on boot (start.sh) so schema never drifts from the deploy.
+COPY scripts/db-migrate.mjs /api/db-migrate.mjs
+COPY packages/storage/migrations /api/migrations
 COPY start.sh /start.sh
 RUN chmod +x /start.sh
 CMD ["/start.sh"]

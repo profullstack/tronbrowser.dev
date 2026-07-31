@@ -67,8 +67,17 @@ jobs:
           curl -sSfL "https://github.com/goreleaser/nfpm/releases/download/v2.41.0/nfpm_2.41.0_amd64.deb" -o /tmp/nfpm.deb
           sudo dpkg -i /tmp/nfpm.deb
           sudo apt-get update -qq && sudo apt-get install -y -qq librsvg2-bin
+          # deb + rpm for amd64 AND arm64 (arm64 = Librem 5 / PinePhone / postmarketOS)
           bash distribution/deb-rpm/build.sh "v${{ needs.create-release.outputs.version }}"
           bash distribution/appimage/build.sh "v${{ needs.create-release.outputs.version }}"
+
+      - name: Package (Ubuntu Touch click)
+        if: matrix.platform == 'linux'
+        continue-on-error: true   # non-fatal: never block a release on the UT click
+        run: |
+          pip install --user clickable-ut || true
+          export PATH="$HOME/.local/bin:$PATH"
+          bash distribution/ubuntu-touch/build.sh "v${{ needs.create-release.outputs.version }}" arm64 || true
 
       - name: Package (windows)
         if: matrix.platform == 'windows'
@@ -90,7 +99,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           shopt -s nullglob
-          assets=(dist/tronbrowser-*.tar.gz dist/tronbrowser-*.zip dist/*.deb dist/*.rpm dist/*.AppImage)
+          assets=(dist/tronbrowser-*.tar.gz dist/tronbrowser-*.zip dist/*.deb dist/*.rpm dist/*.AppImage dist/*.click)
           gh release upload "${{ needs.create-release.outputs.tag }}" "${assets[@]}" --clobber
 
   # 3) Publish (un-draft) once every platform has uploaded.

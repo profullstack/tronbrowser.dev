@@ -85,9 +85,16 @@ export function resolveStorageConfig(env: Record<string, string | undefined>): S
   if (!authToken) {
     throw new Error(`Remote DB URL requires ${ENV.authToken}.`);
   }
+  let hostname: string;
+  try {
+    hostname = new URL(url).hostname;
+  } catch {
+    throw new Error(`${ENV.url} must be a valid remote libSQL/Turso URL or a local file path.`);
+  }
+
   // Managed Turso (*.turso.io) gets the cloud tier (managed backups); any other
   // remote libSQL the user runs themselves is self-hosted.
-  const tier: StorageTier = /\.turso\.io$/.test(new URL(url).hostname) ? 'cloud' : 'self-hosted';
+  const tier: StorageTier = /\.turso\.io$/.test(hostname) ? 'cloud' : 'self-hosted';
   return { driver: 'turso', tier, url, authToken };
 }
 

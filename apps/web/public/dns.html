@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="robots" content="noindex, nofollow" />
+<title>DNS setup &amp; verify — TronBrowser</title>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+<style>
+  :root { --bg:#05070d; --panel:#0b1020; --line:#1b2540; --cyan:#34e7ff;
+    --fg:#cfe8ff; --muted:#6f86b3; --warn:#ffcf6f; --crit:#ff6f8b; --ok:#5fd08b; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:radial-gradient(1200px 600px at 50% -10%, #0a1430 0%, var(--bg) 60%);
+    color:var(--fg); font:15px/1.6 ui-monospace,"SF Mono",Menlo,monospace; min-height:100vh; }
+  .wrap { max-width:980px; margin:0 auto; padding:32px 20px 96px; }
+  a { color:var(--cyan); }
+  .top { display:flex; justify-content:space-between; align-items:center; margin-bottom:6px; }
+  h1 { color:#fff; font-size:24px; margin:0; }
+  .top a { font-size:13px; }
+  .sub { color:var(--muted); margin:0 0 20px; }
+  h2 { color:#fff; font-size:18px; margin:36px 0 6px; }
+  .note { color:var(--muted); font-size:13px; margin:4px 0 12px; }
+  .toolbar { display:flex; flex-wrap:wrap; gap:12px; align-items:center;
+    background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:16px 18px; }
+  .toolbar label { color:var(--muted); font-size:13px; }
+  .toolbar input { background:#04060c; border:1px solid var(--line); color:var(--fg);
+    border-radius:8px; padding:9px 12px; font:inherit; font-size:14px; min-width:200px; }
+  button { font:inherit; cursor:pointer; }
+  .verify { background:var(--cyan); color:#04060c; font-weight:700; border:none;
+    border-radius:8px; padding:11px 20px; font-size:14px; }
+  .verify:hover { filter:brightness(1.1); }
+  .verify:disabled { opacity:.5; cursor:default; }
+  .summary { margin-left:auto; color:var(--muted); font-size:13px; }
+  .rec { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:16px 18px; margin:12px 0; }
+  .rec .title { color:var(--cyan); font-weight:700; margin-bottom:10px; }
+  .row { display:grid; grid-template-columns:64px 1fr auto; gap:10px; align-items:center; margin:6px 0; }
+  .row .k { color:var(--muted); font-size:12px; text-transform:uppercase; letter-spacing:1px; }
+  .row .v { background:#04060c; border:1px solid var(--line); border-radius:8px;
+    padding:9px 12px; color:var(--fg); overflow-x:auto; white-space:nowrap; }
+  .row .v.val { color:var(--cyan); }
+  button.copy { background:transparent; border:1px solid var(--line); color:var(--fg);
+    border-radius:6px; padding:7px 12px; font-size:12px; }
+  button.copy:hover { border-color:var(--cyan); color:var(--cyan); }
+  button.copy.done { border-color:var(--ok); color:var(--ok); }
+  .result { margin-top:10px; font-size:13px; border-top:1px dashed var(--line); padding-top:10px; display:none; }
+  .result.show { display:block; }
+  .result .st { font-weight:700; text-transform:uppercase; letter-spacing:1px; margin-right:8px; }
+  .result.pass .st { color:var(--ok); }
+  .result.warn .st { color:var(--warn); }
+  .result.fail .st { color:var(--crit); }
+  .result.checking .st { color:var(--muted); }
+  .result .obs { color:var(--muted); display:block; margin-top:4px; word-break:break-all; white-space:pre-wrap; }
+  .warn-inline { color:var(--warn); font-size:13px; margin:8px 0 0; }
+  code { color:var(--fg); }
+  ol { color:var(--muted); font-size:14px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <h1>DNS setup &amp; verify</h1>
+    <a href="/">← Home</a>
+  </div>
+  <p class="sub">Copy each record into the Porkbun dashboard, add it manually, then click <strong>Verify DNS</strong>. Verification runs server-side (authenticated <code>/api/dns/verify</code>) against public resolvers.</p>
+
+  <div class="toolbar">
+    <label>Domain <input id="domain" value="tronbrowser.dev" spellcheck="false" /></label>
+    <label>DKIM selector <input id="selector" value="resend" spellcheck="false" style="min-width:130px" /></label>
+    <button class="verify" id="verify">Verify DNS</button>
+    <span class="summary" id="summary"></span>
+  </div>
+  <p class="note">Order: add SPF + DMARC first, monitor ~2 weeks, then raise DMARC to <code>p=reject</code>. Source: AEO audit DNS Analyzer (28/100).</p>
+
+  <div id="records"></div>
+
+  <h2>How to apply</h2>
+  <ol>
+    <li>Create the <code>dmarc-reports@</code> alias in ForwardEmail first (the DMARC <code>rua</code> mailbox must exist).</li>
+    <li>Add the two <strong>critical</strong> records (root SPF, DMARC), then click Verify DNS.</li>
+    <li>Wait for reports to look clean (~2 weeks), then change DMARC to <code>p=reject</code>.</li>
+    <li>Add the harden records. Add CAA only after confirming your host's cert CA (Railway must issue via Let's Encrypt).</li>
+  </ol>
+</div>
+<script src="/dns.js"></script>
+</body>
+</html>

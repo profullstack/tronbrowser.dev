@@ -20,10 +20,18 @@ Then use the agent-friendly **`tron`** CLI:
 
 ```bash
 tron <url>        # open URL(s) in TronBrowser
+tron --tor [url]  # route through Tor (hides your IP, reaches .onion) — see note
 tron upgrade      # update to the latest release (no-ops if current)
 tron remove       # uninstall (keeps your profile)
 tron version
 ```
+
+> **`--tor` is a convenience feature, not anonymity.** It hides your IP and lets
+> you reach `.onion` sites from your everyday browser, using a separate wiped
+> profile. It is **not** Tor-Browser-grade: Chromium's fingerprinting surface
+> isn't hardened. **If your safety depends on it, use the real
+> [Tor Browser](https://www.torproject.org/) — it's much safer.** Requires the
+> `tor` daemon installed. Details: [`docs/tor-onion-mode.md`](docs/tor-onion-mode.md).
 
 Also packaged for **macOS · Windows · Debian/Ubuntu (.deb) · Fedora/RHEL (.rpm) ·
 Arch (AUR) · Gentoo · NixOS · Snap · Flatpak · AppImage · FreeBSD** — and arm64
@@ -39,8 +47,8 @@ Linux phones (Librem 5 / PinePhone / Ubuntu Touch). See
 
 ## What you get today
 
-- **De-googled new tab** — T-logo TronBrowser page, **DuckDuckGo** as the default
-  search (no Google in the omnibox), quick links.
+- **De-googled new tab** — TronBrowser page, **NeoSearch** as the default private
+  search (no Google in the omnibox; DuckDuckGo available as an alternative), quick links.
 - **RSS reader** on the new tab — seeded from your OPML; add/remove feeds and
   **import/export OPML** in Settings.
 - **AI sidebar (bring your own keys)** — Anthropic, OpenAI, Google/Gemini,

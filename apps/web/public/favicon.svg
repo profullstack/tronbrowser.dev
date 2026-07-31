@@ -1,5 +1,1 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="TronBrowser">
-  <rect width="64" height="64" rx="12" fill="#05070d"/>
-  <rect x="2.5" y="2.5" width="59" height="59" rx="10" fill="none" stroke="#34e7ff" stroke-opacity="0.5" stroke-width="2"/>
-  <path d="M16 20 h32 v7 h-12 v22 h-8 v-22 h-12 z" fill="#34e7ff"/>
-</svg>
+../../../favicon.svg

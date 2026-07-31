@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=TronBrowser
+GenericName=Web Browser
+Comment=Privacy-first, AI-native browser (Ungoogled Chromium)
+Exec=tronbrowser-ut %u
+Icon=assets/tronbrowser.png
+Terminal=false
+Categories=Network;WebBrowser;
+X-Ubuntu-Touch=true
+X-Ubuntu-Single-Instance=true

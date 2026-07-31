@@ -6,6 +6,9 @@
 
 export const PACKAGE_NAME = '@tronbrowser/agent-runtime' as const;
 
+// AI analyze — form-fill + safety + bounded execution (PRD M3.5).
+export * from './analyze/index.js';
+
 export interface Goal {
   id: string;
   description: string;

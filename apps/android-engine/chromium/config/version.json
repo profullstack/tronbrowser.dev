@@ -1,0 +1,15 @@
+{
+  "$comment": "Pinned upstream versions for the TronBrowser Android engine fork. Keep in lockstep with apps/desktop/chromium/config/version.json unless Android needs a different pin. Bump deliberately.",
+  "chromiumVersion": "131.0.6778.85",
+  "ungoogledChromiumTag": "131.0.6778.85-1",
+  "ungoogledChromiumRepo": "https://github.com/ungoogled-software/ungoogled-chromium.git",
+  "depotToolsRepo": "https://chromium.googlesource.com/chromium/tools/depot_tools.git",
+  "targetOs": "android",
+  "targetCpus": ["arm64", "arm"],
+  "ninjaTargets": ["chrome_public_apk", "chrome_public_bundle"],
+  "torAndroid": {
+    "$comment": "Prebuilt Tor for Android (arm64/arm), bundled as an APK asset for the in-browser Tor toggle. Guardian Project's tor-android build.",
+    "repo": "https://github.com/guardianproject/tor-android",
+    "socksPort": 9071
+  }
+}

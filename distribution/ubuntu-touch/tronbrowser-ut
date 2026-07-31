@@ -1,0 +1,28 @@
+#!/bin/sh
+# TronBrowser — Ubuntu Touch entry wrapper.
+#
+# Ubuntu Touch confines click apps and ships the Morph/Oxide engine, NOT a
+# desktop Chromium. To run the real Ungoogled Chromium (the whole point of
+# TronBrowser), we launch the bundled `tron` shim inside a Libertine container
+# where `ungoogled-chromium` / `chromium` is installed. See README.md.
+#
+# One-time setup on the device (Terminal app or adb):
+#   libertine-container-manager create -i tron -n TronBrowser -t chroot
+#   libertine-container-manager install-package -i tron -p chromium
+#   # (or ungoogled-chromium via a Flatpak/PPA inside the container)
+set -eu
+
+APPDIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+TRON="$APPDIR/tronbrowser/tronbrowser"        # bundled noarch launcher
+CONTAINER="${TRONBROWSER_LIBERTINE_ID:-tron}"
+
+if command -v libertine-launch >/dev/null 2>&1 \
+   && libertine-container-manager list 2>/dev/null | grep -qx "$CONTAINER"; then
+  exec libertine-launch -i "$CONTAINER" "$TRON" "$@"
+fi
+
+# No Libertine container yet — run the shim directly. It will find a browser if
+# one is on PATH, otherwise print setup guidance.
+echo "TronBrowser: no Libertine container '$CONTAINER' found." >&2
+echo "Create one (see the app README) to run the full Ungoogled Chromium." >&2
+exec "$TRON" "$@"

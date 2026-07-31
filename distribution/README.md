@@ -23,8 +23,10 @@ release assets. Goal: every major OS + open-source platform.
 | Universal Linux | Flatpak | [`flatpak/`](flatpak/) | 🟡 manifest ready (Flathub PR) |
 | Universal Linux | AppImage | [`appimage/`](appimage/) | ✅ built in CI |
 | FreeBSD | port | [`freebsd/`](freebsd/) | 🟡 port ready |
+| Librem 5 / PinePhone / postmarketOS | apt (arm64 .deb) | [`deb-rpm/`](deb-rpm/) (nfpm) | ✅ built in CI |
 | Librem 5 / PinePhone / Ubuntu Touch | `curl \| sh` (arm64) | install.sh | ✅ noarch launcher |
-| iOS / Android | Expo / EAS | [`apps/mobile`](../apps/mobile) | 🚧 Phase 2 |
+| Ubuntu Touch | click (Libertine) | [`ubuntu-touch/`](ubuntu-touch/) | 🟡 skeleton + CI-validated |
+| iOS / Android | Expo / EAS | [`apps/mobile`](../apps/mobile) | ✅ companion app |
 
 ## CI/CD (per platform, one repo)
 
@@ -43,8 +45,10 @@ channel — gated on that channel's secret, dry-run by default.
 ## Build a single channel locally
 
 ```bash
-bash apps/desktop/scripts/build-release.sh v0.1.1 linux   # tar.gz
-bash distribution/deb-rpm/build.sh v0.1.1                  # .deb + .rpm (needs nfpm)
+bash apps/desktop/scripts/build-release.sh v0.1.1 linux   # tar.gz (noarch)
+bash distribution/deb-rpm/build.sh v0.1.1                 # .deb + .rpm, amd64 + arm64 (needs nfpm)
+bash distribution/deb-rpm/build.sh v0.1.1 arm64           # arm64 only (phones)
+bash distribution/ubuntu-touch/build.sh v0.1.1 arm64      # Ubuntu Touch .click (needs Clickable)
 bash distribution/appimage/build.sh v0.1.1                # .AppImage
 node scripts/submit-packages.mjs -v 0.1.1 -p all --dry-run
 ```

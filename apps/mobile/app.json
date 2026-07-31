@@ -4,7 +4,7 @@
     "slug": "tronbrowserdev",
     "owner": "profullstack",
     "scheme": "tronbrowser",
-    "version": "0.1.26",
+    "version": "3.8.4",
     "orientation": "portrait",
     "userInterfaceStyle": "dark",
     "platforms": [
@@ -23,6 +23,9 @@
       "eas": {
         "projectId": "d8bd3b92-f0e1-492e-bf3f-b972d7afec4f"
       }
-    }
+    },
+    "plugins": [
+      "expo-status-bar"
+    ]
   }
 }

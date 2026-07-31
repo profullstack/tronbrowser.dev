@@ -1,6 +1,6 @@
 {
   "name": "@tronbrowser/desktop",
-  "version": "0.1.26",
+  "version": "3.8.4",
   "private": true,
   "description": "Desktop shell for the TronBrowser Chromium fork",
   "type": "module",
@@ -16,7 +16,7 @@
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run --passWithNoTests",
-    "lint": "echo \"[lint] desktop: stub\"",
+    "lint": "eslint src extensions",
     "chromium:fetch": "chromium/scripts/fetch.sh",
     "chromium:sync": "chromium/scripts/sync.sh",
     "chromium:patch": "chromium/scripts/apply-patches.sh",

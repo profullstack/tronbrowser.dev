@@ -20,6 +20,24 @@ done
 DIR="$(CDPATH= cd -- "$(dirname -- "$SELF")" && pwd)"
 EXTBASE_SRC="$DIR/extensions"   # holds ai-sidebar + ublock-origin (uBlock Origin)
 
+# --- Tor mode -------------------------------------------------------------
+# `tron --tor [url...]` routes traffic through a local Tor daemon (SOCKS5) and
+# uses a SEPARATE, wiped profile so clearnet cookies never ride over Tor. This
+# hides your IP and reaches .onion — it is NOT Tor-Browser-grade anonymity (see
+# docs/tor-onion-mode.md). Strip --tor out of the args; the rest passes through
+# to the browser as URLs. (Rotate-through-$@ keeps order and is whitespace-safe.)
+TOR=0
+TOR_SOCKS_PORT="${TRONBROWSER_TOR_PORT:-9071}"
+_argc=$#
+_i=0
+while [ "$_i" -lt "$_argc" ]; do
+  _a="$1"; shift; _i=$((_i + 1))
+  case "$_a" in
+    --tor) TOR=1; continue ;;
+  esac
+  set -- "$@" "$_a"
+done
+
 BROWSER=""        # a binary path, or "flatpak"
 FLATPAK_APP=""
 IS_SNAP=0
@@ -81,11 +99,72 @@ else
   EXTBASE="$EXTBASE_SRC"
 fi
 
+# Tor uses a dedicated, wiped browser profile (isolates clearnet cookies/history
+# from the Tor session) while the Tor daemon's own state lives under the normal
+# data dir. The wipe = no lasting local trace. We use a separate profile rather
+# than --incognito because command-line --load-extension extensions don't run in
+# incognito windows (would break the de-googled new-tab + AI sidebar).
+TOR_RUNTIME=""
+if [ "$TOR" = "1" ]; then
+  TOR_RUNTIME="$DATA/tor"
+  mkdir -p "$TOR_RUNTIME"
+  DATA="${DATA}-tor"
+  rm -rf "$DATA"
+fi
+
+# On-demand Tor control helper for the in-browser 🧅 Tor toggle (AI sidebar).
+# Loopback-only; it makes NO network connection until the toggle asks it to
+# start Tor — so nobody connects to Tor unless they turn it on. Fire-and-forget
+# + idempotent (a second copy exits when the port is taken), so both the desktop
+# app entry and `tron` (which share this shim) get it. Best-effort: needs
+# python3, and skipped in --tor mode (that path runs its own Tor).
+if [ "$TOR" != "1" ]; then
+  if ! command -v python3 >/dev/null 2>&1; then
+    echo "TronBrowser: python3 not found — the 🧅 Tor toggle won't work (install python3)." >&2
+  elif [ ! -f "$DIR/tron-tor-helper" ]; then
+    echo "TronBrowser: Tor helper missing ($DIR/tron-tor-helper) — run 'tron upgrade'." >&2
+  else
+    mkdir -p "$DATA"
+    # Resolve which tor the helper would use, just for an informative log line.
+    if [ -x "$DIR/tor" ]; then _torbin="$DIR/tor (bundled)";
+    elif [ -x "$DIR/tor-bin/tor" ]; then _torbin="$DIR/tor-bin/tor (auto-installed)";
+    elif command -v tor >/dev/null 2>&1; then _torbin="$(command -v tor)";
+    else _torbin="NOT FOUND — run 'tron tor' to install it"; fi
+    echo "TronBrowser: Tor toggle ready — helper control on 127.0.0.1:9061, Tor SOCKS on 127.0.0.1:$TOR_SOCKS_PORT (tor: $_torbin). Click 🧅 Tor in the AI sidebar. Log: $DATA/tor-helper.log" >&2
+    # The helper persists across launches, so an OLD one (from before an upgrade)
+    # would keep answering the toggle with stale code. Replace it ONLY when the
+    # running helper isn't this version — otherwise leave a healthy current
+    # helper alone (don't drop an active Tor session). All backgrounded so the
+    # kill+settle never holds up the browser launch.
+    HELPER_VERSION=3.2.8
+    (
+      _pf="$DATA/tor-helper.pid"
+      _rv="$(curl -fsS --max-time 1 http://127.0.0.1:9061/status 2>/dev/null | sed -n 's/.*"version"[^"]*"\([^"]*\)".*/\1/p')"
+      if [ "$_rv" != "$HELPER_VERSION" ]; then
+        [ -f "$_pf" ] && kill "$(cat "$_pf" 2>/dev/null)" 2>/dev/null || true
+        if command -v fuser >/dev/null 2>&1; then
+          fuser -k 9061/tcp >/dev/null 2>&1 || true
+        elif command -v lsof >/dev/null 2>&1; then
+          lsof -ti tcp:9061 2>/dev/null | while read -r _p; do kill "$_p" 2>/dev/null || true; done
+        fi
+        sleep 1   # let the control port free up before re-binding
+        exec env TRON_TOR_DATA="$DATA/tor" TRON_TOR_BIN_DIR="$DIR" TRON_TOR_PIDFILE="$_pf" \
+          python3 "$DIR/tron-tor-helper"
+      fi
+    ) >>"$DATA/tor-helper.log" 2>&1 &
+  fi
+fi
+
 # Load every bundled extension (each subdir with a manifest.json).
 EXT=""
 for d in "$EXTBASE"/*/; do
   [ -f "${d}manifest.json" ] && EXT="${EXT:+$EXT,}${d%/}"
 done
+# Surface the AI-sidebar version + path so it's clear which extension loads.
+if [ -f "$EXTBASE/ai-sidebar/manifest.json" ]; then
+  _extver="$(sed -n 's/.*"version"[^"]*"\([^"]*\)".*/\1/p' "$EXTBASE/ai-sidebar/manifest.json" | head -n1)"
+  echo "TronBrowser: loading AI-sidebar extension v$_extver from $EXTBASE/ai-sidebar" >&2
+fi
 
 # Ungoogled Chromium blocks web-store .crx installs until this flag is set to
 # "Always prompt for install". Pre-seed it in the profile's Local State so the
@@ -107,10 +186,9 @@ if flag not in exp:
 PY
 fi
 
-# Default the omnibox to DuckDuckGo (Ungoogled ships no default search engine,
-# so keyword input becomes http://<keyword>). Only seeds on first run; the user
-# can change it in chrome://settings/search afterward.
-if command -v python3 >/dev/null 2>&1; then
+# Default the omnibox to NeoSearch once per profile, then respect the user's
+# chrome://settings/search choice.
+if command -v python3 >/dev/null 2>&1 && [ ! -f "$DATA/.tron-search-neosearch" ]; then
   TB_PREFS="$DATA/Default/Preferences" python3 - <<'PY' 2>/dev/null || true
 import json, os
 p = os.environ["TB_PREFS"]
@@ -119,17 +197,37 @@ try:
     d = json.load(open(p)) if os.path.exists(p) else {}
 except Exception:
     d = {}
-if not d.get("default_search_provider_data", {}).get("template_url_data"):
-    d.setdefault("default_search_provider_data", {})["template_url_data"] = {
-        "short_name": "DuckDuckGo",
-        "keyword": "duckduckgo.com",
-        "url": "https://duckduckgo.com/?q={searchTerms}",
-        "suggestions_url": "https://duckduckgo.com/ac/?q={searchTerms}&type=list",
-        "favicon_url": "https://duckduckgo.com/favicon.ico",
-        "safe_for_autoreplace": False,
-    }
-    json.dump(d, open(p, "w"))
+d.setdefault("default_search_provider_data", {})["template_url_data"] = {
+    "short_name": "NeoSearch",
+    "keyword": "neosearch.org",
+    "url": "https://neosearch.org/?q={searchTerms}",
+    "suggestions_url": "https://neosearch.org/suggestions?q={searchTerms}",
+    "favicon_url": "https://neosearch.org/favicon-32x32.png",
+    "safe_for_autoreplace": False,
+}
+json.dump(d, open(p, "w"))
 PY
+  mkdir -p "$DATA"; : > "$DATA/.tron-search-neosearch"
+fi
+
+# Show the feed (ai-sidebar New Tab page) on startup. We can't pass a startup URL —
+# chrome://newtab/ opens Chromium's DEFAULT NTP and chrome-extension:// pages are
+# blocked from the command line — but restore_on_startup=5 ("Open the New Tab page")
+# goes through the new-tab path, which honors the chrome_url_overrides feed. Once
+# per profile, then respect the user's chrome://settings/onStartup choice.
+if command -v python3 >/dev/null 2>&1 && [ ! -f "$DATA/.tron-startup-ntp" ]; then
+  TB_PREFS="$DATA/Default/Preferences" python3 - <<'PY' 2>/dev/null || true
+import json, os
+p = os.environ["TB_PREFS"]
+os.makedirs(os.path.dirname(p), exist_ok=True)
+try:
+    d = json.load(open(p)) if os.path.exists(p) else {}
+except Exception:
+    d = {}
+d.setdefault("session", {})["restore_on_startup"] = 5  # 5 = open the New Tab page
+json.dump(d, open(p, "w"))
+PY
+  mkdir -p "$DATA"; : > "$DATA/.tron-startup-ntp"
 fi
 
 # Auto-detection only ever selects Ungoogled Chromium / flatpak ungoogled / the
@@ -153,19 +251,43 @@ esac
 # if we can't confirm it, refuse. We never run a plain/unverified Chromium.app.
 # (Advanced users with a manual Ungoogled build can set TRONBROWSER_BROWSER.)
 if [ -n "$MAC_APP" ] && [ -z "${TRONBROWSER_BROWSER:-}" ]; then
-  if ! { command -v brew >/dev/null 2>&1 && brew list --cask ungoogled-chromium >/dev/null 2>&1; }; then
-    cat >&2 <<MSG
+  # Trust a build our own installer downloaded (marker records the verified app).
+  _verified=0
+  if [ -f "$DIR/.ungoogled-macos" ]; then
+    _m="$(cat "$DIR/.ungoogled-macos" 2>/dev/null)"
+    [ "$_m" = "$MAC_APP" ] && _verified=1
+  fi
+  # Otherwise require the Homebrew ungoogled-chromium cask as proof. Probe brew's
+  # known locations — a GUI/non-login launch won't have /opt/homebrew on PATH.
+  if [ "$_verified" = "0" ]; then
+    _brew=""
+    for b in brew /opt/homebrew/bin/brew /usr/local/bin/brew; do
+      command -v "$b" >/dev/null 2>&1 && { _brew="$b"; break; }
+    done
+    if [ -z "$_brew" ] || ! "$_brew" list --cask ungoogled-chromium >/dev/null 2>&1; then
+      cat >&2 <<MSG
 TronBrowser runs Ungoogled Chromium ONLY — it won't run plain/regular Chromium.
-Couldn't confirm '$MAC_APP' is the Ungoogled Chromium cask. Install it:
-  brew install --cask ungoogled-chromium --force
+Couldn't confirm '$MAC_APP' is the Ungoogled Chromium cask. Reinstall it (auto):
+  curl -fsSL https://tronbrowser.dev/install.sh | sh
 (Note: the Ungoogled cask installs as "Chromium.app" — that IS Ungoogled Chromium.)
 Advanced: point at a manual Ungoogled build with TRONBROWSER_BROWSER=/path/to/Chromium
 MSG
-    exit 1
+      exit 1
+    fi
   fi
 fi
 
-FLAGS="--user-data-dir=$DATA --class=TronBrowser --no-first-run --no-default-browser-check --no-pings --disable-background-networking --disable-breakpad --disable-domain-reliability --disable-sync --disable-features=Translate,OptimizationHints,InterestFeedContentSuggestions --load-extension=$EXT"
+# Keep Manifest V2 working so uBlock Origin (MV2) loads — recent Chromium disables
+# MV2 by default. (Ungoogled keeps MV2, but force it off everywhere to be safe.)
+MV2_KEEP="ExtensionManifestV2Disabled,ExtensionManifestV2Unsupported,ExtensionManifestV2DeprecationWarning,ExtensionManifestV2DeprecationUnsupported"
+FLAGS="--user-data-dir=$DATA --class=TronBrowser --no-first-run --no-default-browser-check --no-pings --disable-background-networking --disable-breakpad --disable-domain-reliability --disable-sync --disable-features=Translate,OptimizationHints,InterestFeedContentSuggestions,$MV2_KEEP --load-extension=$EXT"
+
+# Make the tab-strip audio indicator a clickable mute/unmute control. Upstream
+# media::kEnableTabMuting is DISABLED_BY_DEFAULT and stock Chrome only turns it
+# on via Finch, so an ungoogled build ships it OFF — the speaker icon renders
+# but you cannot tell which tab is making sound or mute it from the tab. Force
+# it on to match stock Chrome (Linux/KDE, macOS, Windows).
+FLAGS="$FLAGS --enable-features=EnableTabMuting"
 
 # Chromium spews benign ERROR/WARNING noise to stderr (EV cert OID, mojo
 # WidgetHost, GPU, etc.). Route it to a log so `tron <url>` returns clean;
@@ -173,20 +295,110 @@ FLAGS="--user-data-dir=$DATA --class=TronBrowser --no-first-run --no-default-bro
 LOG="${TRONBROWSER_LOG:-$DATA/tron.log}"
 FLAGS="$FLAGS --log-level=2"
 
+# --- Automation mode (managed sessions, M3.1) ----------------------------
+# `tron browser launch` (via tron-session) sets these to bring up a CDP-driven
+# managed session on a LOOPBACK DevTools port. Port 0 lets Chromium pick a free
+# port and write it to <profile>/DevToolsActivePort. This is additive: without
+# TRON_AUTOMATION_PORT the normal `tron <url>` launch is unchanged.
+if [ -n "${TRON_AUTOMATION_PORT:-}" ]; then
+  FLAGS="$FLAGS --remote-debugging-port=$TRON_AUTOMATION_PORT"
+  case "${TRON_AUTOMATION_HEADLESS:-0}" in
+    1|true|yes|on) FLAGS="$FLAGS --headless=new --disable-gpu" ;;
+  esac
+fi
+
+# --- Start the Tor daemon (only in --tor mode) ---------------------------
+# Resolve a bundled `tor` next to the launcher, else one on PATH. Start it on a
+# loopback SOCKS port, wait for the circuit to bootstrap, then add the proxy
+# flags. Chromium's SOCKS5 does REMOTE DNS, so names (incl. .onion) resolve
+# inside Tor; the WebRTC policy stops UDP leaking the real IP. The daemon is
+# killed when the browser exits (we don't `exec` in Tor mode).
+TOR_PID=""
+if [ "$TOR" = "1" ]; then
+  TORBIN=""
+  if [ -x "$DIR/tor" ]; then
+    TORBIN="$DIR/tor"
+  else
+    TORBIN="$(command -v tor 2>/dev/null || true)"
+  fi
+  if [ -z "$TORBIN" ]; then
+    cat >&2 <<MSG
+TronBrowser --tor needs the Tor daemon, which isn't installed.
+Install it:
+  macOS:  brew install tor
+  Debian/Ubuntu:  sudo apt install tor
+  Fedora:  sudo dnf install tor
+  Arch:  sudo pacman -S tor
+Then run 'tron --tor' again.
+MSG
+    exit 1
+  fi
+
+  TOR_LOG="$TOR_RUNTIME/tor.log"
+  : > "$TOR_LOG"
+  echo "TronBrowser: starting Tor (SOCKS 127.0.0.1:$TOR_SOCKS_PORT)…" >&2
+  "$TORBIN" --SocksPort "127.0.0.1:$TOR_SOCKS_PORT" \
+            --DataDirectory "$TOR_RUNTIME" \
+            >>"$TOR_LOG" 2>&1 &
+  TOR_PID=$!
+
+  # Make sure Tor dies with us, however we exit.
+  trap 'if [ -n "$TOR_PID" ]; then kill "$TOR_PID" 2>/dev/null || true; fi' EXIT INT TERM
+
+  # Wait (up to ~60s) for "Bootstrapped 100%". Bail if Tor dies first.
+  _waited=0
+  while :; do
+    if grep -q "Bootstrapped 100%" "$TOR_LOG" 2>/dev/null; then
+      echo "TronBrowser: Tor ready." >&2
+      break
+    fi
+    if ! kill -0 "$TOR_PID" 2>/dev/null; then
+      echo "TronBrowser: Tor exited before bootstrapping. See $TOR_LOG" >&2
+      exit 1
+    fi
+    if [ "$_waited" -ge 60 ]; then
+      echo "TronBrowser: Tor failed to bootstrap within 60s. See $TOR_LOG" >&2
+      exit 1
+    fi
+    sleep 1
+    _waited=$((_waited + 1))
+  done
+
+  FLAGS="$FLAGS --proxy-server=socks5://127.0.0.1:$TOR_SOCKS_PORT --proxy-bypass-list=<-loopback> --force-webrtc-ip-handling-policy=disable_non_proxied_udp"
+fi
+
+# In Tor mode we must NOT exec — we keep this shell alive so the EXIT trap can
+# stop the daemon after the browser closes. Otherwise exec (no extra process).
 if [ -n "$MAC_APP" ]; then
   # macOS: launch the .app via LaunchServices (`open`). Running the inner binary
   # directly SIGABRTs, and `-n` gives a separate instance from any running
   # Chromium. `open` detaches, so stderr noise never hits the terminal.
   # shellcheck disable=SC2086
-  exec open -na "$MAC_APP" --args $FLAGS "$@"
+  if [ "$TOR" = "1" ]; then
+    # `open` detaches, so we can't wait to reap Tor — disarm the trap and leave
+    # the daemon running for the detached browser. Tell the user how to stop it.
+    trap - EXIT INT TERM
+    echo "TronBrowser: Tor (pid $TOR_PID) will keep running for the browser. Stop it with: kill $TOR_PID" >&2
+    exec open -na "$MAC_APP" --args $FLAGS "$@"
+  else
+    exec open -na "$MAC_APP" --args $FLAGS "$@"
+  fi
 elif [ "$BROWSER" = "flatpak" ]; then
   # shellcheck disable=SC2086
-  [ "${TRONBROWSER_VERBOSE:-0}" = "1" ] \
-    && exec flatpak run --filesystem="$DATA" --filesystem="$EXTBASE_SRC" "$FLATPAK_APP" $FLAGS "$@" \
-    || exec flatpak run --filesystem="$DATA" --filesystem="$EXTBASE_SRC" "$FLATPAK_APP" $FLAGS "$@" 2>>"$LOG"
+  if [ "$TOR" = "1" ]; then
+    flatpak run --filesystem="$DATA" --filesystem="$EXTBASE_SRC" "$FLATPAK_APP" $FLAGS "$@" 2>>"$LOG"
+  elif [ "${TRONBROWSER_VERBOSE:-0}" = "1" ]; then
+    exec flatpak run --filesystem="$DATA" --filesystem="$EXTBASE_SRC" "$FLATPAK_APP" $FLAGS "$@"
+  else
+    exec flatpak run --filesystem="$DATA" --filesystem="$EXTBASE_SRC" "$FLATPAK_APP" $FLAGS "$@" 2>>"$LOG"
+  fi
 else
   # shellcheck disable=SC2086
-  [ "${TRONBROWSER_VERBOSE:-0}" = "1" ] \
-    && exec "$BROWSER" $FLAGS "$@" \
-    || exec "$BROWSER" $FLAGS "$@" 2>>"$LOG"
+  if [ "$TOR" = "1" ]; then
+    "$BROWSER" $FLAGS "$@" 2>>"$LOG"
+  elif [ "${TRONBROWSER_VERBOSE:-0}" = "1" ]; then
+    exec "$BROWSER" $FLAGS "$@"
+  else
+    exec "$BROWSER" $FLAGS "$@" 2>>"$LOG"
+  fi
 fi

@@ -2,6 +2,13 @@ import { PROVIDERS, chatStream } from './providers.js';
 import { renderMarkdown } from './markdown.js';
 
 const el = (id) => document.getElementById(id);
+
+// Show the loaded extension version (so it's obvious which build is running).
+try {
+  const v = chrome.runtime.getManifest().version;
+  const vEl = document.getElementById('ext-version');
+  if (vEl) vEl.textContent = `TronBrowser extension v${v}`;
+} catch (_) { /* manifest unavailable */ }
 const messagesEl = el('messages');
 const inputEl = el('input');
 const sendBtn = el('send');
@@ -128,6 +135,8 @@ inputEl.addEventListener('keydown', (e) => {
   }
 });
 
+el('chat').addEventListener('click', () => chrome.tabs.create({ url: chrome.runtime.getURL('chat.html') }));
+el('media').addEventListener('click', () => chrome.tabs.create({ url: chrome.runtime.getURL('media.html') }));
 el('settings').addEventListener('click', () => chrome.runtime.openOptionsPage());
 el('open-options').addEventListener('click', (e) => { e.preventDefault(); chrome.runtime.openOptionsPage(); });
 chrome.storage.onChanged.addListener((changes) => { if (changes.aiConfig) loadConfig(); });
@@ -142,4 +151,145 @@ async function consumePendingQuery() {
   }
 }
 
-(async () => { await loadConfig(); await consumePendingQuery(); })();
+// --- Tor toggle ----------------------------------------------------------
+// Flips the live session through Tor (background uses chrome.proxy). Convenience
+// routing, not Tor-Browser-grade — see docs/tor-onion-mode.md.
+const torBtn = el('tor');
+const torStatusEl = el('tor-status');
+const torProgressEl = el('tor-progress');
+const torProgressBar = el('tor-progress-bar');
+
+function showTorStatus(kind, html) {
+  torStatusEl.className = 'tor-status ' + kind;
+  torStatusEl.innerHTML = html;
+}
+function hideTorStatus() {
+  torStatusEl.className = 'tor-status hidden';
+  torStatusEl.textContent = '';
+}
+function showTorProgress(pct) {
+  torProgressEl.classList.remove('hidden');
+  torProgressBar.style.width = Math.max(0, Math.min(100, pct)) + '%';
+}
+function hideTorProgress() {
+  torProgressEl.classList.add('hidden');
+  torProgressBar.style.width = '0%';
+}
+
+// Live bootstrap progress pushed from the background while connecting.
+chrome.runtime.onMessage.addListener((m) => {
+  if (m && m.type === 'tor-progress') {
+    showTorProgress(m.pct);
+    showTorStatus('', `Connecting through Tor… ${Math.round(m.pct)}%`);
+  }
+});
+function setTorButton(on) {
+  torBtn.setAttribute('aria-pressed', on ? 'true' : 'false');
+  torBtn.textContent = on ? '🧅 Tor ON' : '🧅 Tor';
+}
+// IPs come from check.torproject.org; still strip to IP chars before injecting.
+function safeIp(ip) { return String(ip || '?').replace(/[^0-9a-fA-F.:]/g, ''); }
+
+async function refreshTorState() {
+  try {
+    const res = await chrome.runtime.sendMessage({ type: 'tor-status' });
+    setTorButton(!!(res && res.enabled));
+  } catch (_) { /* background may be asleep */ }
+}
+
+// Heads-up shown before the FIRST time Tor is turned on: enabling it here
+// reroutes EVERY tab in this profile — including already-signed-in ones — which
+// links anonymous browsing to your real identity via cookies/trackers. Resolves
+// true to proceed. Dismissible ("Don't show this again" → torWarnAck).
+const torWarnDlg = el('tor-warn');
+
+// Two faces of the same dialog: 'gate' (before enabling Tor) offers
+// Cancel / Continue & connect + the "don't show again" opt-out; 'info' (the ?
+// button) is a pure explainer with a single Got it button.
+function setTorWarnMode(mode) {
+  const info = mode === 'info';
+  el('tor-warn-ok').hidden = info;
+  el('tor-warn-ack').hidden = info;
+  el('tor-warn-cancel').textContent = info ? 'Got it' : 'Cancel';
+}
+
+function confirmTorWarning() {
+  return new Promise((resolve) => {
+    chrome.storage.local.get('torWarnAck').then(({ torWarnAck }) => {
+      if (torWarnAck) { resolve(true); return; }
+      setTorWarnMode('gate');
+      const hide = el('tor-warn-hide');
+      hide.checked = false;
+      const onClose = () => {
+        torWarnDlg.removeEventListener('close', onClose);
+        const ok = torWarnDlg.returnValue === 'ok';
+        if (ok && hide.checked) chrome.storage.local.set({ torWarnAck: true }).catch(() => {});
+        resolve(ok);
+      };
+      torWarnDlg.addEventListener('close', onClose);
+      torWarnDlg.returnValue = '';
+      torWarnDlg.showModal();
+    }).catch(() => resolve(true)); // storage unavailable → don't block the toggle
+  });
+}
+
+async function toggleTor() {
+  const turningOn = torBtn.getAttribute('aria-pressed') !== 'true';
+  if (turningOn && !(await confirmTorWarning())) return;
+  torBtn.classList.add('busy');
+  torBtn.disabled = true;
+  if (turningOn) {
+    showTorStatus('', 'Connecting through Tor… (the first run can take up to a minute)');
+    showTorProgress(0);
+  }
+  try {
+    const res = await chrome.runtime.sendMessage({ type: 'tor-set', on: turningOn });
+    const torBrowserNote =
+      'Not Tor-Browser-grade — for real anonymity use ' +
+      '<a href="https://www.torproject.org/" target="_blank" rel="noreferrer">Tor Browser</a>.';
+    if (!turningOn) {
+      setTorButton(false);
+      hideTorStatus();
+    } else if (res && res.enabled && res.check && res.check.ok && res.check.isTor) {
+      setTorButton(true);
+      showTorStatus('ok', `Connected via Tor · exit IP <code>${safeIp(res.check.ip)}</code>. ${torBrowserNote}`);
+    } else if (res && res.enabled) {
+      // Tor started and we're routing through it; the exit-IP probe just didn't
+      // confirm in time (a fresh circuit can be slow). Stay ON, don't alarm.
+      setTorButton(true);
+      showTorStatus('ok', `Tor is on — routing this session through Tor. ${torBrowserNote}`);
+    } else {
+      // Background couldn't route. Explain why, in plain language.
+      setTorButton(false);
+      const err = res && res.started && res.started.error;
+      if (err === 'tor-starting') {
+        showTorStatus('', 'Tor is still connecting — the first run downloads the Tor network and can take a minute or two. Click 🧅 again in a few seconds; it’ll finish in the background.');
+      } else if (err === 'tor-not-installed') {
+        showTorStatus('warn', 'Tor isn’t installed yet. Run <code>tron tor</code> once (it installs Tor automatically), then try again.');
+      } else if (err === 'unreachable') {
+        showTorStatus('warn', 'Couldn’t reach the Tor helper. Restart TronBrowser and try again, or run <code>tron tor</code>.');
+      } else {
+        showTorStatus('warn', 'Tor couldn’t start. See <code>~/.tronbrowser/tor-helper.log</code> for the reason.');
+      }
+    }
+  } catch (e) {
+    setTorButton(false);
+    showTorStatus('warn', 'Could not toggle Tor: ' + ((e && e.message) || e));
+  } finally {
+    hideTorProgress();
+    torBtn.classList.remove('busy');
+    torBtn.disabled = false;
+  }
+}
+
+torBtn.addEventListener('click', toggleTor);
+
+// The ? next to the Tor button opens the same explainer on demand (info mode —
+// never enables Tor, whatever button closes it).
+el('tor-info').addEventListener('click', () => {
+  setTorWarnMode('info');
+  torWarnDlg.returnValue = '';
+  torWarnDlg.showModal();
+});
+
+(async () => { await loadConfig(); await consumePendingQuery(); await refreshTorState(); })();

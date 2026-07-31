@@ -33,15 +33,101 @@ fetch_ublock() {
   rm -f "$z"  # keep $d (UBO_SRC lives inside) until the script exits
 }
 
+# Fetch MarkSyncr ONCE from the Chrome Web Store (latest published CRX). Open
+# source (github.com/profullstack/marksyncr.com), MV3 bookmark sync. Non-fatal.
+MKS_ID="hjcjjcpialiakkalcgadnfnoomdaegjg"
+MKS_SRC=""
+fetch_marksyncr() {
+  local url="https://clients2.google.com/service/update2/crx?response=redirect&acceptformat=crx2,crx3&prodversion=120.0.0.0&x=id%3D${MKS_ID}%26installsource%3Dondemand%26uc"
+  local z d m; z="$(mktemp)"; d="$(mktemp -d)"
+  if curl -fsSL -A "Mozilla/5.0 Chrome/120.0.0.0" "$url" -o "$z" 2>/dev/null; then
+    # CRX files have a header before the zip → unzip prints a warning and exits
+    # 1 even though it extracts fine; don't gate on its exit code.
+    unzip -q -o "$z" -d "$d" 2>/dev/null || true
+    m="$(find "$d" -maxdepth 2 -name manifest.json | head -1)"
+    if [ -n "$m" ]; then MKS_SRC="$(dirname "$m")"; echo "  + fetched MarkSyncr (CWS $MKS_ID)"; fi
+  fi
+  rm -f "$z"
+  [ -n "$MKS_SRC" ] || echo "  ! MarkSyncr fetch skipped (non-fatal)"
+}
+
+# The Node automation runtime for `tron snapshot|click|fill|extract|...` (M3.2/3)
+# and the `@tronbrowser/sdk` used by `tron run` (M3.4). Both packages' source has
+# no runtime deps, so their compiled dist trees are self-contained; ship each with
+# a {"type":"module"} marker and the shell dispatcher / tron-run.mjs run them via
+# node. Best-effort like the extension fetches — a build host without node/pnpm
+# simply omits them (the CLI then reports "run tron upgrade").
+stage_automation() { # dest dir
+  local s="$1"
+  command -v node >/dev/null 2>&1 && command -v pnpm >/dev/null 2>&1 || {
+    echo "  ! automation runtime skipped (needs node + pnpm)"; return; }
+  if ( cd "$REPO_ROOT" && pnpm --filter @tronbrowser/browser-core --filter @tronbrowser/agent-runtime --filter @tronbrowser/sdk build >/dev/null 2>&1 ); then
+    rm -rf "$s/automate" "$s/analyze" "$s/sdk"
+    cp -R "$REPO_ROOT/packages/browser-core/dist" "$s/automate"
+    printf '{\n  "type": "module"\n}\n' > "$s/automate/package.json"
+    cp -R "$REPO_ROOT/packages/agent-runtime/dist" "$s/analyze"
+    printf '{\n  "type": "module"\n}\n' > "$s/analyze/package.json"
+    cp -R "$REPO_ROOT/packages/sdk/dist" "$s/sdk"
+    printf '{\n  "type": "module"\n}\n' > "$s/sdk/package.json"
+    echo "  + bundled automation + analyze + SDK (tron snapshot/extract/analyze/run)"
+  else
+    echo "  ! automation runtime skipped (browser-core/agent-runtime/sdk build failed)"
+  fi
+}
+
 stage() { # dest dir
   local s="$1"
   mkdir -p "$s/extensions"
   install -m 0755 "$DESKTOP/launcher/tronbrowser" "$s/tronbrowser"
   cp "$DESKTOP/launcher/tronbrowser.cmd" "$s/tronbrowser.cmd"
-  cp -R "$DESKTOP/extensions/ai-sidebar" "$s/extensions/ai-sidebar"
+  # On-demand Tor control helper for the in-browser 🧅 Tor toggle (the launcher
+  # starts it; it starts Tor only when the toggle asks).
+  install -m 0755 "$DESKTOP/launcher/tron-tor-helper" "$s/tron-tor-helper"
+  # Managed-session engine for `tron browser …` / `tron open` (PRD M3.1). Sits
+  # next to the shim; the `tron` dispatcher resolves it relative to $CURRENT.
+  install -m 0755 "$DESKTOP/launcher/tron-session" "$s/tron-session"
+  # `tron run` launcher + ESM resolver hook (PRD M3.4) and the generic bin
+  # launcher used by `tron analyze` (PRD M3.5).
+  install -m 0644 "$DESKTOP/launcher/tron-run.mjs" "$s/tron-run.mjs"
+  install -m 0644 "$DESKTOP/launcher/tron-run-hooks.mjs" "$s/tron-run-hooks.mjs"
+  install -m 0644 "$DESKTOP/launcher/tron-node.mjs" "$s/tron-node.mjs"
+  stage_automation "$s"
+  # -L dereferences the branding symlinks (icons/logo.svg -> repo-root logo.svg)
+  # so the package contains real files, not dangling links.
+  cp -RL "$DESKTOP/extensions/ai-sidebar" "$s/extensions/ai-sidebar"
   cp "$REPO_ROOT/LICENSE" "$s/LICENSE"
-  cp "$REPO_ROOT/apps/web/public/favicon.svg" "$s/tronbrowser.svg"
+  # Branding from the repo-root single source of truth. The desktop/app icon uses
+  # the emblem on the dark tile (hero.svg) — favicon.svg is the transparent emblem
+  # and logo.svg is the full lockup, only for big displays, not tiny app icons.
+  cp -L "$REPO_ROOT/hero.svg" "$s/tronbrowser.svg"
+  cp -L "$REPO_ROOT/favicon.svg" "$s/favicon.svg"
+  cp -L "$REPO_ROOT/logo.svg" "$s/logo.svg"
+  cp -L "$REPO_ROOT/banner.png" "$s/banner.png"
+  # PNG app icon (emblem) for desktops that render SVG icons poorly (KDE).
+  cp -L "$REPO_ROOT/apps/web/public/icons/icon-512x512.png" "$s/tronbrowser.png" 2>/dev/null || true
   printf '%s\n' "$VERSION" > "$s/VERSION"
+
+  # Freedesktop .desktop entry so TronBrowser appears in app grids/menus —
+  # notably the Linux-phone shells (Phosh on Librem 5, Phosh/Plasma Mobile on
+  # PinePhone). The .deb installs this to /usr/share/applications; harmless in
+  # the tarball. StartupWMClass matches the isolated-profile Chromium window.
+  cat > "$s/tronbrowser.desktop" <<'DESKTOP'
+[Desktop Entry]
+Type=Application
+Name=TronBrowser
+GenericName=Web Browser
+Comment=Privacy-first, AI-native browser (Ungoogled Chromium)
+Exec=tron %U
+TryExec=tron
+Icon=tronbrowser
+Terminal=false
+Categories=Network;WebBrowser;
+MimeType=text/html;x-scheme-handler/http;x-scheme-handler/https;
+Keywords=web;browser;privacy;tor;ai;
+StartupNotify=true
+StartupWMClass=tronbrowser
+X-Purism-FormFactor=Workstation;Mobile;
+DESKTOP
 
   # NOTE: we no longer bundle NeverDecaf's chromium-web-store. Its manifest's
   # web_accessible_resources is rejected by some Chromium builds (macOS), which
@@ -53,6 +139,11 @@ stage() { # dest dir
   if [ -n "$UBO_SRC" ] && [ -d "$UBO_SRC" ]; then
     mkdir -p "$s/extensions/ublock-origin"
     cp -R "$UBO_SRC/." "$s/extensions/ublock-origin/"
+  fi
+  # Bundled bookmark sync: MarkSyncr (fetched once into $MKS_SRC).
+  if [ -n "$MKS_SRC" ] && [ -d "$MKS_SRC" ]; then
+    mkdir -p "$s/extensions/marksyncr"
+    cp -R "$MKS_SRC/." "$s/extensions/marksyncr/"
   fi
 }
 
@@ -68,6 +159,7 @@ build_archive() { # ext-type
 }
 
 fetch_ublock
+fetch_marksyncr
 
 case "$PLATFORM" in
   linux|macos|windows) build_archive "$PLATFORM" ;;

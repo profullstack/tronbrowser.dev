@@ -1,0 +1,14 @@
+{
+  "slug": "coinpay-wallet",
+  "name": "CoinPay Wallet",
+  "summary": "Non-custodial multi-chain wallet with one-click x402 payments.",
+  "description": "CoinPay Wallet is a non-custodial, cross-browser (MV3) wallet for the CoinPay multi-chain platform.\n\n- Create or import a BIP-39 wallet; the seed is encrypted at rest (WebCrypto AES-256-GCM + PBKDF2) and never leaves your device.\n- Derives addresses for BTC, BCH, ETH, POL and SOL (with USDC on ETH/POL/SOL), matching the CoinPay web wallet.\n- Backup-confirmation gate before the wallet is usable; configurable idle auto-lock.\n\nThis Phase 1 release ships wallet lifecycle + receive/address views. Send and one-click x402 (HTTP 402) payment approval land in subsequent updates. Source: https://github.com/profullstack/coinpayportal/tree/master/packages/extension",
+  "homepage_url": "https://coinpayportal.com",
+  "version": "0.0.1",
+  "manifest_version": 3,
+  "permissions": ["storage", "alarms", "https://coinpayportal.com/*"],
+  "bundle_url": "https://github.com/profullstack/coinpayportal/releases/download/extension-v0.0.1/coinpay-wallet.zip",
+  "crx_url": null,
+  "bundle_sha256": "d9442a103f5d75888c946b8ca9b7dc1acf309c8533b098e65d1e7673031cf233",
+  "published_at": "2026-07-05T00:00:00.000Z"
+}

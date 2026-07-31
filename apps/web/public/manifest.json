@@ -1,0 +1,16 @@
+{
+  "name": "TronBrowser",
+  "short_name": "TronBrowser",
+  "description": "Open-source, privacy-first, AI-native browser on Ungoogled Chromium. No telemetry, no ads. Bring your own AI keys.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#05070d",
+  "theme_color": "#05070d",
+  "orientation": "portrait-primary",
+  "icons": [
+    { "src": "/icons/icon-192x192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "/icons/icon-256x256.png", "sizes": "256x256", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-384x384.png", "sizes": "384x384", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-512x512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}

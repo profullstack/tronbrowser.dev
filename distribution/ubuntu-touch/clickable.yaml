@@ -1,0 +1,14 @@
+# Clickable config for the TronBrowser Ubuntu Touch click package.
+# https://clickable-ut.dev
+#
+# `pure` builder: no cross-compilation/containers — we ship the noarch launcher
+# tree, so the build just assembles files. `build.sh` stages the release tarball
+# into ./install before `clickable build` zips it into a .click.
+clickable_minimum_required: "8.0.0"
+builder: pure
+kill: tronbrowser-ut
+
+# Default target arch for phones. Override with `clickable build --arch armhf`.
+arch: arm64
+
+install_dir: install
