@@ -35,6 +35,9 @@ importers:
 
   apps/desktop:
     devDependencies:
+      '@moshcoder/moshpit-resolve':
+        specifier: ^0.1.1
+        version: 0.1.1
       typescript:
         specifier: ^5.6.3
         version: 5.9.3
@@ -1176,6 +1179,11 @@ packages:
         optional: true
       deepagents:
         optional: true
+
+  '@moshcoder/moshpit-resolve@0.1.1':
+    resolution: {integrity: sha512-l5IZQ73DFvxlYhdQnA6frl8BepWhibVtSLzucaok4d2G9mbR8Fe7PBKQygxXvILLllc+jyODIxt8qrK+LcbvkA==}
+    engines: {node: '>=18'}
+    hasBin: true
 
   '@neon-rs/load@0.0.4':
     resolution: {integrity: sha512-kTPhdZyTQxB+2wpiRcFWrDcejc4JI6tkPuS7UZCG4l6Zvc5kU/gGQ/ozvHTh1XR5tS+UlfAfGuPajjzQjCiHCw==}
@@ -4574,6 +4582,8 @@ snapshots:
     optionalDependencies:
       '@langchain/langgraph': 1.4.6(@langchain/core@1.2.1(openai@6.45.0(ws@8.21.0)(zod@4.4.3))(ws@8.21.0))(react@19.2.7)(zod@4.4.3)
       deepagents: 1.10.5(langsmith@0.7.12(openai@6.45.0(ws@8.21.0)(zod@4.4.3))(ws@8.21.0))(openai@6.45.0(ws@8.21.0)(zod@4.4.3))(react@19.2.7)(ws@8.21.0)
+
+  '@moshcoder/moshpit-resolve@0.1.1': {}
 
   '@neon-rs/load@0.0.4': {}
 

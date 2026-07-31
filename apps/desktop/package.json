@@ -24,6 +24,7 @@
     "chromium:package": "chromium/scripts/package.sh"
   },
   "devDependencies": {
+    "@moshcoder/moshpit-resolve": "^0.1.1",
     "typescript": "^5.6.3",
     "vitest": "^2.1.4"
   }
