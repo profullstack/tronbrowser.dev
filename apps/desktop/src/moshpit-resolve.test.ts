@@ -261,7 +261,7 @@ describe('decideResolution — parking unpointed names', () => {
       moshpit: unregistered,
     });
     expect(d.use).toBe('park');
-    expect(d.url).toBe('https://moshcoding.com/parking?name=california.oranges');
+    expect(d.url).toBe('https://pit.moshcode.sh/n/california.oranges');
   });
 
   it('parks a claimed name that is not pointed at an address yet', () => {
@@ -304,6 +304,6 @@ describe('decideResolution — parking unpointed names', () => {
       moshpit: unregistered,
       parkingBase: 'https://my.park/',
     });
-    expect(d.url).toBe('https://my.park/parking?name=california.oranges');
+    expect(d.url).toBe('https://my.park/n/california.oranges');
   });
 });

@@ -138,7 +138,7 @@ describe('destinationFor — parking', () => {
     globalThis.chrome = { storage: { local: { get: async () => ({ moshpitConfig: { mode: 'clearnet' } }) } } };
     globalThis.fetch = async () => ({ ok: true, json: async () => ({ name_registered: false, target: null }) });
     expect(await js.destinationFor('california.oranges', false)).toBe(
-      'https://moshcoding.com/parking?name=california.oranges',
+      'https://pit.moshcode.sh/n/california.oranges',
     );
   });
 
@@ -168,7 +168,7 @@ describe('lookupMoshpit — the registry payload as it really is', () => {
       prefer: 'fallback',
     });
     expect(await js.destinationFor('california.oranges', false)).toBe(
-      'https://moshcoding.com/parking?name=california.oranges',
+      'https://pit.moshcode.sh/n/california.oranges',
     );
   });
 
@@ -230,5 +230,33 @@ describe('the lookup budget', () => {
   it('leaves room for a slow network without stalling navigation', () => {
     expect(js.DEFAULT_LOOKUP_TIMEOUT_MS).toBeGreaterThan(4000);
     expect(js.DEFAULT_LOOKUP_TIMEOUT_MS).toBeLessThanOrEqual(10000);
+  });
+});
+
+describe('parking sends a name somewhere that exists', () => {
+  it('parks at the registry, not at a route nobody ever built', () => {
+    // moshcoding.com/parking has never existed — that is the Next.js site, not
+    // the registry. Every unpointed name 404'd, which from a browser is
+    // indistinguishable from the namespace not working at all.
+    expect(js.parkingUrlFor('scrambled.eggs')).toBe('https://pit.moshcode.sh/n/scrambled.eggs');
+    expect(js.DEFAULT_PARKING_BASE).toBe('https://pit.moshcode.sh');
+  });
+
+  it('agrees with the TS source of truth', () => {
+    expect(js.parkingUrlFor('scrambled.eggs')).toBe(ts.parkingUrlFor('scrambled.eggs'));
+    expect(js.DEFAULT_PARKING_BASE).toBe(ts.DEFAULT_PARKING_BASE);
+  });
+
+  it('parks and fetches at the same route, because it is the same question', () => {
+    // /n/ serves a pointed name and shows the directory for an unpointed one.
+    expect(js.parkingUrlFor('a.eggs')).toBe(js.gatewayUrlFor('a.eggs'));
+  });
+
+  it('still honours a self-hosted parking base', () => {
+    expect(js.parkingUrlFor('a.eggs', 'https://my.pit/')).toBe('https://my.pit/n/a.eggs');
+  });
+
+  it('escapes the name rather than pasting it into a URL', () => {
+    expect(js.parkingUrlFor('a b.eggs')).toBe('https://pit.moshcode.sh/n/a%20b.eggs');
   });
 });

@@ -18,13 +18,23 @@ export const DEFAULT_CONSOLE_BASE = 'https://app.moshcode.sh';
 // `mosh.eggs` and own the page people use to check who holds `.eggs`.
 export const CONSOLE_LABEL = 'mosh';
 
-// Where a name with no destination yet is parked. A name inside the namespace
-// should never dead-end on ERR_NAME_NOT_RESOLVED.
-export const DEFAULT_PARKING_BASE = 'https://moshcoding.com';
+// Where a name with no destination yet is parked.
+//
+// The registry's own /n/<name>, which is also where a *pointed* name is
+// fetched — one route handles both, because "what is behind this name" and
+// "there is nothing behind this name yet" are the same question with different
+// answers. It shows what else lives under that ending and which endings are
+// related, so an unclaimed name is a way into the namespace instead of a dead
+// end.
+//
+// It was moshcoding.com/parking, which has never existed — that is the Next.js
+// site, not the registry, and it has no such route. Every unpointed name
+// 404'd, which is indistinguishable from the namespace not working.
+export const DEFAULT_PARKING_BASE = 'https://pit.moshcode.sh';
 
 /** The parking page for a name with no destination yet. */
 export function parkingUrlFor(name, parkingBase = DEFAULT_PARKING_BASE) {
-  return `${parkingBase.replace(/\/+$/, '')}/parking?name=${encodeURIComponent(name)}`;
+  return `${parkingBase.replace(/\/+$/, '')}/n/${encodeURIComponent(name)}`;
 }
 
 /**
