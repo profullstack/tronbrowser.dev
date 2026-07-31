@@ -1,3 +1,5 @@
+import { destinationFor, moshpitConfig, parseRegistryName } from './moshpit.js';
+
 // Open the AI side panel when the toolbar action is clicked.
 chrome.sidePanel
   .setPanelBehavior({ openPanelOnActionClick: true })
@@ -288,3 +290,68 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     }
   } catch (_) { /* best effort */ }
 })();
+
+// --- Moshpit name resolution ---------------------------------------------
+// This is what makes the Moshpit settings on the options page actually do
+// something: until now they were written to storage and never read.
+//
+// Two hooks, because "does clearnet answer for this name?" is only knowable at
+// two different moments:
+//
+//   onErrorOccurred — DNS came up empty (ERR_NAME_NOT_RESOLVED). This is the
+//     backfill path, and the ONLY one active in the default 'clearnet' mode, so
+//     someone who has never heard of Moshpit gets ordinary browsing plus a
+//     rescued error page. Nothing that already works is touched.
+//
+//   onBeforeNavigate — consulted ONLY in 'moshpit' mode, where a registered
+//     name is meant to win even though clearnet has an answer. It costs a
+//     registry round-trip before navigation, which is why the default mode
+//     never goes near it.
+//
+// No redirect loop: every destination we send a tab to (pit.moshcode.sh/n/…,
+// app.moshcode.sh/pit) has three labels, so parseRegistryName rejects it and
+// the hooks ignore it on the way back through.
+
+const DNS_FAILED = new Set([
+  'net::ERR_NAME_NOT_RESOLVED',
+  'net::ERR_NAME_RESOLUTION_FAILED',
+]);
+
+function moshpitHostname(url) {
+  try {
+    const u = new URL(url);
+    if (u.protocol !== 'http:' && u.protocol !== 'https:') return '';
+    return parseRegistryName(u.hostname) ? u.hostname : '';
+  } catch {
+    return '';
+  }
+}
+
+async function sendTabTo(tabId, url) {
+  try {
+    await chrome.tabs.update(tabId, { url });
+  } catch (err) {
+    console.warn('moshpit redirect:', err);
+  }
+}
+
+chrome.webNavigation?.onErrorOccurred.addListener(async (details) => {
+  if (details.frameId !== 0) return; // top-level navigations only
+  if (!DNS_FAILED.has(details.error)) return;
+  const hostname = moshpitHostname(details.url);
+  if (!hostname) return;
+  const dest = await destinationFor(hostname, false);
+  if (dest) await sendTabTo(details.tabId, dest);
+});
+
+chrome.webNavigation?.onBeforeNavigate.addListener(async (details) => {
+  if (details.frameId !== 0) return;
+  const hostname = moshpitHostname(details.url);
+  if (!hostname) return;
+  // The default mode must never pre-empt a working clearnet domain — bail out
+  // before the registry is ever contacted.
+  const { mode } = await moshpitConfig();
+  if (mode !== 'moshpit') return;
+  const dest = await destinationFor(hostname, true);
+  if (dest) await sendTabTo(details.tabId, dest);
+});
