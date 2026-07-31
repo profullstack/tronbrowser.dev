@@ -77,6 +77,25 @@
   <label for="syncUrl">Self-hosted sync backend URL (optional)</label>
   <input id="syncUrl" placeholder="leave blank to use the managed cloud" />
 
+  <h2>Name resolution</h2>
+  <p class="hint">
+    Moshpit names (<code>fuck.yeah</code>, <code>original.sploof</code>) always resolve here —
+    clearnet has never heard of those endings. This setting only decides what happens when
+    <em>both</em> namespaces answer, e.g. <code>profullstack.ai</code>.
+  </p>
+  <label for="moshpitMode">When a name exists in both</label>
+  <select id="moshpitMode">
+    <option value="clearnet">Clearnet wins — use Moshpit only to fill gaps (default)</option>
+    <option value="moshpit">Moshpit wins — override the clearnet domain</option>
+  </select>
+  <p class="hint">
+    Overriding means a domain someone else holds on clearnet resolves to <em>your</em> Moshpit
+    registration instead. Left on the default, a domain that already works is never redirected.
+  </p>
+  <label for="moshpitRegistry">Registry (advanced)</label>
+  <input id="moshpitRegistry" placeholder="https://pit.moshcode.sh" />
+  <div id="savedMoshpit" class="hint"></div>
+
   <h2>AI providers (bring your own keys)</h2>
   <p class="hint">Add keys for as many providers as you like, then pick a default for
   the sidebar. Keys are stored on your account (encrypted end-to-end when a vault
