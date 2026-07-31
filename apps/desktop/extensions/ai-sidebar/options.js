@@ -388,12 +388,20 @@ el("syncUrl").addEventListener("change", async () => {
   });
 });
 async function saveMoshpit() {
-  await chrome.storage.local.set({
-    moshpitConfig: {
-      mode: el("moshpitMode").value === "moshpit" ? "moshpit" : "clearnet",
-      registryBase: el("moshpitRegistry").value.trim(),
-    },
-  });
+  // Only what was actually filled in. Writing an empty field would store "",
+  // and a stored value — even an empty one — is a decision this code then has
+  // to keep honouring. Leaving a field out is what lets it keep following
+  // whatever the shipped default becomes.
+  const registryBase = el("moshpitRegistry").value.trim();
+  const previous = (await chrome.storage.local.get("moshpitConfig")).moshpitConfig || {};
+  const next = {
+    ...previous,
+    mode: el("moshpitMode").value === "moshpit" ? "moshpit" : "clearnet",
+  };
+  if (registryBase) next.registryBase = registryBase;
+  else delete next.registryBase;
+
+  await chrome.storage.local.set({ moshpitConfig: next });
   flash(
     "savedMoshpit",
     el("moshpitMode").value === "moshpit"

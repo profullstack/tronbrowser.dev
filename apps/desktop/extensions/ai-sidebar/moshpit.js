@@ -77,16 +77,44 @@ export function moshpitBypassHosts(config) {
   return hosts;
 }
 
+/**
+ * Bases that a previous version shipped as its default and that must not
+ * survive an upgrade.
+ *
+ * A stored value beats the shipped default — that is the point of storing one —
+ * but it makes a settings write indistinguishable from a deliberate choice. An
+ * install that ever persisted moshcoding.com as its parking base keeps pointing
+ * at a route that has never existed, through every future release, and no
+ * amount of shipping the right default fixes it.
+ *
+ * So a stored value that merely repeats a superseded default is treated as
+ * absent. A base someone actually chose is untouched, because it will not be on
+ * this list.
+ */
+const SUPERSEDED_BASES = new Set([
+  'https://moshcoding.com',   // parking, before /n/ existed
+  'http://moshcoding.com',
+]);
+
+/** A stored base, unless it is a stale default in disguise. */
+function storedBase(value, fallback) {
+  const base = String(value || '').trim().replace(/\/+$/, '');
+  if (!base || SUPERSEDED_BASES.has(base)) return fallback.replace(/\/+$/, '');
+  return base;
+}
+
 /** Read the settings the options page writes. */
 export async function moshpitConfig() {
   const { moshpitConfig: cfg } = await chrome.storage.local.get('moshpitConfig');
   return {
     mode: cfg?.mode === 'moshpit' ? 'moshpit' : 'clearnet',
-    registryBase: (cfg?.registryBase || DEFAULT_REGISTRY_BASE).replace(/\/+$/, ''),
-    consoleBase: (cfg?.consoleBase || DEFAULT_CONSOLE_BASE).replace(/\/+$/, ''),
-    parkingBase: (cfg?.parkingBase || DEFAULT_PARKING_BASE).replace(/\/+$/, ''),
+    registryBase: storedBase(cfg?.registryBase, DEFAULT_REGISTRY_BASE),
+    consoleBase: storedBase(cfg?.consoleBase, DEFAULT_CONSOLE_BASE),
+    parkingBase: storedBase(cfg?.parkingBase, DEFAULT_PARKING_BASE),
   };
 }
+
+export { SUPERSEDED_BASES, storedBase };
 
 /**
  * Split a hostname the way the registry does: exactly one label and one TLD.
