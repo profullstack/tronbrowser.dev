@@ -1,6 +1,6 @@
 {
   "name": "@tronbrowser/ui",
-  "version": "3.8.7",
+  "version": "3.8.8",
   "private": true,
   "description": "Shared UI components and design tokens",
   "type": "module",
