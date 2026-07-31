@@ -93,10 +93,12 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     chrome.sidePanel.open(opts).catch((err) => console.warn('sidePanel open:', err));
   }
 
-  // bittorrented.com connect callback: the ext-callback content script captured
-  // the API token from the redirect fragment. Store it and close the tab.
-  if (msg?.type === 'btr-token' && msg.token) {
-    chrome.storage.local.set({ btrToken: msg.token });
+  // Token-grant callback: the ext-callback content script captured a token from
+  // the redirect fragment and told us which flow it belongs to ('tbAuthToken'
+  // for TronBrowser sign-in, 'btrToken' for bittorrented.com). It already stored
+  // it — we mirror the write for safety and close the tab.
+  if (msg?.type === 'ext-token' && msg.token) {
+    chrome.storage.local.set({ [msg.key || 'btrToken']: msg.token });
     if (sender.tab?.id != null) chrome.tabs.remove(sender.tab.id).catch(() => {});
   }
 });

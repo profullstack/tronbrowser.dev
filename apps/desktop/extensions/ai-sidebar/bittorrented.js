@@ -1,6 +1,6 @@
 // Connect a bittorrented.com account to TronBrowser via the hosted token-grant
-// flow (chrome.identity). bittorrented.com/connect mints a bearer token and
-// redirects back to the extension's chromiumapp.org callback with #token=...
+// flow. bittorrented.com/connect mints a bearer token and redirects back to
+// tronbrowser.dev/ext-callback.html with #token=... (see connect() below).
 // The token is stored locally (per device) and sent as `Authorization: Bearer`
 // to bittorrented.com's /api/v1/* endpoints (favorites, live TV, radio, podcasts).
 
