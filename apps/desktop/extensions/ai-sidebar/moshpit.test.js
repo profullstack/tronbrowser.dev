@@ -186,3 +186,49 @@ describe('lookupMoshpit — the registry payload as it really is', () => {
     expect((await js.lookupMoshpit('x.eggs')).target).toBe('203.0.113.7');
   });
 });
+
+describe('hosts that bypass Tor', () => {
+  it('lifts the hostname out of each configured base', () => {
+    expect(js.moshpitBypassHosts({
+      registryBase: 'https://pit.moshcode.sh',
+      consoleBase: 'https://app.moshcode.sh',
+      parkingBase: 'https://app.moshcode.sh',
+    })).toEqual(['pit.moshcode.sh', 'app.moshcode.sh']);
+  });
+
+  it('follows a self-hosted pit rather than hardcoding the public one', () => {
+    // The whole reason this is computed: someone pointing at their own pit
+    // needs the same bypass, or Tor breaks resolution for them and not for us.
+    expect(js.moshpitBypassHosts({ registryBase: 'https://my.pit:8443' }))
+      .toEqual(['my.pit']);
+  });
+
+  it('drops a port, since a proxy bypass entry matches on host', () => {
+    expect(js.moshpitBypassHosts({ registryBase: 'https://pit.example:9443' }))
+      .toEqual(['pit.example']);
+  });
+
+  it('survives missing or unparseable bases instead of throwing', () => {
+    // Called while enabling Tor; throwing here would leave the proxy unset and
+    // the browser routing in the clear while the badge says TOR.
+    expect(js.moshpitBypassHosts({})).toEqual([]);
+    expect(js.moshpitBypassHosts(undefined)).toEqual([]);
+    expect(js.moshpitBypassHosts({ registryBase: 'not a url' })).toEqual([]);
+  });
+
+  it('never routes loopback through Tor by accident', () => {
+    expect(js.moshpitBypassHosts({ registryBase: 'http://127.0.0.1:8787' }))
+      .toEqual(['127.0.0.1']);
+  });
+});
+
+describe('the lookup budget', () => {
+  it('is the same in both ports', () => {
+    expect(js.DEFAULT_LOOKUP_TIMEOUT_MS).toBe(ts.DEFAULT_LOOKUP_TIMEOUT_MS);
+  });
+
+  it('leaves room for a slow network without stalling navigation', () => {
+    expect(js.DEFAULT_LOOKUP_TIMEOUT_MS).toBeGreaterThan(4000);
+    expect(js.DEFAULT_LOOKUP_TIMEOUT_MS).toBeLessThanOrEqual(10000);
+  });
+});

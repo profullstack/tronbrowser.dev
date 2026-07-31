@@ -30,6 +30,15 @@ export type ResolveMode = 'clearnet' | 'moshpit';
 
 export const DEFAULT_RESOLVE_MODE: ResolveMode = 'clearnet';
 
+/**
+ * How long a registry lookup may take before navigation gives up on it.
+ *
+ * A budget, not a worst case: this sits in front of navigation, and exceeding
+ * it falls back to clearnet. Kept in step with the extension port in
+ * extensions/ai-sidebar/moshpit.js.
+ */
+export const DEFAULT_LOOKUP_TIMEOUT_MS = 8000;
+
 /** The public registry. Overridable so a self-hosted pit can be pointed at. */
 export const DEFAULT_REGISTRY_BASE = 'https://pit.moshcode.sh';
 
@@ -255,7 +264,7 @@ export async function lookupMoshpit(
   const base = (options.registryBase ?? DEFAULT_REGISTRY_BASE).replace(/\/+$/, '');
   const fetchImpl = options.fetchImpl ?? fetch;
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), options.timeoutMs ?? 4000);
+  const timer = setTimeout(() => controller.abort(), options.timeoutMs ?? DEFAULT_LOOKUP_TIMEOUT_MS);
   try {
     const url = `${base}/api/moshpit/resolve?name=${encodeURIComponent(`${parsed.label}.${parsed.tld}`)}`;
     const res = await fetchImpl(url, { signal: controller.signal });
