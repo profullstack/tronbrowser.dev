@@ -10,8 +10,10 @@ import {
   consoleUrlFor,
 } from './moshpit-resolve';
 
-const registered = (resolved: string): MoshpitLookup => ({ registered: true, resolved });
-const unregistered: MoshpitLookup = { registered: false, resolved: '' };
+const registered = (resolved: string): MoshpitLookup => ({ registered: true, resolved, target: '203.0.113.7' });
+const unregistered: MoshpitLookup = { registered: false, resolved: '', target: null };
+/** Claimed, but never pointed at an address — the state every name starts in. */
+const unpointed = (name: string): MoshpitLookup => ({ registered: true, resolved: name, target: null });
 
 describe('decideResolution — clearnet mode (the default)', () => {
   it('defaults to clearnet', () => {
@@ -132,7 +134,22 @@ describe('lookupMoshpit', () => {
     const result = await lookupMoshpit('profullstack.agentic', {
       fetchImpl: okFetch({ name: 'profullstack.agentic', resolved: 'profullstack.agent', registered: true }),
     });
-    expect(result).toEqual({ registered: true, resolved: 'profullstack.agent' });
+    expect(result).toEqual({ registered: true, resolved: 'profullstack.agent', target: null });
+  });
+
+  it('prefers name_registered over the TLD-level registered flag', async () => {
+    const result = await lookupMoshpit('x.eggs', {
+      // `.eggs` is claimed by someone, but `x.eggs` itself is not.
+      fetchImpl: okFetch({ registered: true, name_registered: false, resolved: 'x.eggs', target: null }),
+    });
+    expect(result).toEqual({ registered: false, resolved: 'x.eggs', target: null });
+  });
+
+  it('carries the target through — it is what separates live from parked', async () => {
+    const result = await lookupMoshpit('x.eggs', {
+      fetchImpl: okFetch({ name_registered: true, resolved: 'x.eggs', target: '203.0.113.7' }),
+    });
+    expect(result?.target).toBe('203.0.113.7');
   });
 
   it('never asks about a name the registry could not hold', async () => {
@@ -232,5 +249,61 @@ describe('decideResolution — the registration console', () => {
       consoleBase: 'https://my.console',
     });
     expect(d.url).toBe('https://my.console/pit?tld=eggs');
+  });
+});
+
+describe('decideResolution — parking unpointed names', () => {
+  it('parks an unclaimed name instead of dead-ending on a DNS error', () => {
+    const d = decideResolution({
+      hostname: 'california.oranges',
+      mode: 'clearnet',
+      clearnetResolves: false,
+      moshpit: unregistered,
+    });
+    expect(d.use).toBe('park');
+    expect(d.url).toBe('https://moshcoding.com/parking?name=california.oranges');
+  });
+
+  it('parks a claimed name that is not pointed at an address yet', () => {
+    const d = decideResolution({
+      hostname: 'california.oranges',
+      mode: 'moshpit',
+      clearnetResolves: false,
+      moshpit: unpointed('california.oranges'),
+    });
+    expect(d.use).toBe('park');
+  });
+
+  it('never replaces a working clearnet domain with a parking page', () => {
+    for (const mode of ['clearnet', 'moshpit'] as const) {
+      const d = decideResolution({
+        hostname: 'example.com',
+        mode,
+        clearnetResolves: true,
+        moshpit: unregistered,
+      });
+      expect(d.use).toBe('clearnet');
+    }
+  });
+
+  it('does not park when the registry was unreachable — that would be a lie', () => {
+    const d = decideResolution({
+      hostname: 'california.oranges',
+      mode: 'clearnet',
+      clearnetResolves: false,
+      moshpit: null,
+    });
+    expect(d.use).toBe('clearnet');
+  });
+
+  it('honours an overridden parking base', () => {
+    const d = decideResolution({
+      hostname: 'california.oranges',
+      mode: 'clearnet',
+      clearnetResolves: false,
+      moshpit: unregistered,
+      parkingBase: 'https://my.park/',
+    });
+    expect(d.url).toBe('https://my.park/parking?name=california.oranges');
   });
 });
