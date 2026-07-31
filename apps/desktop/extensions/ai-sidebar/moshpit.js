@@ -27,6 +27,46 @@ export function parkingUrlFor(name, parkingBase = DEFAULT_PARKING_BASE) {
   return `${parkingBase.replace(/\/+$/, '')}/parking?name=${encodeURIComponent(name)}`;
 }
 
+/**
+ * How long a registry lookup may take before navigation gives up on it.
+ *
+ * This sits in front of navigation, so it is a budget rather than a guess at
+ * the worst case: exceeding it falls back to clearnet, which is the right
+ * answer for a registry that is down but the wrong one for a registry that was
+ * merely slow. 4s was tight for a phone on a bad connection and hopeless for
+ * anything routed through Tor.
+ */
+export const DEFAULT_LOOKUP_TIMEOUT_MS = 8000;
+
+/**
+ * The hosts that must not be routed through Tor.
+ *
+ * Resolution asks the registry a question before every Moshpit navigation, and
+ * a cold Tor circuit does not answer inside the lookup budget — so with Tor on
+ * and no bypass, real Moshpit names quietly resolve as ordinary clearnet ones
+ * and the namespace appears not to work.
+ *
+ * The trade is deliberate and worth stating: bypassing means the network path
+ * sees which Moshpit names are being looked up, and the registry sees the real
+ * IP. Neither was hidden before — the registry is told the name either way, and
+ * the console is where the account is signed in — so what Tor protected on this
+ * leg was close to nothing, at the cost of the feature working at all.
+ *
+ * Built from the configured bases rather than hardcoded, so a self-hosted pit
+ * gets the same treatment as the public one.
+ */
+export function moshpitBypassHosts(config) {
+  const hosts = [];
+  for (const base of [config?.registryBase, config?.consoleBase, config?.parkingBase]) {
+    if (!base) continue;
+    try {
+      const { hostname } = new URL(base);
+      if (hostname && !hosts.includes(hostname)) hosts.push(hostname);
+    } catch { /* an unparseable base is simply not bypassed */ }
+  }
+  return hosts;
+}
+
 /** Read the settings the options page writes. */
 export async function moshpitConfig() {
   const { moshpitConfig: cfg } = await chrome.storage.local.get('moshpitConfig');
@@ -72,7 +112,7 @@ export function gatewayUrlFor(resolved, registryBase = DEFAULT_REGISTRY_BASE) {
  * resolution sits in front of every navigation, so a registry that is slow,
  * down, or serving nonsense must degrade to "clearnet as usual".
  */
-export async function lookupMoshpit(hostname, { registryBase, timeoutMs = 4000 } = {}) {
+export async function lookupMoshpit(hostname, { registryBase, timeoutMs = DEFAULT_LOOKUP_TIMEOUT_MS } = {}) {
   const parsed = parseRegistryName(hostname);
   if (!parsed) return null;
   const base = (registryBase || DEFAULT_REGISTRY_BASE).replace(/\/+$/, '');

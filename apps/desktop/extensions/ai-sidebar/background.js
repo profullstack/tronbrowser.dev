@@ -1,4 +1,4 @@
-import { destinationFor, moshpitConfig, parseRegistryName } from './moshpit.js';
+import { destinationFor, moshpitBypassHosts, moshpitConfig, parseRegistryName } from './moshpit.js';
 
 // Open the AI side panel when the toolbar action is clicked.
 chrome.sidePanel
@@ -168,7 +168,7 @@ async function stopTorViaHelper() {
   } catch (_) { /* helper not running — nothing to stop */ }
 }
 
-function torProxyConfig(port) {
+function torProxyConfig(port, pitHosts = []) {
   return {
     mode: 'fixed_servers',
     rules: {
@@ -177,7 +177,13 @@ function torProxyConfig(port) {
       singleProxy: { scheme: 'socks5', host: '127.0.0.1', port },
       // Loopback must bypass Tor: the SOCKS port + the control helper are on
       // 127.0.0.1, and Tor refuses to proxy private addresses anyway.
-      bypassList: ['localhost', '127.0.0.1', '[::1]'],
+      //
+      // The pit's own hosts bypass too. Resolution asks the registry a question
+      // before a Moshpit navigation can complete, and a cold Tor circuit does
+      // not answer inside the lookup budget — so routing them through Tor made
+      // every Moshpit name fall back to clearnet, which looks exactly like the
+      // namespace not existing. See moshpitBypassHosts for the privacy trade.
+      bypassList: ['localhost', '127.0.0.1', '[::1]', ...pitHosts],
     },
   };
 }
@@ -191,7 +197,11 @@ async function setTorBadge(on) {
 }
 
 async function enableTor() {
-  await chrome.proxy.settings.set({ value: torProxyConfig(TOR_SOCKS_PORT), scope: 'regular' });
+  // Read at enable time rather than cached: the options page can repoint the
+  // registry at a self-hosted pit between one toggle and the next.
+  let pitHosts = [];
+  try { pitHosts = moshpitBypassHosts(await moshpitConfig()); } catch (_) { /* defaults are enough */ }
+  await chrome.proxy.settings.set({ value: torProxyConfig(TOR_SOCKS_PORT, pitHosts), scope: 'regular' });
   // Stop WebRTC from leaking the real IP via non-proxied UDP.
   try {
     await chrome.privacy.network.webRTCIPHandlingPolicy.set({ value: 'disable_non_proxied_udp' });
