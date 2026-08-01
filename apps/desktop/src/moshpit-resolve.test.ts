@@ -307,3 +307,28 @@ describe('decideResolution — parking unpointed names', () => {
     expect(d.url).toBe('https://my.park/n/california.oranges');
   });
 });
+
+describe('dashes are not part of a Moshpit name', () => {
+  // Kept identical to the registry on purpose. A name this accepts and the
+  // registry rejects forwards the tab to a page saying it does not exist,
+  // which is a worse failure than refusing it here.
+  it('refuses a dash anywhere in either half', () => {
+    for (const host of [
+      'lazy-loaded.eggs',
+      'blue.lazy-loaded',
+      'register-me.eggs',
+      'a-b.c-d',
+      '-bad.eggs',
+      'bad-.eggs',
+    ]) {
+      expect(parseRegistryName(host), host).toBeNull();
+    }
+  });
+
+  it('still accepts what the registry accepts', () => {
+    expect(parseRegistryName('california.oranges')).toEqual({ label: 'california', tld: 'oranges' });
+    expect(parseRegistryName('blue.420')).toEqual({ label: 'blue', tld: '420' });
+    expect(parseRegistryName(`${'a'.repeat(63)}.eggs`)).toEqual({ label: 'a'.repeat(63), tld: 'eggs' });
+    expect(parseRegistryName(`${'a'.repeat(64)}.eggs`)).toBeNull();
+  });
+});

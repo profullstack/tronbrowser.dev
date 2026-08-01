@@ -23,6 +23,12 @@ import * as pkg from '@moshcoder/moshpit-resolve';
 const HOSTNAMES = [
   'blue.eggs', 'a.b.c', '1.2.3.4', 'localhost', '', 'eggs', 'mosh.eggs',
   'blue.420', '420.blue', '1.420', '192.168', 'x.y', 'A.EGGS.',
+  // Dashes. The list carried none, so a divergence on whether a dash may
+  // appear inside a label read as green across all three implementations.
+  'lazy-loaded',
+  'blue.lazy-loaded',
+  'register-me.eggs',
+  'a-b.c-d',
 ];
 
 const LOOKUPS = [

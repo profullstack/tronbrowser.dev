@@ -237,7 +237,14 @@ export function parseRegistryName(hostname: string): { label: string; tld: strin
   // narrow an array to a 2-tuple from a length check. An empty label would
   // fail LABEL.test() anyway, so this guard changes no behavior.
   if (!label || !tld) return null;
-  const LABEL = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
+  // Letters and digits only, no dashes — the same rule the registry enforces.
+  // A dash is the cheapest way to mint a near-miss of an ending someone else
+  // holds (`.cryp-to` beside `.crypto`), and this namespace is one level deep
+  // and first come first served, so there is nothing to appeal into. Keeping
+  // this identical to the registry matters more than the rule itself: a name
+  // this accepts and the registry rejects forwards to a page saying it does
+  // not exist.
+  const LABEL = /^[a-z0-9]{1,63}$/;
   if (!LABEL.test(label) || !LABEL.test(tld)) return null;
   return { label, tld };
 }
