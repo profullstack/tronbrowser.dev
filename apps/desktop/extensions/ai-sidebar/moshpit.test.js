@@ -23,6 +23,15 @@ const HOSTNAMES = [
   'mosh',
   '',
   'x.y',
+  // Dashes. The list carried none, so a change to whether a dash may appear in
+  // a label could land in one implementation and not the other and every
+  // assertion below would still agree.
+  'lazy-loaded',
+  'blue.lazy-loaded',
+  'register-me.eggs',
+  'a-b.c-d',
+  '-bad.eggs',
+  'bad-.eggs',
 ];
 
 describe('moshpit.js is faithful to moshpit-resolve.ts', () => {
