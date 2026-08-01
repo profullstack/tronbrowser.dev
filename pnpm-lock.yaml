@@ -36,8 +36,8 @@ importers:
   apps/desktop:
     devDependencies:
       '@moshcoder/moshpit-resolve':
-        specifier: ^0.1.1
-        version: 0.1.1
+        specifier: ^0.1.2
+        version: 0.1.2
       typescript:
         specifier: ^5.6.3
         version: 5.9.3
@@ -1180,8 +1180,8 @@ packages:
       deepagents:
         optional: true
 
-  '@moshcoder/moshpit-resolve@0.1.1':
-    resolution: {integrity: sha512-l5IZQ73DFvxlYhdQnA6frl8BepWhibVtSLzucaok4d2G9mbR8Fe7PBKQygxXvILLllc+jyODIxt8qrK+LcbvkA==}
+  '@moshcoder/moshpit-resolve@0.1.2':
+    resolution: {integrity: sha512-HaU3v22oVb4TonsHPVtWfBvd9t8VYL+lvO7HCj0BLdQTLPLz8aytimfF4i16+iFTamGamBydPuwvZRrtQPlNQw==}
     engines: {node: '>=18'}
     hasBin: true
 
@@ -2461,6 +2461,7 @@ packages:
 
   libsql@0.4.7:
     resolution: {integrity: sha512-T9eIRCs6b0J1SHKYIvD8+KCJMcWZ900iZyxdnSCdqxN12Z1ijzT+jY5nrk72Jw4B0HGzms2NgpryArlJqvc3Lw==}
+    cpu: [x64, arm64, wasm32]
     os: [darwin, linux, win32]
 
   lighthouse-logger@1.4.2:
@@ -4583,7 +4584,7 @@ snapshots:
       '@langchain/langgraph': 1.4.6(@langchain/core@1.2.1(openai@6.45.0(ws@8.21.0)(zod@4.4.3))(ws@8.21.0))(react@19.2.7)(zod@4.4.3)
       deepagents: 1.10.5(langsmith@0.7.12(openai@6.45.0(ws@8.21.0)(zod@4.4.3))(ws@8.21.0))(openai@6.45.0(ws@8.21.0)(zod@4.4.3))(react@19.2.7)(ws@8.21.0)
 
-  '@moshcoder/moshpit-resolve@0.1.1': {}
+  '@moshcoder/moshpit-resolve@0.1.2': {}
 
   '@neon-rs/load@0.0.4': {}
 
