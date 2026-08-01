@@ -24,7 +24,7 @@ import {
 } from './payments.js';
 import { enqueueScan } from './vu1nz.js';
 import { mirrorListing } from './mirror.js';
-import { fetchArtifact, artifactToZip, extractListingFromCrx } from './crx.js';
+import { fetchArtifact, artifactToZip, extractListingFromCrx, stampUpdateUrl } from './crx.js';
 import { scanArtifact, type ExtensionScanResult } from './scanner.js';
 import { generateSigningKey, encryptPrivateKey, decryptPrivateKey, packCrx } from './signing.js';
 import { createScan, updateScan } from './db.js';
@@ -220,7 +220,11 @@ store.get('/extensions/:slug/download.crx', async (c) => {
 
   try {
     const buf = await fetchArtifact(url);
-    const crx = packCrx(artifactToZip(buf), decryptPrivateKey(key.private_key_enc), Buffer.from(key.public_key_der, 'base64'));
+    // Stamp our gupdate feed in before signing, or the install pins itself to
+    // this version forever: Chromium polls the manifest's own update_url and
+    // most publishers never set one. See stampUpdateUrl.
+    const zip = stampUpdateUrl(artifactToZip(buf), `${APP_URL}/api/store/updates.xml?id=${ext.id}`);
+    const crx = packCrx(zip, decryptPrivateKey(key.private_key_enc), Buffer.from(key.public_key_der, 'base64'));
     c.header('content-type', 'application/x-chrome-extension');
     c.header('content-disposition', `attachment; filename="${ext.slug}-${ver!.version}.crx"`);
     // Hono wants an ArrayBuffer, not a Node Buffer view over a pooled one.
