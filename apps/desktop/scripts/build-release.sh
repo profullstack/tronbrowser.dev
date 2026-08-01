@@ -95,6 +95,12 @@ stage() { # dest dir
   # -L dereferences the branding symlinks (icons/logo.svg -> repo-root logo.svg)
   # so the package contains real files, not dangling links.
   cp -RL "$DESKTOP/extensions/ai-sidebar" "$s/extensions/ai-sidebar"
+  # The copy is wholesale, so the vitest files sitting next to the extension
+  # sources ride along. Chrome never loads them — they are not in manifest.json
+  # and nothing it does load imports them — but they are dead weight in every
+  # download, and moshpit-drift.test.js imports @moshcoder/moshpit-resolve, a
+  # devDependency that cannot resolve from an unbundled extension.
+  find "$s/extensions/ai-sidebar" -name '*.test.js' -delete
   cp "$REPO_ROOT/LICENSE" "$s/LICENSE"
   # Branding from the repo-root single source of truth. The desktop/app icon uses
   # the emblem on the dark tile (hero.svg) — favicon.svg is the transparent emblem
