@@ -9,6 +9,7 @@ import {
   View,
 } from 'react-native';
 import { WebView } from 'react-native-webview';
+import { HOME, normalizeUrl } from '../lib/navigation';
 import { theme } from '../theme';
 
 /**
@@ -19,17 +20,6 @@ import { theme } from '../theme';
  * Ungoogled Chromium engine (see docs/mobile-architecture.md — the engine ships
  * via the native Android build and the Linux-phone desktop build, not Expo).
  */
-const HOME = 'https://tronbrowser.dev';
-
-function normalizeUrl(input: string): string {
-  const trimmed = input.trim();
-  if (!trimmed) return HOME;
-  if (/^https?:\/\//i.test(trimmed)) return trimmed;
-  // A bare domain-looking string → https; otherwise treat as a search query.
-  if (/^[\w-]+(\.[\w-]+)+/.test(trimmed)) return `https://${trimmed}`;
-  return `https://duckduckgo.com/?q=${encodeURIComponent(trimmed)}`;
-}
-
 export function BrowserScreen() {
   const webRef = useRef<WebView>(null);
   const [address, setAddress] = useState(HOME);
