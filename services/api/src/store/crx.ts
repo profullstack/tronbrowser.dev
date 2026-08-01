@@ -3,7 +3,7 @@
 // extension's own manifest.json + icons — so publishers don't fill out forms.
 //
 // Pure parsing (fetch is separate + guarded) so it's unit-testable.
-import { unzipSync, strFromU8 } from 'fflate';
+import { unzipSync, zipSync, strFromU8, strToU8 } from 'fflate';
 
 export interface IngestedListing {
   name: string;
@@ -57,6 +57,43 @@ export function artifactToZip(buf: Uint8Array): Uint8Array {
     return buf;
   }
   throw new Error('not a .crx or .zip bundle');
+}
+
+/**
+ * Stamp the store's gupdate feed into manifest.json before the zip is signed.
+ *
+ * Chromium only polls the `update_url` baked into the *installed* manifest — it
+ * never consults the feed the store advertises on the listing page. So a
+ * publisher who omits `update_url` (most of them: it points at us, and they
+ * write their manifest long before they list here) ships an extension that
+ * pins itself to whatever version was installed and never moves again. The
+ * store then serves a perfectly correct updates.xml that nothing ever asks for.
+ *
+ * We pack the .crx on the fly and already know the feed URL, so we set it here.
+ * Overwriting any existing value is deliberate: the id of this .crx comes from
+ * the store's signing key, and only the store's feed can serve an update
+ * Chromium will accept for that id — a publisher's own update_url would point
+ * at a different id and silently do nothing.
+ *
+ * Must run before packCrx: the CRX3 signature covers these exact zip bytes.
+ *
+ * Re-zipping keeps every file byte-identical but drops the archive's empty
+ * directory entries; Chromium recreates those from the file paths.
+ */
+export function stampUpdateUrl(zip: Uint8Array, updateUrl: string): Uint8Array {
+  const files = unzipSync(zip, { filter: (f) => !f.name.endsWith('/') });
+  const manifestBytes = files['manifest.json'];
+  if (!manifestBytes) throw new Error('bundle has no manifest.json');
+  let manifest: any;
+  try {
+    manifest = JSON.parse(strFromU8(manifestBytes));
+  } catch (e: any) {
+    throw new Error(`manifest.json is not valid JSON: ${e.message}`);
+  }
+  if (manifest.update_url === updateUrl) return zip; // already ours — don't re-zip
+  manifest.update_url = updateUrl;
+  files['manifest.json'] = strToU8(`${JSON.stringify(manifest, null, 2)}\n`);
+  return zipSync(files);
 }
 
 function iconToDataUri(path: string, bytes: Uint8Array): string | null {
