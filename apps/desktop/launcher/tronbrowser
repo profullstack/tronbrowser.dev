@@ -186,9 +186,10 @@ if flag not in exp:
 PY
 fi
 
-# Default the omnibox to NeoSearch once per profile, then respect the user's
-# chrome://settings/search choice.
-if command -v python3 >/dev/null 2>&1 && [ ! -f "$DATA/.tron-search-neosearch" ]; then
+# Default the omnibox to Kagi once per profile, then respect the user's
+# chrome://settings/search choice. The sentinel filename carries the engine so
+# that changing the default here re-applies once on profiles created earlier.
+if command -v python3 >/dev/null 2>&1 && [ ! -f "$DATA/.tron-search-kagi" ]; then
   TB_PREFS="$DATA/Default/Preferences" python3 - <<'PY' 2>/dev/null || true
 import json, os
 p = os.environ["TB_PREFS"]
@@ -198,16 +199,16 @@ try:
 except Exception:
     d = {}
 d.setdefault("default_search_provider_data", {})["template_url_data"] = {
-    "short_name": "NeoSearch",
-    "keyword": "neosearch.org",
-    "url": "https://neosearch.org/?q={searchTerms}",
-    "suggestions_url": "https://neosearch.org/suggestions?q={searchTerms}",
-    "favicon_url": "https://neosearch.org/favicon-32x32.png",
+    "short_name": "Kagi",
+    "keyword": "kagi.com",
+    "url": "https://kagi.com/search?q={searchTerms}",
+    "suggestions_url": "https://kagi.com/api/autosuggest?q={searchTerms}",
+    "favicon_url": "https://kagi.com/favicon.ico",
     "safe_for_autoreplace": False,
 }
 json.dump(d, open(p, "w"))
 PY
-  mkdir -p "$DATA"; : > "$DATA/.tron-search-neosearch"
+  mkdir -p "$DATA"; : > "$DATA/.tron-search-kagi"
 fi
 
 # Show the feed (ai-sidebar New Tab page) on startup. We can't pass a startup URL —

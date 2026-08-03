@@ -11,8 +11,9 @@ const DEFAULT_TICKERS = 'SPY, AAPL, NVDA, BTC-USD';
 const DEFAULT_LEAGUES = 'nfl, nba';
 const splitList = (s) => String(s || '').split(',').map((x) => x.trim()).filter(Boolean);
 
-// --- Search: Web (NeoSearch by default) or AI (sidebar) ---
+// --- Search: Web (Kagi by default) or AI (sidebar) ---
 const SEARCH_ENGINES = {
+  kagi: { name: 'Kagi', url: 'https://kagi.com/search?q=' },
   neosearch: { name: 'NeoSearch', url: 'https://neosearch.org/?q=' },
   xprivo: { name: 'Xprivo', url: 'https://www.xprivo.com/search/?q=' },
   ddg: { name: 'DuckDuckGo', url: 'https://duckduckgo.com/?q=' },
@@ -36,7 +37,7 @@ const TOR_SEARCH_ENGINES = {
   excavator: { name: 'Excavator', url: 'http://2fd6cemt4gmccflhm6imvdfvli3nf7zn6rfrwpsy7uhxrgbypvwf5fad.onion/?q=' },
 };
 let searchMode = 'web';
-let searchEngine = 'neosearch';
+let searchEngine = 'kagi';
 let torSearchEngine = 'ahmia';
 let torEnabled = false;
 
@@ -44,7 +45,7 @@ let torEnabled = false;
 // is on, otherwise the clearnet default.
 function activeEngine() {
   if (torEnabled) return TOR_SEARCH_ENGINES[torSearchEngine] || TOR_SEARCH_ENGINES.ahmia;
-  return SEARCH_ENGINES[searchEngine] || SEARCH_ENGINES.neosearch;
+  return SEARCH_ENGINES[searchEngine] || SEARCH_ENGINES.kagi;
 }
 
 function setMode(mode) {

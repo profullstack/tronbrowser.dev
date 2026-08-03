@@ -23,19 +23,19 @@ describe('normalizeUrl', () => {
 
   it('searches ordinary text', () => {
     expect(normalizeUrl('privacy first browser')).toBe(
-      'https://duckduckgo.com/?q=privacy%20first%20browser',
+      'https://kagi.com/search?q=privacy%20first%20browser',
     );
   });
 
   it('searches unsupported schemes instead of loading them', () => {
     expect(normalizeUrl('javascript:alert(1)')).toBe(
-      'https://duckduckgo.com/?q=javascript%3Aalert(1)',
+      'https://kagi.com/search?q=javascript%3Aalert(1)',
     );
   });
 
   it('does not treat domain-looking text with spaces as a URL', () => {
     expect(normalizeUrl('example.com malicious suffix')).toBe(
-      'https://duckduckgo.com/?q=example.com%20malicious%20suffix',
+      'https://kagi.com/search?q=example.com%20malicious%20suffix',
     );
   });
 });
