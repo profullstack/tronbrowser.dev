@@ -6,10 +6,18 @@ on:
     paths:
       - 'apps/mobile/**'
       - '.github/workflows/mobile.yml'
+      - '.nvmrc'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
   pull_request:
     paths:
       - 'apps/mobile/**'
       - '.github/workflows/mobile.yml'
+      - '.nvmrc'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
   # EAS cloud builds / store submits are manual so they don't burn build
   # credits on every push. Trigger from the Actions tab → "Run workflow".
   workflow_dispatch:
@@ -29,13 +37,16 @@ on:
         type: boolean
         default: false
 
+permissions:
+  contents: read
+
 defaults:
   run:
     working-directory: apps/mobile
 
 jobs:
-  # Fast, free check on every push/PR: typecheck, lint, and prove the JS bundle
-  # builds via `expo export` (no device, no EAS minutes).
+  # Fast, free check on every push/PR: typecheck, lint, test, and prove both JS
+  # bundles build via `expo export` (no device, no EAS minutes).
   ci:
     runs-on: ubuntu-latest
     steps:
@@ -45,7 +56,7 @@ jobs:
 
       - uses: actions/setup-node@v5
         with:
-          node-version: lts/*
+          node-version-file: .nvmrc
           cache: pnpm
 
       - name: Install
@@ -58,8 +69,11 @@ jobs:
       - name: Lint
         run: pnpm lint
 
+      - name: Test
+        run: pnpm test
+
       - name: Bundle (expo export)
-        run: pnpm exec expo export --platform android --output-dir dist-export
+        run: pnpm export
 
   # Cloud build + optional store submit via EAS. Requires the EXPO_TOKEN repo
   # secret (Expo account access token). iOS/Android signing credentials are
@@ -74,7 +88,7 @@ jobs:
 
       - uses: actions/setup-node@v5
         with:
-          node-version: lts/*
+          node-version-file: .nvmrc
           cache: pnpm
 
       - name: Install

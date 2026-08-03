@@ -7,7 +7,7 @@
   "scripts": {
     "build": "tsc --noEmit",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run --passWithNoTests",
+    "test": "vitest run",
     "lint": "eslint . --ext .ts,.tsx",
     "start": "expo start",
     "android": "expo run:android",
@@ -15,12 +15,20 @@
     "export": "expo export --platform all",
     "prebuild": "expo prebuild"
   },
+  "expo": {
+    "install": {
+      "exclude": [
+        "typescript"
+      ]
+    }
+  },
   "dependencies": {
-    "expo": "^57.0.1",
-    "expo-constants": "~57.0.2",
-    "expo-status-bar": "~57.0.0",
+    "@expo/dom-webview": "~57.0.1",
+    "expo": "~57.0.9",
+    "expo-constants": "~57.0.8",
+    "expo-status-bar": "~57.0.1",
     "react": "19.2.3",
-    "react-native": "0.86.0",
+    "react-native": "0.86.2",
     "react-native-webview": "13.16.1"
   },
   "devDependencies": {

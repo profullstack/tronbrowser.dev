@@ -13,8 +13,6 @@ config.resolver.nodeModulesPaths = [
   path.resolve(projectRoot, 'node_modules'),
   path.resolve(workspaceRoot, 'node_modules'),
 ];
-// pnpm stores real packages under a symlinked layout; follow them.
-config.resolver.unstable_enableSymlinks = true;
 config.resolver.disableHierarchicalLookup = false;
 
 module.exports = config;
