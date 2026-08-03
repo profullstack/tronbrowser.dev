@@ -4,6 +4,9 @@ TronBrowser mobile **companion** app (iOS + Android) — **Expo / React Native**
 Expo SDK 57. See [`docs/mobile-architecture.md`](../../docs/mobile-architecture.md)
 for how this fits the three mobile tracks.
 
+Build prerequisites and the EAS access checklist are documented in
+[`BUILD_READINESS.md`](BUILD_READINESS.md).
+
 > **This is the companion app, not the engine.** It uses the *system* WebView
 > (WKWebView on iOS — mandatory; system WebView on Android), so it is **not** the
 > Ungoogled Chromium engine and has **no Chrome extensions / no bundled Tor**.
