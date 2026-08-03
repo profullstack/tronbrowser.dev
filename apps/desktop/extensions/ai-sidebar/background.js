@@ -1,4 +1,5 @@
-import { destinationFor, moshpitBypassHosts, moshpitConfig, parseRegistryName } from './moshpit.js';
+import { destinationFor, moshpitBypassHosts, moshpitConfig } from './moshpit.js';
+import { routeForDnsFailure, routeForNavigation, territoryOf } from './moshpit-routing.js';
 
 // Open the AI side panel when the toolbar action is clicked.
 chrome.sidePanel
@@ -305,18 +306,27 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 // This is what makes the Moshpit settings on the options page actually do
 // something: until now they were written to storage and never read.
 //
-// Two hooks, because "does clearnet answer for this name?" is only knowable at
-// two different moments:
+// Which namespace a hostname belongs to is decided by its ENDING, not by
+// whether DNS failed. See tlds.js for why: a resolver that hijacks NXDOMAIN
+// answers for `blue.eggs` too, so "DNS failed" is a signal we do not reliably
+// get, and on those connections the whole namespace silently stopped working.
 //
-//   onErrorOccurred — DNS came up empty (ERR_NAME_NOT_RESOLVED). This is the
-//     backfill path, and the ONLY one active in the default 'clearnet' mode, so
-//     someone who has never heard of Moshpit gets ordinary browsing plus a
-//     rescued error page. Nothing that already works is touched.
+// So there are two territories, and a hostname is in exactly one:
 //
-//   onBeforeNavigate — consulted ONLY in 'moshpit' mode, where a registered
-//     name is meant to win even though clearnet has an answer. It costs a
-//     registry round-trip before navigation, which is why the default mode
-//     never goes near it.
+//   An ending only Moshpit could own (`.eggs` — not IANA's, not reserved).
+//     Clearnet cannot legitimately answer for it, so resolution runs in BOTH
+//     modes and does not wait for a DNS error that may never come. This is the
+//     path that a hijacking resolver used to swallow.
+//
+//   A real or reserved ending (`.com`, `.onion`, `.local`). Ordinary browsing,
+//     and the default mode never touches the registry for it — no round-trip,
+//     no added latency, nothing on the wire. Only the opt-in 'moshpit' mode
+//     consults the registry here, because only it lets a registered name
+//     override a working clearnet domain, and that is what it costs.
+//
+// onErrorOccurred still backfills a real ending whose DNS genuinely failed —
+// that is an honest signal when we get it, and it is how a `.com` that nobody
+// registered can still fall through to Moshpit.
 //
 // No redirect loop: every destination we send a tab to (pit.moshcode.sh/n/…,
 // app.moshcode.sh/pit) has three labels, so parseRegistryName rejects it and
@@ -327,11 +337,13 @@ const DNS_FAILED = new Set([
   'net::ERR_NAME_RESOLUTION_FAILED',
 ]);
 
-function moshpitHostname(url) {
+// The hostname of a top-level http(s) navigation. Whether it is ours to touch
+// is routeForNavigation's call, not this one's.
+function navigationHostname(url) {
   try {
     const u = new URL(url);
     if (u.protocol !== 'http:' && u.protocol !== 'https:') return '';
-    return parseRegistryName(u.hostname) ? u.hostname : '';
+    return u.hostname;
   } catch {
     return '';
   }
@@ -348,20 +360,28 @@ async function sendTabTo(tabId, url) {
 chrome.webNavigation?.onErrorOccurred.addListener(async (details) => {
   if (details.frameId !== 0) return; // top-level navigations only
   if (!DNS_FAILED.has(details.error)) return;
-  const hostname = moshpitHostname(details.url);
-  if (!hostname) return;
-  const dest = await destinationFor(hostname, false);
+  const hostname = navigationHostname(details.url);
+  const route = routeForDnsFailure(hostname);
+  if (!route.resolve) return;
+  const dest = await destinationFor(hostname, route.clearnetResolves);
   if (dest) await sendTabTo(details.tabId, dest);
 });
 
 chrome.webNavigation?.onBeforeNavigate.addListener(async (details) => {
   if (details.frameId !== 0) return;
-  const hostname = moshpitHostname(details.url);
-  if (!hostname) return;
-  // The default mode must never pre-empt a working clearnet domain — bail out
-  // before the registry is ever contacted.
-  const { mode } = await moshpitConfig();
-  if (mode !== 'moshpit') return;
-  const dest = await destinationFor(hostname, true);
+  const hostname = navigationHostname(details.url);
+
+  // The territory is decided from the hostname alone, so an ordinary navigation
+  // to a real ending costs one Set lookup — no storage read, no registry call.
+  // Only 'clearnet' has an answer that depends on the mode, so only it pays for
+  // reading the mode.
+  const territory = territoryOf(hostname);
+  if (territory === 'none' || territory === 'reserved') return;
+  const mode = territory === 'clearnet' ? (await moshpitConfig()).mode : 'clearnet';
+
+  const route = routeForNavigation(hostname, mode);
+  if (!route.resolve) return;
+
+  const dest = await destinationFor(hostname, route.clearnetResolves);
   if (dest) await sendTabTo(details.tabId, dest);
 });
