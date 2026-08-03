@@ -96,6 +96,7 @@ Usage:
   tron trace start|stop Record commands into a .trontrace bundle
   tron replay <bundle>  Replay a recorded trace against the session
   tron upgrade          Update to the latest release
+  tron clean            Clear browser caches (keeps bookmarks, logins, history)
   tron remove           Uninstall TronBrowser (keeps your profile data)
   tron version          Print the installed version
   tron help             Show this help
@@ -249,6 +250,24 @@ case "${1:-}" in
     exec "$TORBIN" --SocksPort 127.0.0.1:9071 --DataDirectory "$TOR_DATA" ;;
   upgrade|update)
     exec sh -c "curl -fsSL '$INSTALL_URL' | sh -s -- upgrade" ;;
+  clean)
+    # `tron upgrade` clears these too, once they pass a size threshold — see
+    # prune_profile_caches in install.sh. This copy is deliberate: cleaning a
+    # bloated profile is exactly when you don't want to need the network.
+    # Regenerable caches only; bookmarks, passwords, history and cookies stay.
+    for _data in "${TRONBROWSER_DATA:-$HOME/.tronbrowser}" "$HOME/TronBrowser"; do
+      [ -d "$_data/Default" ] || continue
+      if command -v pgrep >/dev/null 2>&1 && pgrep -f "user-data-dir=$_data" >/dev/null 2>&1; then
+        echo "TronBrowser is running — quit it first, then run 'tron clean'." >&2
+        continue
+      fi
+      _freed="$(du -sm "$_data/Default/Cache" "$_data/Default/Code Cache" \
+                       "$_data/Default/Service Worker" 2>/dev/null \
+                | awk '{t += $1} END {print t + 0}')"
+      [ "${_freed:-0}" -gt 0 ] || continue
+      rm -rf "$_data/Default/Cache" "$_data/Default/Code Cache" "$_data/Default/Service Worker"
+      echo "Freed ~${_freed}MB from $_data. Bookmarks, passwords and logins untouched."
+    done ;;
   remove|uninstall)
     rm -rf "$APP_DIR"
     rm -f "$PREFIX/bin/tron" "$PREFIX/bin/tronbrowser" "$PREFIX/share/applications/tronbrowser.desktop"
@@ -586,7 +605,83 @@ DESKTOP
   esac
 }
 
+# Clear the profile's regenerable caches once they get big enough to hurt.
+#
+# Chromium's disk caches have no ceiling that matters here. Service-worker
+# CacheStorage in particular is quota-managed per origin, so a handful of heavy
+# sites can carry a profile into the gigabytes on their own. Past roughly a
+# gigabyte the cost stops being disk and starts being latency: the CacheStorage
+# index is consulted on navigation, and once it is bloated, scrolling and tab
+# switching go with it. The failure is gradual and then sudden, which makes it
+# read as "the browser broke today" — a profile that had grown to 3.9G, with
+# 1.4G of CacheStorage, is what prompted this.
+#
+# None of these three directories holds bookmarks, passwords, history or
+# cookies, so clearing them costs a re-download and nothing else. Upgrade is the
+# right moment: it is the one command every user already runs, and the browser
+# is usually closed for it.
+#
+# `$1` = "force" to clear regardless of size (that is `tron clean`).
+# TRONBROWSER_CACHE_LIMIT_MB=0 disables the automatic pass entirely.
+PROFILE_CACHES="Cache
+Code Cache
+Service Worker"
+
+dir_mb() {
+  [ -d "$1" ] || { echo 0; return 0; }
+  _mb="$(du -sm "$1" 2>/dev/null | awk 'NR==1{print $1}')"
+  echo "${_mb:-0}"
+}
+
+prune_profile_caches() {
+  _force="${1:-}"
+  _limit="${TRONBROWSER_CACHE_LIMIT_MB:-1024}"
+  if [ "$_force" != "force" ] && [ "$_limit" = "0" ]; then
+    return 0
+  fi
+
+  for _data in "${TRONBROWSER_DATA:-$HOME/.tronbrowser}" "$HOME/TronBrowser"; do
+    [ -d "$_data/Default" ] || continue
+
+    # Never unlink these under a live browser. The profile is memory-mapped, and
+    # pulling it out from underneath Chromium gives you a corrupt profile rather
+    # than a clean one.
+    if command -v pgrep >/dev/null 2>&1 && pgrep -f "user-data-dir=$_data" >/dev/null 2>&1; then
+      warn "TronBrowser is running — leaving $_data alone. Quit it, then run 'tron clean'."
+      continue
+    fi
+
+    _total=0
+    _old_ifs="$IFS"; IFS="
+"
+    for _c in $PROFILE_CACHES; do
+      _total=$((_total + $(dir_mb "$_data/Default/$_c")))
+    done
+    IFS="$_old_ifs"
+
+    if [ "$_force" != "force" ] && [ "$_total" -lt "$_limit" ]; then
+      continue
+    fi
+    if [ "$_total" -eq 0 ]; then
+      continue
+    fi
+
+    info "Clearing ${_total}MB of browser cache from $_data (bookmarks, passwords, history and logins are untouched)."
+    _old_ifs="$IFS"; IFS="
+"
+    for _c in $PROFILE_CACHES; do
+      rm -rf "$_data/Default/$_c"
+    done
+    IFS="$_old_ifs"
+    say "Freed ~${_total}MB. Cached assets re-download on demand; push notifications need re-granting."
+  done
+}
+
 do_upgrade() {
+  # Before anything else, so a running browser is reported while the user is
+  # still watching, and so the check happens even when already up to date.
+  prune_profile_caches
+
   if [ ! -f "$VERSION_FILE" ]; then
     warn "TronBrowser not installed; installing fresh."
     do_install
@@ -628,15 +723,19 @@ Usage: curl -fsSL $INSTALL_URL | sh [-s -- <command>]
 Commands:
   install    Download and install the latest TronBrowser (default)
   upgrade    Update an existing install to the latest release
+  clean      Clear the profile's browser caches (keeps bookmarks/logins).
+             'clean --if-large' only acts past TRONBROWSER_CACHE_LIMIT_MB
   remove     Uninstall TronBrowser (keeps your profile data)
   version    Print the installed version
   help       Show this help
 
-After install, prefer the 'tron' CLI: tron upgrade | tron remove | tron version
+After install, prefer the 'tron' CLI: tron upgrade | tron clean | tron remove
 
 Env:
-  TRONBROWSER_PREFIX   install prefix (default: \$HOME/.local)
-  TRONBROWSER_REPO     GitHub repo (default: $REPO)
+  TRONBROWSER_PREFIX          install prefix (default: \$HOME/.local)
+  TRONBROWSER_REPO            GitHub repo (default: $REPO)
+  TRONBROWSER_CACHE_LIMIT_MB  clear profile caches on upgrade once they exceed
+                              this (default: 1024; 0 disables)
 EOF
 }
 
@@ -644,6 +743,13 @@ cmd="${1:-install}"
 case "$cmd" in
   install) do_install ;;
   upgrade|update) do_upgrade ;;
+  clean)
+    # Bare `clean` always clears; --if-large respects TRONBROWSER_CACHE_LIMIT_MB
+    # and is the pass `tron upgrade` runs for you.
+    case "${2:-}" in
+      --if-large) prune_profile_caches ;;
+      *)          prune_profile_caches force ;;
+    esac ;;
   remove|uninstall) do_remove ;;
   ensure-tor) ensure_tor ;;
   version|--version|-v) do_version ;;
