@@ -37,6 +37,9 @@ on:
         type: boolean
         default: false
 
+permissions:
+  contents: read
+
 defaults:
   run:
     working-directory: apps/mobile
