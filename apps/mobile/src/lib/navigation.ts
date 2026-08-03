@@ -4,7 +4,7 @@ const DOMAIN_OR_IP =
   /^(?:(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}|(?:\d{1,3}\.){3}\d{1,3}|localhost)(?::\d{1,5})?(?:[/?#][^\s]*)?$/i;
 
 function searchUrl(query: string): string {
-  return `https://duckduckgo.com/?q=${encodeURIComponent(query)}`;
+  return `https://kagi.com/search?q=${encodeURIComponent(query)}`;
 }
 
 /**

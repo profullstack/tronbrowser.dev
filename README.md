@@ -47,8 +47,9 @@ Linux phones (Librem 5 / PinePhone / Ubuntu Touch). See
 
 ## What you get today
 
-- **De-googled new tab** — TronBrowser page, **NeoSearch** as the default private
-  search (no Google in the omnibox; DuckDuckGo available as an alternative), quick links.
+- **De-googled new tab** — TronBrowser page, **Kagi** as the default search
+  (no Google in the omnibox; NeoSearch, Xprivo, and DuckDuckGo available as
+  alternatives), quick links.
 - **RSS reader** on the new tab — seeded from your OPML; add/remove feeds and
   **import/export OPML** in Settings.
 - **AI sidebar (bring your own keys)** — Anthropic, OpenAI, Google/Gemini,
