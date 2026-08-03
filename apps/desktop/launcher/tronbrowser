@@ -278,6 +278,47 @@ MSG
   fi
 fi
 
+# --- Which engine is actually running? --------------------------------------
+# TronBrowser ships no engine. It drives whatever Ungoogled Chromium is on the
+# system, and the Flatpak that usually provides it updates itself — so a Flathub
+# push can change every user's browser overnight while TronBrowser's own history
+# shows nothing at all. A regression in scrolling, video or compositing then
+# arrives as a TronBrowser bug against a release that touched none of it.
+# Record the engine on every launch, and say so out loud when it changes, so the
+# first question anyone asks — "what actually changed?" — has an answer here.
+ENGINE_VERSION=""
+ENGINE_SOURCE=""
+if [ "$BROWSER" = "flatpak" ]; then
+  ENGINE_VERSION="$(flatpak info "$FLATPAK_APP" 2>/dev/null | sed -n 's/^[[:space:]]*Version:[[:space:]]*//p' | head -n1)"
+  ENGINE_SOURCE="flatpak $FLATPAK_APP $(flatpak info --show-commit "$FLATPAK_APP" 2>/dev/null | cut -c1-12)"
+elif [ -n "$MAC_APP" ]; then
+  # Don't ask the inner binary — run from a shell it SIGABRTs (see the launch
+  # block below). The bundle records the version anyway.
+  ENGINE_VERSION="$(defaults read "$MAC_APP/Contents/Info" CFBundleShortVersionString 2>/dev/null || true)"
+  ENGINE_SOURCE="$MAC_APP"
+else
+  ENGINE_VERSION="$("$BROWSER" --version 2>/dev/null | head -n1)"
+  ENGINE_SOURCE="$BROWSER"
+fi
+ENGINE="${ENGINE_VERSION:-unknown} — $ENGINE_SOURCE"
+echo "TronBrowser: engine $ENGINE" >&2
+
+# Tor mode wipes its profile on every launch, so a marker kept there would always
+# read as a change. Only the normal profile tracks this.
+if [ "$TOR" != "1" ]; then
+  mkdir -p "$DATA"
+  ENGINE_MARK="$DATA/.tron-engine"
+  ENGINE_PREV="$(cat "$ENGINE_MARK" 2>/dev/null || true)"
+  if [ -n "$ENGINE_PREV" ] && [ "$ENGINE_PREV" != "$ENGINE" ]; then
+    echo "TronBrowser: the browser engine CHANGED since your last launch." >&2
+    echo "  was: $ENGINE_PREV" >&2
+    echo "  now: $ENGINE" >&2
+    echo "  TronBrowser did not do this — your system updated Chromium underneath it." >&2
+    echo "  If the browser now feels different (scrolling, video, GPU), start here." >&2
+  fi
+  printf '%s\n' "$ENGINE" > "$ENGINE_MARK" 2>/dev/null || true
+fi
+
 # Keep Manifest V2 working so uBlock Origin (MV2) loads — recent Chromium disables
 # MV2 by default. (Ungoogled keeps MV2, but force it off everywhere to be safe.)
 MV2_KEEP="ExtensionManifestV2Disabled,ExtensionManifestV2Unsupported,ExtensionManifestV2DeprecationWarning,ExtensionManifestV2DeprecationUnsupported"
@@ -307,6 +348,52 @@ if [ -n "${TRON_AUTOMATION_PORT:-}" ]; then
     1|true|yes|on) FLAGS="$FLAGS --headless=new --disable-gpu" ;;
   esac
 fi
+
+# --- The caller's flags win over ours ---------------------------------------
+# Our flags land on the command line before "$@", and Chromium honors the FIRST
+# occurrence of a switch. So `tron --user-data-dir=/tmp/scratch` was silently
+# ignored — the browser opened the default profile instead of the one asked for,
+# and a duplicated --user-data-dir can fault the process outright. Drop any
+# switch of ours that the caller also passed, leaving theirs as the only one.
+#
+# --enable-features / --disable-features merge rather than being replaced: they
+# are comma-separated lists, and dropping ours wholesale would quietly re-enable
+# the Manifest V2 kill switch (uBlock Origin stops loading) just because the
+# caller wanted one unrelated feature. Rotating through "$@" to pull those two
+# out is the same idiom --tor is stripped with above.
+#
+# This runs BEFORE the Tor block on purpose. Tor's proxy flags are a guarantee,
+# not a preference — appending them after this leaves them first on the command
+# line, where a caller-supplied --proxy-server cannot displace them.
+USER_SWITCHES=" "
+USER_ENABLE=""
+USER_DISABLE=""
+_argc=$#
+_i=0
+while [ "$_i" -lt "$_argc" ]; do
+  _a="$1"; shift; _i=$((_i + 1))
+  case "$_a" in
+    --enable-features=*)
+      USER_ENABLE="${USER_ENABLE:+$USER_ENABLE,}${_a#*=}"; continue ;;
+    --disable-features=*)
+      USER_DISABLE="${USER_DISABLE:+$USER_DISABLE,}${_a#*=}"; continue ;;
+    --*=*) USER_SWITCHES="$USER_SWITCHES${_a%%=*} " ;;
+    --*)   USER_SWITCHES="$USER_SWITCHES$_a " ;;
+  esac
+  set -- "$@" "$_a"
+done
+
+_kept=""
+for _f in $FLAGS; do
+  case "$_f" in
+    --enable-features=*)  _f="$_f${USER_ENABLE:+,$USER_ENABLE}" ;;
+    --disable-features=*) _f="$_f${USER_DISABLE:+,$USER_DISABLE}" ;;
+    --*=*) case "$USER_SWITCHES" in *" ${_f%%=*} "*) continue ;; esac ;;
+    --*)   case "$USER_SWITCHES" in *" $_f "*) continue ;; esac ;;
+  esac
+  _kept="${_kept:+$_kept }$_f"
+done
+FLAGS="$_kept"
 
 # --- Start the Tor daemon (only in --tor mode) ---------------------------
 # Resolve a bundled `tor` next to the launcher, else one on PATH. Start it on a
