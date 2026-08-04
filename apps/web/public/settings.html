@@ -77,13 +77,16 @@
 
   <!-- Shared sections (identical to the extension options page, via settings-sections.js) -->
   <h2>Search</h2>
-  <p class="hint">Default search engine for the new-tab search box.</p>
+  <p class="hint">This sets the <strong>new-tab search box</strong> only.
+  The address bar is a browser-level setting this page cannot reach — change that
+  one with <code>tron search &lt;engine&gt;</code>, or in
+  <code>chrome://settings/search</code>.</p>
   <label for="searchEngine">New-tab search engine (clearnet)</label>
   <select id="searchEngine">
-    <option value="kagi">Kagi (default)</option>
+    <option value="ddg">DuckDuckGo (default)</option>
+    <option value="kagi">Kagi (needs a Kagi subscription)</option>
     <option value="neosearch">NeoSearch (private)</option>
     <option value="xprivo">Xprivo (private)</option>
-    <option value="ddg">DuckDuckGo</option>
     <option value="altpower">Altpower</option>
     <option value="oxiverse">Oxiverse</option>
   </select>

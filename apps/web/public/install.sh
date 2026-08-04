@@ -97,6 +97,8 @@ Usage:
   tron replay <bundle>  Replay a recorded trace against the session
   tron upgrade          Update to the latest release
   tron clean            Clear browser caches (keeps bookmarks, logins, history)
+  tron search [engine]  Show or set the ADDRESS BAR's search engine
+                        (the new-tab box is set in TronBrowser Settings)
   tron remove           Uninstall TronBrowser (keeps your profile data)
   tron version          Print the installed version
   tron help             Show this help
@@ -268,6 +270,38 @@ case "${1:-}" in
       rm -rf "$_data/Default/Cache" "$_data/Default/Code Cache" "$_data/Default/Service Worker"
       echo "Freed ~${_freed}MB from $_data. Bookmarks, passwords and logins untouched."
     done ;;
+  search)
+    # The ADDRESS BAR's engine. Chromium reads it from the profile at startup and
+    # only the launcher can write it there — an MV3 extension has no API for this
+    # on Linux — so this records the choice and the next launch applies it. The
+    # new-tab box has its own separate picker in TronBrowser Settings.
+    _engines="ddg kagi neosearch xprivo oxiverse"
+    _dirs="${TRONBROWSER_DATA:-$HOME/.tronbrowser}"
+    if [ -d "$HOME/TronBrowser" ]; then _dirs="$_dirs $HOME/TronBrowser"; fi
+    _want="${2:-}"
+    if [ -z "$_want" ]; then
+      for _d in $_dirs; do
+        _cur="$(cat "$_d/search-engine" 2>/dev/null || true)"
+        echo "Address bar: ${_cur:-ddg (default)}   [$_d]"
+      done
+      echo "Available: $_engines"
+      echo "Set with:  tron search ddg"
+      echo "(The new-tab search box is set separately in TronBrowser Settings.)"
+      exit 0
+    fi
+    _ok=0
+    for _e in $_engines; do
+      if [ "$_e" = "$_want" ]; then _ok=1; fi
+    done
+    if [ "$_ok" != "1" ]; then
+      echo "tron search: unknown engine '$_want'. Available: $_engines" >&2
+      exit 1
+    fi
+    for _d in $_dirs; do
+      mkdir -p "$_d"
+      printf '%s\n' "$_want" > "$_d/search-engine"
+    done
+    echo "Address bar set to '$_want'. Restart TronBrowser to apply ('tron restart')." ;;
   remove|uninstall)
     rm -rf "$APP_DIR"
     rm -f "$PREFIX/bin/tron" "$PREFIX/bin/tronbrowser" "$PREFIX/share/applications/tronbrowser.desktop"
