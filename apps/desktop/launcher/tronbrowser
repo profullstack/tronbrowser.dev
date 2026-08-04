@@ -388,8 +388,42 @@ fi
 
 # Keep Manifest V2 working so uBlock Origin (MV2) loads — recent Chromium disables
 # MV2 by default. (Ungoogled keeps MV2, but force it off everywhere to be safe.)
+# --- GPU backend -----------------------------------------------------------
+# A crashing GPU process does not look like a crash. The window stays up and the
+# page keeps whatever it had already rasterized — a logo, a header — while
+# nothing composites again: the side panel is blank, a new tab never finishes
+# loading, and it reads as "the extension froze". The give-away is in the
+# journal, not in the browser: a `chrome --type=gpu-process` core dump.
+#
+# We do not choose the backend and cannot fix a driver. On the Flathub ungoogled
+# build the flatpak's own wrapper appends `--enable-features=Vulkan` and
+# `--render-node-override=...`; on some Mesa/driver combinations that GPU
+# process dies with SIGTRAP at startup. TronBrowser has to stay usable anyway,
+# so the backend is a setting rather than something you rediscover by passing
+# flags by hand every launch.
+#
+#   on    (default) leave the backend alone
+#   safe  drop the Vulkan backend, keep hardware acceleration
+#   off   no GPU process at all — slower, and works everywhere
+#
+# `safe` works because Chromium resolves a feature named in BOTH --enable-features
+# and --disable-features as disabled, so it overrides a flag the flatpak already
+# set. `off` is the one to reach for when `safe` is not enough; it is the mode
+# equivalent to the `tron --disable-gpu` that people find on their own.
+GPU_OFF_FEATURES=""
+GPU_WANT="${TRONBROWSER_GPU:-$(cat "$DATA/gpu-mode" 2>/dev/null || true)}"
+GPU_WANT="$(printf '%s' "$GPU_WANT" | tr -d '[:space:]')"
+case "$GPU_WANT" in
+  ""|on) GPU_WANT="on" ;;
+  safe)  GPU_OFF_FEATURES=",Vulkan" ;;
+  off)   ;;
+  *)
+    echo "TronBrowser: unknown GPU mode '$GPU_WANT' — using 'on'. See 'tron gpu'." >&2
+    GPU_WANT="on" ;;
+esac
+
 MV2_KEEP="ExtensionManifestV2Disabled,ExtensionManifestV2Unsupported,ExtensionManifestV2DeprecationWarning,ExtensionManifestV2DeprecationUnsupported"
-FLAGS="--user-data-dir=$DATA --class=TronBrowser --no-first-run --no-default-browser-check --no-pings --disable-background-networking --disable-breakpad --disable-domain-reliability --disable-sync --disable-features=Translate,OptimizationHints,InterestFeedContentSuggestions,$MV2_KEEP --load-extension=$EXT"
+FLAGS="--user-data-dir=$DATA --class=TronBrowser --no-first-run --no-default-browser-check --no-pings --disable-background-networking --disable-breakpad --disable-domain-reliability --disable-sync --disable-features=Translate,OptimizationHints,InterestFeedContentSuggestions,$MV2_KEEP$GPU_OFF_FEATURES --load-extension=$EXT"
 
 # Make the tab-strip audio indicator a clickable mute/unmute control. Upstream
 # media::kEnableTabMuting is DISABLED_BY_DEFAULT and stock Chrome only turns it
@@ -397,6 +431,12 @@ FLAGS="--user-data-dir=$DATA --class=TronBrowser --no-first-run --no-default-bro
 # but you cannot tell which tab is making sound or mute it from the tab. Force
 # it on to match stock Chrome (Linux/KDE, macOS, Windows).
 FLAGS="$FLAGS --enable-features=EnableTabMuting"
+
+# No GPU process at all. --disable-gpu-compositing matters too: without it the
+# browser still tries to composite on the GPU and the tab goes blank the same way.
+if [ "$GPU_WANT" = "off" ]; then
+  FLAGS="$FLAGS --disable-gpu --disable-gpu-compositing"
+fi
 
 # Chromium spews benign ERROR/WARNING noise to stderr (EV cert OID, mojo
 # WidgetHost, GPU, etc.). Route it to a log so `tron <url>` returns clean;
