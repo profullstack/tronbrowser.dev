@@ -24,7 +24,7 @@ const homes: string[] = [];
  * relative to its own directory, and a copy has no tron-tor-helper beside it,
  * so the background Tor helper is skipped instead of binding a port under test.
  */
-function run(args: string[], opts: { version?: string; home?: string } = {}): Run {
+function run(args: string[], opts: { version?: string; home?: string; env?: Record<string, string> } = {}): Run {
   const home = opts.home ?? mkdtempSync(join(tmpdir(), 'tron-launcher-'));
   if (!opts.home) homes.push(home);
 
@@ -59,6 +59,7 @@ function run(args: string[], opts: { version?: string; home?: string } = {}): Ru
       TRONBROWSER_BROWSER: browser,
       TRONBROWSER_DATA: join(home, 'profile'),
       TRONBROWSER_VERBOSE: '1',
+      ...(opts.env ?? {}),
     },
   });
   if (result.status !== 0) {
@@ -100,7 +101,7 @@ describe('launcher flags', () => {
   });
 
   it('merges --disable-features, keeping the Manifest V2 kill switch off', () => {
-    // Dropping ours here would stop uBlock Origin (MV2) from loading.
+    // Dropping ours here would stop every MV2 extension from loading.
     const { argv } = run(['--disable-features=Foo']);
     const disabled = valueOf(argv, '--disable-features');
     expect(disabled).toHaveLength(1);
@@ -223,6 +224,126 @@ describe('omnibox search engine', () => {
     run([], { home });
     const json = JSON.parse(readFileSync(prefsPath(home), 'utf8'));
     expect(json.bookmark_bar?.show_on_all_tabs).toBe(true);
+  });
+});
+
+// --- GPU backend -------------------------------------------------------------
+// We do not choose the backend — the flatpak wrapper forces Vulkan on and some
+// drivers take the GPU process down with it. These pin the escape hatch: what
+// each mode puts on the command line, and that an unknown mode is not obeyed.
+
+describe('GPU backend', () => {
+  const gpuHome = (mode: string): string => {
+    const home = mkdtempSync(join(tmpdir(), 'tron-launcher-'));
+    homes.push(home);
+    mkdirSync(join(home, 'profile'), { recursive: true });
+    writeFileSync(join(home, 'profile', 'gpu-mode'), mode + '\n');
+    return home;
+  };
+
+  it('leaves the backend alone by default', () => {
+    const { argv } = run([]);
+    expect(argv).not.toContain('--disable-gpu');
+    expect(valueOf(argv, '--disable-features')[0]).not.toContain('Vulkan');
+  });
+
+  it("'safe' disables Vulkan without giving up acceleration", () => {
+    const { argv } = run([], { home: gpuHome('safe') });
+    expect(valueOf(argv, '--disable-features')[0]!.split(',')).toContain('Vulkan');
+    expect(argv).not.toContain('--disable-gpu');
+  });
+
+  it("'safe' keeps the Manifest V2 kill switch off too", () => {
+    // It shares one comma-separated list; appending must not replace it.
+    const { argv } = run([], { home: gpuHome('safe') });
+    expect(valueOf(argv, '--disable-features')[0]!.split(',')).toEqual(
+      expect.arrayContaining(['ExtensionManifestV2Disabled', 'Translate', 'Vulkan']),
+    );
+  });
+
+  it("'off' drops the GPU process and its compositing", () => {
+    const { argv } = run([], { home: gpuHome('off') });
+    expect(argv).toContain('--disable-gpu');
+    expect(argv).toContain('--disable-gpu-compositing');
+  });
+
+  it('falls back to on, and says so, when the mode is not one we know', () => {
+    const { argv, stderr } = run([], { home: gpuHome('turbo') });
+    expect(stderr).toContain("unknown GPU mode 'turbo'");
+    expect(argv).not.toContain('--disable-gpu');
+    expect(valueOf(argv, '--disable-features')[0]).not.toContain('Vulkan');
+  });
+
+  it('lets TRONBROWSER_GPU override the stored mode', () => {
+    const home = gpuHome('off');
+    const { argv } = run([], { home, env: { TRONBROWSER_GPU: 'safe' } });
+    expect(argv).not.toContain('--disable-gpu');
+    expect(valueOf(argv, '--disable-features')[0]!.split(',')).toContain('Vulkan');
+  });
+});
+
+// --- Damaged profile ---------------------------------------------------------
+// Three blocks in the launcher edit Chromium's JSON state files. Every one of
+// them used to do `except Exception: d = {}` and then write the result — so a
+// file that failed to parse was REPLACED by a stub holding only the key that
+// block cared about. Preferences is the whole profile, which made that a silent
+// factory reset, and the usual reason it failed to parse was the non-atomic
+// write the same block did on the previous launch. These tests pin the rule:
+// a state file we cannot read is a file we do not touch.
+
+const localStatePath = (home: string) => join(home, 'profile', 'Local State');
+
+/** A profile whose JSON state files are present but corrupt. */
+function seedCorrupt(which: 'prefs' | 'localstate'): { home: string; path: string } {
+  const home = mkdtempSync(join(tmpdir(), 'tron-launcher-'));
+  homes.push(home);
+  const path = which === 'prefs' ? prefsPath(home) : localStatePath(home);
+  mkdirSync(dirname(path), { recursive: true });
+  // What a truncated write leaves behind: valid JSON's opening, then nothing.
+  writeFileSync(path, '{"default_search_provider_data": {"template_ur');
+  return { home, path };
+}
+
+describe('damaged profile', () => {
+  it('leaves an unparseable Preferences exactly as it found it', () => {
+    const { home, path } = seedCorrupt('prefs');
+    const before = readFileSync(path, 'utf8');
+    run([], { home });
+    expect(readFileSync(path, 'utf8')).toBe(before);
+  });
+
+  it('leaves an unparseable Local State exactly as it found it', () => {
+    const { home, path } = seedCorrupt('localstate');
+    const before = readFileSync(path, 'utf8');
+    run([], { home });
+    expect(readFileSync(path, 'utf8')).toBe(before);
+  });
+
+  it('says which file it refused to touch, rather than failing silently', () => {
+    const { home } = seedCorrupt('prefs');
+    const { stderr } = run([], { home });
+    expect(stderr).toContain('did not parse');
+  });
+
+  it('still launches the browser when a state file is unreadable', () => {
+    // Refusing to write must not become refusing to start.
+    const { home } = seedCorrupt('prefs');
+    const { argv } = run([], { home });
+    expect(valueOf(argv, '--user-data-dir')).toEqual([join(home, 'profile')]);
+  });
+
+  it('keeps unrelated settings when it sets the startup page', () => {
+    // The restore_on_startup block rewrites the whole file to change one key.
+    const home = mkdtempSync(join(tmpdir(), 'tron-launcher-'));
+    homes.push(home);
+    const path = prefsPath(home);
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileSync(path, JSON.stringify({ bookmark_bar: { show_on_all_tabs: true }, extensions: { settings: { abc: 1 } } }));
+    run([], { home });
+    const json = JSON.parse(readFileSync(path, 'utf8'));
+    expect(json.session?.restore_on_startup).toBe(5);
+    expect(json.bookmark_bar?.show_on_all_tabs).toBe(true);
+    expect(json.extensions?.settings?.abc).toBe(1);
   });
 });
 

@@ -2,7 +2,7 @@
 setlocal enabledelayedexpansion
 rem TronBrowser launcher (Windows). Runs Ungoogled Chromium ONLY (never Chrome,
 rem Edge, Brave, or regular Chromium) with TronBrowser privacy flags + bundled
-rem extensions (AI sidebar + uBlock Origin). `tron <url>` passes URLs through.
+rem extensions (AI sidebar + MarkSyncr). `tron <url>` passes URLs through.
 rem Mirrors apps/desktop/launcher/tronbrowser (POSIX). Override the binary with
 rem set "TRONBROWSER_BROWSER=C:\path\to\ungoogled-chromium\chrome.exe".
 set "DIR=%~dp0"
