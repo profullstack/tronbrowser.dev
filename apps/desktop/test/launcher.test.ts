@@ -116,6 +116,116 @@ describe('launcher flags', () => {
   });
 });
 
+// --- Omnibox search engine ---------------------------------------------------
+// The launcher is the only thing that can set Chromium's default search engine
+// (no MV3 API for it, and chrome_settings_overrides isn't available on Linux),
+// so the rules about when it may overwrite one live here.
+
+const KAGI_URL = 'https://kagi.com/search?q={searchTerms}';
+
+const prefsPath = (home: string) => join(home, 'profile', 'Default', 'Preferences');
+
+/** The default_search_provider_data the launcher left in the profile. */
+function dse(home: string): Record<string, string> {
+  const p = prefsPath(home);
+  if (!existsSync(p)) return {};
+  const json = JSON.parse(readFileSync(p, 'utf8'));
+  return json.default_search_provider_data?.template_url_data ?? {};
+}
+
+/** A profile that already has a search engine set, and a record of who set it. */
+function seed(opts: { url?: string; marker?: string; legacyKagi?: boolean; want?: string }): string {
+  const home = mkdtempSync(join(tmpdir(), 'tron-launcher-'));
+  homes.push(home);
+  const data = join(home, 'profile');
+  mkdirSync(join(data, 'Default'), { recursive: true });
+  if (opts.url) {
+    writeFileSync(
+      prefsPath(home),
+      JSON.stringify({
+        default_search_provider_data: { template_url_data: { short_name: 'Seeded', url: opts.url } },
+        // A real profile has more than the one key; it must survive our write.
+        bookmark_bar: { show_on_all_tabs: true },
+      }),
+    );
+  }
+  if (opts.legacyKagi) writeFileSync(join(data, '.tron-search-kagi'), '');
+  if (opts.marker) writeFileSync(join(data, '.tron-search'), `${opts.marker}\n`);
+  if (opts.want) writeFileSync(join(data, 'search-engine'), `${opts.want}\n`);
+  return home;
+}
+
+describe('omnibox search engine', () => {
+  it('defaults a fresh profile to an engine that works without an account', () => {
+    // Kagi is subscription-only past its trial, so defaulting to it left a new
+    // install unable to search at all — it just landed on a login wall.
+    const { home } = run([]);
+    expect(dse(home).url).toBe('https://duckduckgo.com/?q={searchTerms}');
+  });
+
+  it('never sets a suggestions_url', () => {
+    // A suggest endpoint fires per keystroke in the address bar: it leaks the
+    // query before you hit enter, and stalls typing when it is slow or 401s.
+    const { home } = run([]);
+    expect(dse(home)).not.toHaveProperty('suggestions_url');
+  });
+
+  it('honors the engine chosen with `tron search`', () => {
+    const home = seed({ want: 'neosearch' });
+    run([], { home });
+    expect(dse(home).url).toBe('https://neosearch.org/?q={searchTerms}');
+  });
+
+  it('falls back and says so when the chosen engine is unknown', () => {
+    const home = seed({ want: 'notanengine' });
+    const { stderr } = run([], { home });
+    expect(stderr).toContain("unknown search engine 'notanengine'");
+    expect(dse(home).url).toBe('https://duckduckgo.com/?q={searchTerms}');
+  });
+
+  it('repairs a profile it had previously pinned to Kagi', () => {
+    // The actual bug: everyone who installed before this had Kagi written into
+    // their profile by us, and nothing moved them off it.
+    const home = seed({ url: KAGI_URL, legacyKagi: true });
+    run([], { home });
+    expect(dse(home).url).toBe('https://duckduckgo.com/?q={searchTerms}');
+  });
+
+  it('leaves an engine the user picked themselves alone', () => {
+    // We may correct our own default. We may not overwrite a deliberate choice.
+    const chosen = 'https://www.google.com/search?q={searchTerms}';
+    const home = seed({ url: chosen, legacyKagi: true });
+    run([], { home });
+    expect(dse(home).url).toBe(chosen);
+  });
+
+  it('lets an explicit `tron search` override even a user-set engine', () => {
+    const home = seed({ url: 'https://www.google.com/search?q={searchTerms}', want: 'kagi' });
+    run([], { home });
+    expect(dse(home).url).toBe(KAGI_URL);
+  });
+
+  it('stops touching the setting once it has applied it', () => {
+    // Second launch must not re-apply, or changing the engine in
+    // chrome://settings/search would be undone on every start.
+    const first = run([]);
+    const chosen = 'https://www.startpage.com/sp/search?q={searchTerms}';
+    writeFileSync(
+      prefsPath(first.home),
+      JSON.stringify({ default_search_provider_data: { template_url_data: { url: chosen } } }),
+    );
+    run([], { home: first.home });
+    expect(dse(first.home).url).toBe(chosen);
+  });
+
+  it('keeps the rest of Preferences when it rewrites the engine', () => {
+    const home = seed({ url: KAGI_URL, legacyKagi: true });
+    run([], { home });
+    const json = JSON.parse(readFileSync(prefsPath(home), 'utf8'));
+    expect(json.bookmark_bar?.show_on_all_tabs).toBe(true);
+  });
+});
+
 describe('engine reporting', () => {
   it('names the engine it is about to run', () => {
     const { stderr } = run([], { version: 'Chromium 141.0.0.0' });

@@ -186,29 +186,96 @@ if flag not in exp:
 PY
 fi
 
-# Default the omnibox to Kagi once per profile, then respect the user's
-# chrome://settings/search choice. The sentinel filename carries the engine so
-# that changing the default here re-applies once on profiles created earlier.
-if command -v python3 >/dev/null 2>&1 && [ ! -f "$DATA/.tron-search-kagi" ]; then
-  TB_PREFS="$DATA/Default/Preferences" python3 - <<'PY' 2>/dev/null || true
-import json, os
+# --- Omnibox search engine -------------------------------------------------
+# The address bar's engine is a browser-level setting. An MV3 extension cannot
+# change it at runtime and manifest `chrome_settings_overrides` isn't available
+# on Linux, so the launcher is the only thing here that can set it — which is
+# why `tron search <engine>` writes a file we read rather than the extension
+# doing it. The new-tab box keeps its own picker in Settings; the two are
+# separate on purpose and both say so in their UI.
+#
+# No suggestions_url anywhere below. A suggest endpoint fires a request on every
+# keystroke in the address bar, which both leaks the query before you press
+# enter and stalls typing when the endpoint is slow or answers 401.
+search_engine_spec() {
+  case "$1" in
+    ddg)       echo "DuckDuckGo|duckduckgo.com|https://duckduckgo.com/?q={searchTerms}" ;;
+    kagi)      echo "Kagi|kagi.com|https://kagi.com/search?q={searchTerms}" ;;
+    neosearch) echo "NeoSearch|neosearch.org|https://neosearch.org/?q={searchTerms}" ;;
+    xprivo)    echo "Xprivo|xprivo.com|https://www.xprivo.com/search/?q={searchTerms}" ;;
+    oxiverse)  echo "Oxiverse|search.oxiverse.com|https://search.oxiverse.com/?q={searchTerms}&tab=web" ;;
+    # Altpower is deliberately absent: its query lives in the URL fragment, which
+    # never reaches a server as a search. It works from the new-tab box, which
+    # builds the URL itself, but not as an omnibox engine.
+    *) return 1 ;;
+  esac
+}
+
+# What the user asked for (`tron search <engine>`), or a default that works
+# without an account. Kagi is subscription-only past its trial, so defaulting
+# the omnibox to it leaves a fresh install unable to search at all.
+SEARCH_WANT="$(cat "$DATA/search-engine" 2>/dev/null || true)"
+SEARCH_WANT="$(printf '%s' "$SEARCH_WANT" | tr -d '[:space:]')"
+SEARCH_EXPLICIT=1
+if [ -z "$SEARCH_WANT" ]; then SEARCH_WANT="ddg"; SEARCH_EXPLICIT=0; fi
+if ! search_engine_spec "$SEARCH_WANT" >/dev/null 2>&1; then
+  echo "TronBrowser: unknown search engine '$SEARCH_WANT' — using ddg. See 'tron search'." >&2
+  SEARCH_WANT="ddg"; SEARCH_EXPLICIT=0
+fi
+
+# Which engine we last set. Profiles from before this file existed recorded it
+# in the sentinel's NAME; treat that as "we set Kagi" so the repair below can
+# recognise its own handiwork.
+SEARCH_MARK="$DATA/.tron-search"
+SEARCH_PREV="$(cat "$SEARCH_MARK" 2>/dev/null || true)"
+SEARCH_PREV="$(printf '%s' "$SEARCH_PREV" | tr -d '[:space:]')"
+if [ -z "$SEARCH_PREV" ] && [ -f "$DATA/.tron-search-kagi" ]; then SEARCH_PREV="kagi"; fi
+
+if command -v python3 >/dev/null 2>&1 && [ "$SEARCH_PREV" != "$SEARCH_WANT" ]; then
+  SEARCH_PREV_URL=""
+  if [ -n "$SEARCH_PREV" ]; then
+    SEARCH_PREV_URL="$(search_engine_spec "$SEARCH_PREV" 2>/dev/null | cut -d'|' -f3 || true)"
+  fi
+  TB_PREFS="$DATA/Default/Preferences" \
+  TB_ENGINE="$(search_engine_spec "$SEARCH_WANT")" \
+  TB_PREV_URL="$SEARCH_PREV_URL" \
+  TB_FORCE="$SEARCH_EXPLICIT" \
+  python3 - <<'PY' 2>/dev/null || true
+import json, os, tempfile
 p = os.environ["TB_PREFS"]
+name, keyword, url = os.environ["TB_ENGINE"].split("|")
+prev_url = os.environ.get("TB_PREV_URL", "")
+force = os.environ.get("TB_FORCE") == "1"
 os.makedirs(os.path.dirname(p), exist_ok=True)
 try:
     d = json.load(open(p)) if os.path.exists(p) else {}
 except Exception:
     d = {}
-d.setdefault("default_search_provider_data", {})["template_url_data"] = {
-    "short_name": "Kagi",
-    "keyword": "kagi.com",
-    "url": "https://kagi.com/search?q={searchTerms}",
-    "suggestions_url": "https://kagi.com/api/autosuggest?q={searchTerms}",
-    "favicon_url": "https://kagi.com/favicon.ico",
-    "safe_for_autoreplace": False,
-}
-json.dump(d, open(p, "w"))
+
+# Only ever overwrite an engine that is absent or that we put there ourselves.
+# Without this, changing the default below would stomp the choice of everyone
+# who had already picked their own in chrome://settings/search. An explicit
+# `tron search` is the one case that outranks whatever is currently set.
+cur = d.get("default_search_provider_data", {}).get("template_url_data") or {}
+cur_url = cur.get("url", "")
+if force or not cur_url or (prev_url and cur_url == prev_url):
+    d.setdefault("default_search_provider_data", {})["template_url_data"] = {
+        "short_name": name,
+        "keyword": keyword,
+        "url": url,
+        "favicon_url": "https://" + keyword.split("/")[0] + "/favicon.ico",
+        "safe_for_autoreplace": False,
+    }
+    # Preferences is the profile. A truncated write loses every setting in it,
+    # so land it as a rename rather than in place.
+    fd, tmp = tempfile.mkstemp(dir=os.path.dirname(p))
+    with os.fdopen(fd, "w") as f:
+        json.dump(d, f)
+    os.replace(tmp, p)
 PY
-  mkdir -p "$DATA"; : > "$DATA/.tron-search-kagi"
+  mkdir -p "$DATA"
+  printf '%s\n' "$SEARCH_WANT" > "$SEARCH_MARK" 2>/dev/null || true
+  rm -f "$DATA/.tron-search-kagi" 2>/dev/null || true
 fi
 
 # Show the feed (ai-sidebar New Tab page) on startup. We can't pass a startup URL —
