@@ -1,5 +1,6 @@
 import { PROVIDERS, chatStream } from './providers.js';
 import { renderMarkdown } from './markdown.js';
+import { storageGet } from './net.js';
 
 const el = (id) => document.getElementById(id);
 
@@ -20,7 +21,7 @@ const history = [];
 let config = null;
 
 async function loadConfig() {
-  const { aiConfig } = await chrome.storage.local.get('aiConfig');
+  const { aiConfig } = await storageGet('aiConfig');
   config = aiConfig || null;
   const ok = config && config.provider && (config.model) && (config.apiKey || PROVIDERS[config.provider]?.keyless);
   setupEl.classList.toggle('hidden', !!ok);
@@ -143,7 +144,7 @@ chrome.storage.onChanged.addListener((changes) => { if (changes.aiConfig) loadCo
 
 // If the new-tab page (AI mode) queued a question, ask it on open.
 async function consumePendingQuery() {
-  const { pendingAiQuery } = await chrome.storage.local.get('pendingAiQuery');
+  const { pendingAiQuery } = await storageGet('pendingAiQuery');
   if (pendingAiQuery && pendingAiQuery.text) {
     await chrome.storage.local.remove('pendingAiQuery');
     if (await loadConfig()) send(pendingAiQuery.text);
@@ -215,7 +216,7 @@ function setTorWarnMode(mode) {
 
 function confirmTorWarning() {
   return new Promise((resolve) => {
-    chrome.storage.local.get('torWarnAck').then(({ torWarnAck }) => {
+    storageGet('torWarnAck').then(({ torWarnAck }) => {
       if (torWarnAck) { resolve(true); return; }
       setTorWarnMode('gate');
       const hide = el('tor-warn-hide');

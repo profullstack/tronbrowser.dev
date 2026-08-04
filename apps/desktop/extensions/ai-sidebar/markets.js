@@ -6,11 +6,13 @@
 // grant cross-origin reads, so no backend and no API keys are needed (we never
 // ship our paid Finnhub/Alpaca keys in a public extension).
 
+import { fetchWithTimeout } from './net.js';
+
 const Y_CHART = 'https://query1.finance.yahoo.com/v8/finance/chart/';
 
 export async function fetchQuote(symbol) {
   const url = `${Y_CHART}${encodeURIComponent(symbol)}?range=1d&interval=1d`;
-  const res = await fetch(url);
+  const res = await fetchWithTimeout(url);
   if (!res.ok) throw new Error('quote ' + res.status);
   const m = (await res.json())?.chart?.result?.[0]?.meta;
   if (!m || m.regularMarketPrice == null) throw new Error('no data');
@@ -61,7 +63,7 @@ export async function fetchScores(leagueKey) {
   const path = LEAGUES[leagueKey];
   if (!path) return { league: leagueKey, games: [], error: 'unknown league' };
   try {
-    const res = await fetch(`https://site.api.espn.com/apis/site/v2/sports/${path}/scoreboard`);
+    const res = await fetchWithTimeout(`https://site.api.espn.com/apis/site/v2/sports/${path}/scoreboard`);
     if (!res.ok) throw new Error('espn ' + res.status);
     const data = await res.json();
     const games = (data.events || []).slice(0, 6).map((e) => {
