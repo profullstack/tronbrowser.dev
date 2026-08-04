@@ -16,7 +16,6 @@ export default tseslint.config(
       '**/.expo/**',
       '**/node_modules/**',
       'apps/desktop/chromium/**',
-      'apps/desktop/extensions/ublock-origin/**', // fetched at build time, GPL, not vendored
       'pnpm-lock.yaml',
     ],
   },
