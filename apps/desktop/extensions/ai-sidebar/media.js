@@ -1,4 +1,5 @@
 import { BTR_BASE, getToken, connect, verify, disconnect } from './bittorrented.js';
+import { fetchWithTimeout } from './net.js';
 
 const el = (id) => document.getElementById(id);
 function escapeHtml(s) { const d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
@@ -28,7 +29,7 @@ async function loadFavorites() {
   el('btr').innerHTML = '<p class="muted">Loading favorites…</p>';
   let data;
   try {
-    const r = await fetch(`${BTR_BASE}/api/v1/favorites`, { headers: { authorization: `Bearer ${token}` } });
+    const r = await fetchWithTimeout(`${BTR_BASE}/api/v1/favorites`, { headers: { authorization: `Bearer ${token}` } });
     if (r.status === 401) { showDisconnected(); setStatus('Session expired — connect again.', 'err'); return; }
     if (!r.ok) { el('btr').innerHTML = `<p class="muted">Couldn’t load favorites (${r.status}).</p>`; return; }
     data = await r.json();

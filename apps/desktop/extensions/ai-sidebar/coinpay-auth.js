@@ -4,6 +4,8 @@
 // (or does the CoinPay OAuth dance) and redirects back to /ext-callback.html,
 // where our content script hands the session token to the extension. This is
 // the login — never Google. Override the API base in Settings (self-hosted).
+import { fetchWithTimeout, storageGet } from './net.js';
+
 const DEFAULT_API = 'https://tronbrowser.dev';
 
 // Landing page for the redirect, and the storage key its content script writes.
@@ -15,7 +17,7 @@ const HANDOFF_KEY = 'tbAuthToken';
 const SIGNIN_TIMEOUT_MS = 180000;
 
 async function apiBase() {
-  const { syncConfig } = await chrome.storage.local.get('syncConfig');
+  const { syncConfig } = await storageGet('syncConfig');
   return (syncConfig?.url || DEFAULT_API).replace(/\/$/, '');
 }
 
@@ -26,7 +28,7 @@ async function storeSession(sessionToken, method) {
   const base = await apiBase();
   let label = '';
   try {
-    const me = await fetch(`${base}/api/auth/me`, { headers: { authorization: `Bearer ${sessionToken}` } });
+    const me = await fetchWithTimeout(`${base}/api/auth/me`, { headers: { authorization: `Bearer ${sessionToken}` } });
     if (me.ok) { const d = await me.json(); label = d.email || d.id || ''; }
   } catch { /* ignore */ }
   await chrome.storage.local.set({
@@ -78,7 +80,7 @@ export async function coinpaySignIn() {
 // returns a session token we store exactly like the CoinPay one.
 export async function emailSignIn(email, password) {
   const base = await apiBase();
-  const r = await fetch(`${base}/api/auth/login`, {
+  const r = await fetchWithTimeout(`${base}/api/auth/login`, {
     method: 'POST', headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ email, password }),
   });
@@ -92,7 +94,7 @@ export async function emailSignIn(email, password) {
 // a verification email and does NOT sign you in; verify, then sign in.
 export async function emailSignUp(email, password) {
   const base = await apiBase();
-  const r = await fetch(`${base}/api/auth/signup`, {
+  const r = await fetchWithTimeout(`${base}/api/auth/signup`, {
     method: 'POST', headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ email, password }),
   });
@@ -102,7 +104,7 @@ export async function emailSignUp(email, password) {
 }
 
 export async function coinpayState() {
-  const { coinpay } = await chrome.storage.local.get('coinpay');
+  const { coinpay } = await storageGet('coinpay');
   if (coinpay?.sessionToken && (!coinpay.expiresAt || coinpay.expiresAt > Date.now())) {
     return { signedIn: true, label: coinpay.label, method: coinpay.method || 'coinpay', token: coinpay.sessionToken };
   }
@@ -114,7 +116,7 @@ export async function coinpaySignOut() {
   if (coinpay?.sessionToken) {
     try {
       const base = await apiBase();
-      await fetch(`${base}/api/auth/logout`, { method: 'POST', headers: { authorization: `Bearer ${coinpay.sessionToken}` } });
+      await fetchWithTimeout(`${base}/api/auth/logout`, { method: 'POST', headers: { authorization: `Bearer ${coinpay.sessionToken}` } });
     } catch { /* ignore */ }
   }
   await chrome.storage.local.remove('coinpay');

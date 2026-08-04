@@ -4,12 +4,14 @@
 // The token is stored locally (per device) and sent as `Authorization: Bearer`
 // to bittorrented.com's /api/v1/* endpoints (favorites, live TV, radio, podcasts).
 
+import { fetchWithTimeout, storageGet } from './net.js';
+
 export const BTR_BASE = 'https://bittorrented.com';
 const TB_WEB = 'https://tronbrowser.dev';
 const KEY = 'btrToken';
 
 export async function getToken() {
-  return (await chrome.storage.local.get(KEY))[KEY] || '';
+  return (await storageGet(KEY))[KEY] || '';
 }
 
 // Open the connect flow in a normal tab and wait for the token. We do NOT use
@@ -44,7 +46,7 @@ export async function verify() {
   const token = await getToken();
   if (!token) return { connected: false };
   try {
-    const r = await fetch(`${BTR_BASE}/api/v1/me`, { headers: { authorization: `Bearer ${token}` } });
+    const r = await fetchWithTimeout(`${BTR_BASE}/api/v1/me`, { headers: { authorization: `Bearer ${token}` } });
     if (!r.ok) return { connected: false };
     const d = await r.json();
     return { connected: true, email: d.email || null };

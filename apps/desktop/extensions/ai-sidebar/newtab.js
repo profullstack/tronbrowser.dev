@@ -3,6 +3,7 @@ import { coinpaySignIn, coinpayState, coinpaySignOut } from './coinpay-auth.js';
 import { fetchQuotes, fetchAllScores } from './markets.js';
 import { fetchMotd } from './motd.js';
 import { getToken as btrToken, BTR_BASE } from './bittorrented.js';
+import { fetchWithTimeout, storageGet } from './net.js';
 
 const el = (id) => document.getElementById(id);
 
@@ -66,7 +67,7 @@ el('mode-web').addEventListener('click', () => setMode('web'));
 el('mode-ai').addEventListener('click', () => setMode('ai'));
 
 // Load the chosen clearnet + Tor search engines and current onion-toggle state.
-chrome.storage.local.get(['searchEngine', 'torSearchEngine', 'torEnabled']).then((v) => {
+storageGet(['searchEngine', 'torSearchEngine', 'torEnabled']).then((v) => {
   if (v.searchEngine && SEARCH_ENGINES[v.searchEngine]) searchEngine = v.searchEngine;
   if (v.torSearchEngine && TOR_SEARCH_ENGINES[v.torSearchEngine]) torSearchEngine = v.torSearchEngine;
   torEnabled = !!v.torEnabled;
@@ -151,7 +152,7 @@ async function fetchFeed(feed) {
 
 const CACHE_V = 3; // bump to invalidate caches when item shape changes / clear stale
 async function getFeedData(feeds) {
-  const { feedCache } = await chrome.storage.local.get('feedCache');
+  const { feedCache } = await storageGet('feedCache');
   if (feedCache && feedCache.v === CACHE_V && Date.now() - feedCache.at < TTL && feedCache.count === feeds.length) {
     return feedCache.data;
   }
@@ -217,14 +218,14 @@ function escAttr(s) {
 const MKT_TTL = 5 * 60 * 1000;
 
 async function renderMarkets() {
-  const { tickers } = await chrome.storage.local.get('tickers');
+  const { tickers } = await storageGet('tickers');
   const symbols = splitList(tickers ?? DEFAULT_TICKERS);
   const sec = el('markets-sec');
   if (!symbols.length) { sec.hidden = true; return; }
   sec.hidden = false;
 
   const sig = symbols.join(',');
-  const { marketCache } = await chrome.storage.local.get('marketCache');
+  const { marketCache } = await storageGet('marketCache');
   let data;
   if (marketCache && marketCache.sig === sig && Date.now() - marketCache.at < MKT_TTL) {
     data = marketCache.data;
@@ -246,14 +247,14 @@ async function renderMarkets() {
 }
 
 async function renderSports() {
-  const { leagues } = await chrome.storage.local.get('leagues');
+  const { leagues } = await storageGet('leagues');
   const keys = splitList(leagues ?? DEFAULT_LEAGUES).map((k) => k.toLowerCase());
   const sec = el('sports-sec');
   if (!keys.length) { sec.hidden = true; return; }
   sec.hidden = false;
 
   const sig = keys.join(',');
-  const { sportsCache } = await chrome.storage.local.get('sportsCache');
+  const { sportsCache } = await storageGet('sportsCache');
   let data;
   if (sportsCache && sportsCache.sig === sig && Date.now() - sportsCache.at < MKT_TTL) {
     data = sportsCache.data;
@@ -305,7 +306,7 @@ async function renderBtr() {
   if (!token) { sec.hidden = true; return; }
   let data;
   try {
-    const r = await fetch(`${BTR_BASE}/api/v1/favorites`, { headers: { authorization: `Bearer ${token}` } });
+    const r = await fetchWithTimeout(`${BTR_BASE}/api/v1/favorites`, { headers: { authorization: `Bearer ${token}` } });
     if (!r.ok) { sec.hidden = true; return; }
     data = await r.json();
   } catch { sec.hidden = true; return; }

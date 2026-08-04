@@ -1,6 +1,8 @@
 // Self-contained provider calling for the sidebar (mirrors
 // @tronbrowser/model-providers). Plain ESM so it loads unbundled in MV3.
 
+import { fetchWithTimeout } from './net.js';
+
 export const PROVIDERS = {
   anthropic:   { label: 'Anthropic (Claude)', baseUrl: 'https://api.anthropic.com/v1',                          anthropic: true,  keyless: false },
   openai:      { label: 'OpenAI',             baseUrl: 'https://api.openai.com/v1',                            anthropic: false, keyless: false },
@@ -49,7 +51,7 @@ export async function listModels(cfg) {
   } else if (cfg.apiKey) {
     headers['authorization'] = 'Bearer ' + cfg.apiKey;
   }
-  const res = await fetch(baseUrl + '/models', { headers });
+  const res = await fetchWithTimeout(baseUrl + '/models', { headers });
   if (!res.ok) throw new Error(cfg.provider + ' ' + res.status);
   const data = await res.json();
   return (data.data || data.models || [])

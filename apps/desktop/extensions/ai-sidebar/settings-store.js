@@ -4,6 +4,7 @@
 //   - otherwise OUR managed cloud (Turso-backed) API.
 // Local always works; remote is best-effort (no crash if the backend is down).
 import { coinpayState } from './coinpay-auth.js';
+import { fetchWithTimeout, storageGet } from './net.js';
 
 // Managed cloud sync API (Turso-backed), served at tronbrowser.dev/api. Remote
 // calls fail quietly (settings stay local) if unreachable.
@@ -14,7 +15,7 @@ const CLOUD_BASE = 'https://tronbrowser.dev';
 const KEYS = ['aiVault', 'aiDefault', 'aiModel', 'feeds', 'coinpayConfig', 'tickers', 'leagues', 'searchEngine', 'torSearchEngine'];
 
 async function endpoint() {
-  const { syncConfig } = await chrome.storage.local.get('syncConfig');
+  const { syncConfig } = await storageGet('syncConfig');
   if (syncConfig?.url) return { base: syncConfig.url.replace(/\/$/, ''), mode: 'self-hosted' };
   return { base: CLOUD_BASE, mode: 'cloud' };
 }
@@ -25,7 +26,7 @@ export async function pullSettings() {
   if (!st.signedIn) return { ok: false, reason: 'not-signed-in' };
   const { base } = await endpoint();
   try {
-    const res = await fetch(`${base}/api/settings`, { headers: { authorization: `Bearer ${st.token}` } });
+    const res = await fetchWithTimeout(`${base}/api/settings`, { headers: { authorization: `Bearer ${st.token}` } });
     if (!res.ok) return { ok: false, reason: `http ${res.status}` };
     const data = await res.json();
     const patch = {};
@@ -44,7 +45,7 @@ export async function pushSettings() {
   const { base } = await endpoint();
   const local = await chrome.storage.local.get(KEYS);
   try {
-    const res = await fetch(`${base}/api/settings`, {
+    const res = await fetchWithTimeout(`${base}/api/settings`, {
       method: 'PUT',
       headers: { authorization: `Bearer ${st.token}`, 'content-type': 'application/json' },
       body: JSON.stringify(local),
