@@ -100,7 +100,7 @@ describe('launcher flags', () => {
   });
 
   it('merges --disable-features, keeping the Manifest V2 kill switch off', () => {
-    // Dropping ours here would stop uBlock Origin (MV2) from loading.
+    // Dropping ours here would stop every MV2 extension from loading.
     const { argv } = run(['--disable-features=Foo']);
     const disabled = valueOf(argv, '--disable-features');
     expect(disabled).toHaveLength(1);

@@ -18,7 +18,7 @@ while [ -L "$SELF" ]; do
   esac
 done
 DIR="$(CDPATH= cd -- "$(dirname -- "$SELF")" && pwd)"
-EXTBASE_SRC="$DIR/extensions"   # holds ai-sidebar + ublock-origin (uBlock Origin)
+EXTBASE_SRC="$DIR/extensions"   # holds ai-sidebar + marksyncr
 
 # --- Tor mode -------------------------------------------------------------
 # `tron --tor [url...]` routes traffic through a local Tor daemon (SOCKS5) and
@@ -441,8 +441,10 @@ if [ "$TOR" != "1" ]; then
   printf '%s\n' "$ENGINE" > "$ENGINE_MARK" 2>/dev/null || true
 fi
 
-# Keep Manifest V2 working so uBlock Origin (MV2) loads — recent Chromium disables
-# MV2 by default. (Ungoogled keeps MV2, but force it off everywhere to be safe.)
+# Keep Manifest V2 working — recent Chromium disables MV2 by default, which
+# silently breaks any MV2 extension the user installed themselves. We no longer
+# bundle one, but the kill switch is not ours to flip on their behalf.
+# (Ungoogled keeps MV2, but force it off everywhere to be safe.)
 MV2_KEEP="ExtensionManifestV2Disabled,ExtensionManifestV2Unsupported,ExtensionManifestV2DeprecationWarning,ExtensionManifestV2DeprecationUnsupported"
 FLAGS="--user-data-dir=$DATA --class=TronBrowser --no-first-run --no-default-browser-check --no-pings --disable-background-networking --disable-breakpad --disable-domain-reliability --disable-sync --disable-features=Translate,OptimizationHints,InterestFeedContentSuggestions,$MV2_KEEP --load-extension=$EXT"
 
@@ -480,8 +482,8 @@ fi
 #
 # --enable-features / --disable-features merge rather than being replaced: they
 # are comma-separated lists, and dropping ours wholesale would quietly re-enable
-# the Manifest V2 kill switch (uBlock Origin stops loading) just because the
-# caller wanted one unrelated feature. Rotating through "$@" to pull those two
+# the Manifest V2 kill switch (every MV2 extension stops loading) just because
+# the caller wanted one unrelated feature. Rotating through "$@" to pull those two
 # out is the same idiom --tor is stripped with above.
 #
 # This runs BEFORE the Tor block on purpose. Tor's proxy flags are a guarantee,
