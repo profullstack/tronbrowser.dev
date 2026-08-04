@@ -24,7 +24,7 @@ const homes: string[] = [];
  * relative to its own directory, and a copy has no tron-tor-helper beside it,
  * so the background Tor helper is skipped instead of binding a port under test.
  */
-function run(args: string[], opts: { version?: string; home?: string } = {}): Run {
+function run(args: string[], opts: { version?: string; home?: string; env?: Record<string, string> } = {}): Run {
   const home = opts.home ?? mkdtempSync(join(tmpdir(), 'tron-launcher-'));
   if (!opts.home) homes.push(home);
 
@@ -59,6 +59,7 @@ function run(args: string[], opts: { version?: string; home?: string } = {}): Ru
       TRONBROWSER_BROWSER: browser,
       TRONBROWSER_DATA: join(home, 'profile'),
       TRONBROWSER_VERBOSE: '1',
+      ...(opts.env ?? {}),
     },
   });
   if (result.status !== 0) {
@@ -223,6 +224,61 @@ describe('omnibox search engine', () => {
     run([], { home });
     const json = JSON.parse(readFileSync(prefsPath(home), 'utf8'));
     expect(json.bookmark_bar?.show_on_all_tabs).toBe(true);
+  });
+});
+
+// --- GPU backend -------------------------------------------------------------
+// We do not choose the backend — the flatpak wrapper forces Vulkan on and some
+// drivers take the GPU process down with it. These pin the escape hatch: what
+// each mode puts on the command line, and that an unknown mode is not obeyed.
+
+describe('GPU backend', () => {
+  const gpuHome = (mode: string): string => {
+    const home = mkdtempSync(join(tmpdir(), 'tron-launcher-'));
+    homes.push(home);
+    mkdirSync(join(home, 'profile'), { recursive: true });
+    writeFileSync(join(home, 'profile', 'gpu-mode'), mode + '\n');
+    return home;
+  };
+
+  it('leaves the backend alone by default', () => {
+    const { argv } = run([]);
+    expect(argv).not.toContain('--disable-gpu');
+    expect(valueOf(argv, '--disable-features')[0]).not.toContain('Vulkan');
+  });
+
+  it("'safe' disables Vulkan without giving up acceleration", () => {
+    const { argv } = run([], { home: gpuHome('safe') });
+    expect(valueOf(argv, '--disable-features')[0]!.split(',')).toContain('Vulkan');
+    expect(argv).not.toContain('--disable-gpu');
+  });
+
+  it("'safe' keeps the Manifest V2 kill switch off too", () => {
+    // It shares one comma-separated list; appending must not replace it.
+    const { argv } = run([], { home: gpuHome('safe') });
+    expect(valueOf(argv, '--disable-features')[0]!.split(',')).toEqual(
+      expect.arrayContaining(['ExtensionManifestV2Disabled', 'Translate', 'Vulkan']),
+    );
+  });
+
+  it("'off' drops the GPU process and its compositing", () => {
+    const { argv } = run([], { home: gpuHome('off') });
+    expect(argv).toContain('--disable-gpu');
+    expect(argv).toContain('--disable-gpu-compositing');
+  });
+
+  it('falls back to on, and says so, when the mode is not one we know', () => {
+    const { argv, stderr } = run([], { home: gpuHome('turbo') });
+    expect(stderr).toContain("unknown GPU mode 'turbo'");
+    expect(argv).not.toContain('--disable-gpu');
+    expect(valueOf(argv, '--disable-features')[0]).not.toContain('Vulkan');
+  });
+
+  it('lets TRONBROWSER_GPU override the stored mode', () => {
+    const home = gpuHome('off');
+    const { argv } = run([], { home, env: { TRONBROWSER_GPU: 'safe' } });
+    expect(argv).not.toContain('--disable-gpu');
+    expect(valueOf(argv, '--disable-features')[0]!.split(',')).toContain('Vulkan');
   });
 });
 
