@@ -4,9 +4,9 @@
 // storage calls. `fetch()` has no default timeout: a host that accepts the
 // connection and then never answers leaves the promise pending forever, and the
 // section waiting on it stays on its placeholder for the life of the tab — the
-// page looks frozen rather than degraded. background.js, moshpit.js and the
-// per-feed fetch already each carried their own AbortController for this
-// reason; this is that same pattern, in one place, for the rest of them.
+// page looks frozen rather than degraded. background.js and the per-feed fetch
+// already each carried their own AbortController for this reason; this is that
+// same pattern, in one place, for the rest of them.
 //
 // chrome.storage.local is bounded for the same reason: it is backed by a
 // LevelDB in the profile, and a large or damaged one can leave a get() pending.

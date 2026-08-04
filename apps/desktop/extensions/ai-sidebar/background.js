@@ -1,6 +1,3 @@
-import { destinationFor, moshpitBypassHosts, moshpitConfig } from './moshpit.js';
-import { routeForDnsFailure, routeForNavigation, territoryOf } from './moshpit-routing.js';
-
 // Open the AI side panel when the toolbar action is clicked.
 chrome.sidePanel
   .setPanelBehavior({ openPanelOnActionClick: true })
@@ -169,7 +166,7 @@ async function stopTorViaHelper() {
   } catch (_) { /* helper not running — nothing to stop */ }
 }
 
-function torProxyConfig(port, pitHosts = []) {
+function torProxyConfig(port) {
   return {
     mode: 'fixed_servers',
     rules: {
@@ -177,14 +174,9 @@ function torProxyConfig(port, pitHosts = []) {
       // Tor and names never leak.
       singleProxy: { scheme: 'socks5', host: '127.0.0.1', port },
       // Loopback must bypass Tor: the SOCKS port + the control helper are on
-      // 127.0.0.1, and Tor refuses to proxy private addresses anyway.
-      //
-      // The pit's own hosts bypass too. Resolution asks the registry a question
-      // before a Moshpit navigation can complete, and a cold Tor circuit does
-      // not answer inside the lookup budget — so routing them through Tor made
-      // every Moshpit name fall back to clearnet, which looks exactly like the
-      // namespace not existing. See moshpitBypassHosts for the privacy trade.
-      bypassList: ['localhost', '127.0.0.1', '[::1]', ...pitHosts],
+      // 127.0.0.1, and Tor refuses to proxy private addresses anyway. Nothing
+      // else bypasses — every other host goes through the proxy.
+      bypassList: ['localhost', '127.0.0.1', '[::1]'],
     },
   };
 }
@@ -198,11 +190,7 @@ async function setTorBadge(on) {
 }
 
 async function enableTor() {
-  // Read at enable time rather than cached: the options page can repoint the
-  // registry at a self-hosted pit between one toggle and the next.
-  let pitHosts = [];
-  try { pitHosts = moshpitBypassHosts(await moshpitConfig()); } catch (_) { /* defaults are enough */ }
-  await chrome.proxy.settings.set({ value: torProxyConfig(TOR_SOCKS_PORT, pitHosts), scope: 'regular' });
+  await chrome.proxy.settings.set({ value: torProxyConfig(TOR_SOCKS_PORT), scope: 'regular' });
   // Stop WebRTC from leaking the real IP via non-proxied UDP.
   try {
     await chrome.privacy.network.webRTCIPHandlingPolicy.set({ value: 'disable_non_proxied_udp' });
@@ -301,87 +289,3 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     }
   } catch (_) { /* best effort */ }
 })();
-
-// --- Moshpit name resolution ---------------------------------------------
-// This is what makes the Moshpit settings on the options page actually do
-// something: until now they were written to storage and never read.
-//
-// Which namespace a hostname belongs to is decided by its ENDING, not by
-// whether DNS failed. See tlds.js for why: a resolver that hijacks NXDOMAIN
-// answers for `blue.eggs` too, so "DNS failed" is a signal we do not reliably
-// get, and on those connections the whole namespace silently stopped working.
-//
-// So there are two territories, and a hostname is in exactly one:
-//
-//   An ending only Moshpit could own (`.eggs` — not IANA's, not reserved).
-//     Clearnet cannot legitimately answer for it, so resolution runs in BOTH
-//     modes and does not wait for a DNS error that may never come. This is the
-//     path that a hijacking resolver used to swallow.
-//
-//   A real or reserved ending (`.com`, `.onion`, `.local`). Ordinary browsing,
-//     and the default mode never touches the registry for it — no round-trip,
-//     no added latency, nothing on the wire. Only the opt-in 'moshpit' mode
-//     consults the registry here, because only it lets a registered name
-//     override a working clearnet domain, and that is what it costs.
-//
-// onErrorOccurred still backfills a real ending whose DNS genuinely failed —
-// that is an honest signal when we get it, and it is how a `.com` that nobody
-// registered can still fall through to Moshpit.
-//
-// No redirect loop: every destination we send a tab to (pit.moshcode.sh/n/…,
-// app.moshcode.sh/pit) has three labels, so parseRegistryName rejects it and
-// the hooks ignore it on the way back through.
-
-const DNS_FAILED = new Set([
-  'net::ERR_NAME_NOT_RESOLVED',
-  'net::ERR_NAME_RESOLUTION_FAILED',
-]);
-
-// The hostname of a top-level http(s) navigation. Whether it is ours to touch
-// is routeForNavigation's call, not this one's.
-function navigationHostname(url) {
-  try {
-    const u = new URL(url);
-    if (u.protocol !== 'http:' && u.protocol !== 'https:') return '';
-    return u.hostname;
-  } catch {
-    return '';
-  }
-}
-
-async function sendTabTo(tabId, url) {
-  try {
-    await chrome.tabs.update(tabId, { url });
-  } catch (err) {
-    console.warn('moshpit redirect:', err);
-  }
-}
-
-chrome.webNavigation?.onErrorOccurred.addListener(async (details) => {
-  if (details.frameId !== 0) return; // top-level navigations only
-  if (!DNS_FAILED.has(details.error)) return;
-  const hostname = navigationHostname(details.url);
-  const route = routeForDnsFailure(hostname);
-  if (!route.resolve) return;
-  const dest = await destinationFor(hostname, route.clearnetResolves);
-  if (dest) await sendTabTo(details.tabId, dest);
-});
-
-chrome.webNavigation?.onBeforeNavigate.addListener(async (details) => {
-  if (details.frameId !== 0) return;
-  const hostname = navigationHostname(details.url);
-
-  // The territory is decided from the hostname alone, so an ordinary navigation
-  // to a real ending costs one Set lookup — no storage read, no registry call.
-  // Only 'clearnet' has an answer that depends on the mode, so only it pays for
-  // reading the mode.
-  const territory = territoryOf(hostname);
-  if (territory === 'none' || territory === 'reserved') return;
-  const mode = territory === 'clearnet' ? (await moshpitConfig()).mode : 'clearnet';
-
-  const route = routeForNavigation(hostname, mode);
-  if (!route.resolve) return;
-
-  const dest = await destinationFor(hostname, route.clearnetResolves);
-  if (dest) await sendTabTo(details.tabId, dest);
-});
