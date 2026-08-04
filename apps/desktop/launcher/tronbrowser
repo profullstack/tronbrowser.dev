@@ -170,19 +170,42 @@ fi
 # "Always prompt for install". Pre-seed it in the profile's Local State so the
 # bundled chromium-web-store can install extensions. Best-effort (needs python3).
 if command -v python3 >/dev/null 2>&1; then
-  TB_LOCAL_STATE="$DATA/Local State" python3 - <<'PY' 2>/dev/null || true
-import json, os
+  TB_LOCAL_STATE="$DATA/Local State" python3 - <<'PY' || true
+import json, os, sys, tempfile
 p = os.environ["TB_LOCAL_STATE"]
 os.makedirs(os.path.dirname(p), exist_ok=True)
-try:
-    d = json.load(open(p)) if os.path.exists(p) else {}
-except Exception:
+# An existing file that does not parse is LEFT ALONE. Replacing it with a fresh
+# dict is how a profile gets wiped: this file holds every setting in the profile,
+# so a stub is indistinguishable from a factory reset — and the usual reason it
+# does not parse is a truncating write like the one this block used to do.
+if os.path.exists(p):
+    try:
+        with open(p) as f:
+            d = json.load(f)
+    except Exception:
+        sys.stderr.write("TronBrowser: %s did not parse — leaving it untouched.\n" % p)
+        raise SystemExit(0)
+else:
     d = {}
 exp = d.setdefault("browser", {}).setdefault("enabled_labs_experiments", [])
 flag = "extension-mime-request-handling@2"
 if flag not in exp:
     exp.append(flag)
-    json.dump(d, open(p, "w"))
+    # Land it as a rename. This file is the profile; a truncated in-place write
+    # loses every setting in it, and the next launch then reads it as unparseable.
+    fd, tmp = tempfile.mkstemp(dir=os.path.dirname(p))
+    try:
+        with os.fdopen(fd, "w") as f:
+            json.dump(d, f)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, p)
+    except Exception:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
 PY
 fi
 
@@ -240,16 +263,25 @@ if command -v python3 >/dev/null 2>&1 && [ "$SEARCH_PREV" != "$SEARCH_WANT" ]; t
   TB_ENGINE="$(search_engine_spec "$SEARCH_WANT")" \
   TB_PREV_URL="$SEARCH_PREV_URL" \
   TB_FORCE="$SEARCH_EXPLICIT" \
-  python3 - <<'PY' 2>/dev/null || true
-import json, os, tempfile
+  python3 - <<'PY' || true
+import json, os, sys, tempfile
 p = os.environ["TB_PREFS"]
 name, keyword, url = os.environ["TB_ENGINE"].split("|")
 prev_url = os.environ.get("TB_PREV_URL", "")
 force = os.environ.get("TB_FORCE") == "1"
 os.makedirs(os.path.dirname(p), exist_ok=True)
-try:
-    d = json.load(open(p)) if os.path.exists(p) else {}
-except Exception:
+# An existing file that does not parse is LEFT ALONE. Replacing it with a fresh
+# dict is how a profile gets wiped: this file holds every setting in the profile,
+# so a stub is indistinguishable from a factory reset — and the usual reason it
+# does not parse is a truncating write like the one this block used to do.
+if os.path.exists(p):
+    try:
+        with open(p) as f:
+            d = json.load(f)
+    except Exception:
+        sys.stderr.write("TronBrowser: %s did not parse — leaving it untouched.\n" % p)
+        raise SystemExit(0)
+else:
     d = {}
 
 # Only ever overwrite an engine that is absent or that we put there ourselves.
@@ -284,16 +316,39 @@ fi
 # goes through the new-tab path, which honors the chrome_url_overrides feed. Once
 # per profile, then respect the user's chrome://settings/onStartup choice.
 if command -v python3 >/dev/null 2>&1 && [ ! -f "$DATA/.tron-startup-ntp" ]; then
-  TB_PREFS="$DATA/Default/Preferences" python3 - <<'PY' 2>/dev/null || true
-import json, os
+  TB_PREFS="$DATA/Default/Preferences" python3 - <<'PY' || true
+import json, os, sys, tempfile
 p = os.environ["TB_PREFS"]
 os.makedirs(os.path.dirname(p), exist_ok=True)
-try:
-    d = json.load(open(p)) if os.path.exists(p) else {}
-except Exception:
+# An existing file that does not parse is LEFT ALONE. Replacing it with a fresh
+# dict is how a profile gets wiped: this file holds every setting in the profile,
+# so a stub is indistinguishable from a factory reset — and the usual reason it
+# does not parse is a truncating write like the one this block used to do.
+if os.path.exists(p):
+    try:
+        with open(p) as f:
+            d = json.load(f)
+    except Exception:
+        sys.stderr.write("TronBrowser: %s did not parse — leaving it untouched.\n" % p)
+        raise SystemExit(0)
+else:
     d = {}
 d.setdefault("session", {})["restore_on_startup"] = 5  # 5 = open the New Tab page
-json.dump(d, open(p, "w"))
+# Land it as a rename. This file is the profile; a truncated in-place write
+# loses every setting in it, and the next launch then reads it as unparseable.
+fd, tmp = tempfile.mkstemp(dir=os.path.dirname(p))
+try:
+    with os.fdopen(fd, "w") as f:
+        json.dump(d, f)
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(tmp, p)
+except Exception:
+    try:
+        os.unlink(tmp)
+    except OSError:
+        pass
+    raise
 PY
   mkdir -p "$DATA"; : > "$DATA/.tron-startup-ntp"
 fi
