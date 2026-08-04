@@ -90,8 +90,8 @@ jobs:
           Copy-Item -Recurse apps/desktop/extensions/ai-sidebar "$stage/extensions/ai-sidebar"
           # Same wholesale-copy problem build-release.sh has: the vitest files
           # next to the extension sources ride along into the zip. Chrome never
-          # loads them, and moshpit-drift.test.js imports a devDependency that
-          # cannot resolve from an unbundled extension. Drop them.
+          # loads them, and they import vitest, which cannot resolve from an
+          # unbundled extension. Drop them.
           Get-ChildItem "$stage/extensions/ai-sidebar" -Filter *.test.js -Recurse | Remove-Item -Force
           Copy-Item LICENSE "$stage/LICENSE"
           "v${{ needs.create-release.outputs.version }}" | Out-File -Encoding ascii "$stage/VERSION"

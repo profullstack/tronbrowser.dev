@@ -366,10 +366,6 @@ async function loadAll() {
   buildProviders(provs, aiDefault);
   el("cpClient").value = coinpayConfig?.clientId || "";
   el("syncUrl").value = syncConfig?.url || "";
-  const moshpit = (await chrome.storage.local.get("moshpitConfig")).moshpitConfig || {};
-  // Absent means never configured, which is the default — not "off".
-  el("moshpitMode").value = moshpit.mode === "moshpit" ? "moshpit" : "clearnet";
-  el("moshpitRegistry").value = moshpit.registryBase || "";
   await renderAccount();
   await mountSections(); // Search / Markets / Sports / RSS feeds (shared module)
   await renderBtr();
@@ -387,30 +383,6 @@ el("syncUrl").addEventListener("change", async () => {
     syncConfig: { url: el("syncUrl").value.trim() },
   });
 });
-async function saveMoshpit() {
-  // Only what was actually filled in. Writing an empty field would store "",
-  // and a stored value — even an empty one — is a decision this code then has
-  // to keep honouring. Leaving a field out is what lets it keep following
-  // whatever the shipped default becomes.
-  const registryBase = el("moshpitRegistry").value.trim();
-  const previous = (await chrome.storage.local.get("moshpitConfig")).moshpitConfig || {};
-  const next = {
-    ...previous,
-    mode: el("moshpitMode").value === "moshpit" ? "moshpit" : "clearnet",
-  };
-  if (registryBase) next.registryBase = registryBase;
-  else delete next.registryBase;
-
-  await chrome.storage.local.set({ moshpitConfig: next });
-  flash(
-    "savedMoshpit",
-    el("moshpitMode").value === "moshpit"
-      ? "Moshpit will override clearnet for names it holds"
-      : "Clearnet wins; Moshpit fills gaps only",
-  );
-}
-el("moshpitMode").addEventListener("change", saveMoshpit);
-el("moshpitRegistry").addEventListener("change", saveMoshpit);
 async function get(k) {
   return (await chrome.storage.local.get(k))[k] || {};
 }

@@ -79,28 +79,11 @@
 
   <h2>Name resolution</h2>
   <p class="hint">
-    Moshpit names (<code>fuck.yeah</code>, <code>original.sploof</code>) always resolve here —
-    clearnet has never heard of those endings. This setting only decides what happens when
-    <em>both</em> namespaces answer, e.g. <code>profullstack.ai</code>.
+    Moshpit names resolve at the operating system, not in the browser — run
+    <code>moshcode dns enable</code> once on this machine and every application
+    resolves them, not just this one. The browser used to do it here, which meant
+    a hook on every navigation and names that worked in one app and not the next.
   </p>
-  <label for="moshpitMode">When a name exists in both</label>
-  <select id="moshpitMode">
-    <option value="clearnet">Clearnet wins — use Moshpit only to fill gaps (default)</option>
-    <option value="moshpit">Moshpit wins — override the clearnet domain</option>
-  </select>
-  <p class="hint">
-    Overriding means a domain someone else holds on clearnet resolves to <em>your</em> Moshpit
-    registration instead. Left on the default, a domain that already works is never redirected.
-  </p>
-  <p class="hint">
-    To claim a namespace, type <code>mosh.</code> followed by the ending you want —
-    <code>mosh.eggs</code> opens the Pit for <code>.eggs</code>, where you register it and
-    every <code>name.eggs</code> under it. <code>mosh.</code><em>anything</em> is reserved, so
-    nobody can register it and impersonate that page.
-  </p>
-  <label for="moshpitRegistry">Registry (advanced)</label>
-  <input id="moshpitRegistry" placeholder="https://pit.moshcode.sh" />
-  <div id="savedMoshpit" class="hint"></div>
 
   <h2>AI providers (bring your own keys)</h2>
   <p class="hint">Add keys for as many providers as you like, then pick a default for
