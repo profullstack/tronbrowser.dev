@@ -226,6 +226,71 @@ describe('omnibox search engine', () => {
   });
 });
 
+// --- Damaged profile ---------------------------------------------------------
+// Three blocks in the launcher edit Chromium's JSON state files. Every one of
+// them used to do `except Exception: d = {}` and then write the result — so a
+// file that failed to parse was REPLACED by a stub holding only the key that
+// block cared about. Preferences is the whole profile, which made that a silent
+// factory reset, and the usual reason it failed to parse was the non-atomic
+// write the same block did on the previous launch. These tests pin the rule:
+// a state file we cannot read is a file we do not touch.
+
+const localStatePath = (home: string) => join(home, 'profile', 'Local State');
+
+/** A profile whose JSON state files are present but corrupt. */
+function seedCorrupt(which: 'prefs' | 'localstate'): { home: string; path: string } {
+  const home = mkdtempSync(join(tmpdir(), 'tron-launcher-'));
+  homes.push(home);
+  const path = which === 'prefs' ? prefsPath(home) : localStatePath(home);
+  mkdirSync(dirname(path), { recursive: true });
+  // What a truncated write leaves behind: valid JSON's opening, then nothing.
+  writeFileSync(path, '{"default_search_provider_data": {"template_ur');
+  return { home, path };
+}
+
+describe('damaged profile', () => {
+  it('leaves an unparseable Preferences exactly as it found it', () => {
+    const { home, path } = seedCorrupt('prefs');
+    const before = readFileSync(path, 'utf8');
+    run([], { home });
+    expect(readFileSync(path, 'utf8')).toBe(before);
+  });
+
+  it('leaves an unparseable Local State exactly as it found it', () => {
+    const { home, path } = seedCorrupt('localstate');
+    const before = readFileSync(path, 'utf8');
+    run([], { home });
+    expect(readFileSync(path, 'utf8')).toBe(before);
+  });
+
+  it('says which file it refused to touch, rather than failing silently', () => {
+    const { home } = seedCorrupt('prefs');
+    const { stderr } = run([], { home });
+    expect(stderr).toContain('did not parse');
+  });
+
+  it('still launches the browser when a state file is unreadable', () => {
+    // Refusing to write must not become refusing to start.
+    const { home } = seedCorrupt('prefs');
+    const { argv } = run([], { home });
+    expect(valueOf(argv, '--user-data-dir')).toEqual([join(home, 'profile')]);
+  });
+
+  it('keeps unrelated settings when it sets the startup page', () => {
+    // The restore_on_startup block rewrites the whole file to change one key.
+    const home = mkdtempSync(join(tmpdir(), 'tron-launcher-'));
+    homes.push(home);
+    const path = prefsPath(home);
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileSync(path, JSON.stringify({ bookmark_bar: { show_on_all_tabs: true }, extensions: { settings: { abc: 1 } } }));
+    run([], { home });
+    const json = JSON.parse(readFileSync(path, 'utf8'));
+    expect(json.session?.restore_on_startup).toBe(5);
+    expect(json.bookmark_bar?.show_on_all_tabs).toBe(true);
+    expect(json.extensions?.settings?.abc).toBe(1);
+  });
+});
+
 describe('engine reporting', () => {
   it('names the engine it is about to run', () => {
     const { stderr } = run([], { version: 'Chromium 141.0.0.0' });
