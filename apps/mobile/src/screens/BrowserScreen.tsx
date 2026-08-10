@@ -25,6 +25,8 @@ export function BrowserScreen() {
   const [address, setAddress] = useState(HOME);
   const [uri, setUri] = useState(HOME);
   const [loading, setLoading] = useState(false);
+  const [canGoBack, setCanGoBack] = useState(false);
+  const [canGoForward, setCanGoForward] = useState(false);
 
   const go = () => {
     const next = normalizeUrl(address);
@@ -36,11 +38,24 @@ export function BrowserScreen() {
     <View style={styles.container}>
       <View style={styles.bar}>
         <TouchableOpacity
-          style={styles.navBtn}
+          style={[styles.navBtn, !canGoBack && styles.navBtnDisabled]}
           onPress={() => webRef.current?.goBack()}
+          disabled={!canGoBack}
+          accessibilityRole="button"
           accessibilityLabel="Back"
+          accessibilityState={{ disabled: !canGoBack }}
         >
           <Text style={styles.navBtnText}>‹</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.navBtn, !canGoForward && styles.navBtnDisabled]}
+          onPress={() => webRef.current?.goForward()}
+          disabled={!canGoForward}
+          accessibilityRole="button"
+          accessibilityLabel="Forward"
+          accessibilityState={{ disabled: !canGoForward }}
+        >
+          <Text style={styles.navBtnText}>›</Text>
         </TouchableOpacity>
         <TextInput
           style={styles.input}
@@ -55,7 +70,12 @@ export function BrowserScreen() {
           placeholderTextColor={theme.textDim}
           selectTextOnFocus
         />
-        <TouchableOpacity style={styles.navBtn} onPress={go} accessibilityLabel="Reload">
+        <TouchableOpacity
+          style={styles.navBtn}
+          onPress={() => webRef.current?.reload()}
+          accessibilityRole="button"
+          accessibilityLabel="Reload"
+        >
           <Text style={styles.navBtnText}>⟳</Text>
         </TouchableOpacity>
       </View>
@@ -68,7 +88,11 @@ export function BrowserScreen() {
         style={styles.web}
         onLoadStart={() => setLoading(true)}
         onLoadEnd={() => setLoading(false)}
-        onNavigationStateChange={(s) => setAddress(s.url)}
+        onNavigationStateChange={(state) => {
+          setAddress(state.url);
+          setCanGoBack(state.canGoBack);
+          setCanGoForward(state.canGoForward);
+        }}
         // Privacy-leaning defaults consistent with the desktop ethos.
         thirdPartyCookiesEnabled={false}
         allowsInlineMediaPlayback
@@ -98,6 +122,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: theme.surfaceAlt,
   },
+  navBtnDisabled: { opacity: 0.35 },
   navBtnText: { color: theme.accent, fontSize: 18, fontWeight: '700' },
   input: {
     flex: 1,
