@@ -12,11 +12,12 @@ shopt -s nullglob
 copied=0
 for f in "$OUT_DIR"/apks/*.apk "$OUT_DIR"/apks/*.aab; do
   base="$(basename "$f")"; ext="${base##*.}"
-  dest="$DIST_DIR/tronbrowser-android-${TB_TARGET_CPU}.${ext}"
+  stem="${base%.*}"
+  dest="$DIST_DIR/tronbrowser-android-${TB_TARGET_CPU}-${stem}.${ext}"
   cp "$f" "$dest"
   echo "  + $dest"
   copied=$((copied + 1))
 done
-[[ "$copied" -gt 0 ]] || echo "  ! no .apk/.aab found in $OUT_DIR/apks — did build.sh run?"
+[[ "$copied" -gt 0 ]] || { echo "no .apk/.aab found in $OUT_DIR/apks" >&2; exit 1; }
 
 echo "package: done -> $DIST_DIR (version=$VERSION)"

@@ -1,8 +1,8 @@
 name: Android engine
 
 # Track 3 (docs/mobile-architecture.md): native de-googled Chromium APK.
-# The `validate` job proves the build skeleton is wired on every push. The real
-# compile is a ~50GB checkout + hours on a large/self-hosted Linux runner, so
+# The `validate` job proves the build scaffold is internally consistent. The real
+# compile needs 100GB+ free disk and a large/self-hosted Linux runner, so
 # it is manual (workflow_dispatch) and opt-in.
 on:
   push:
@@ -27,8 +27,11 @@ on:
       target_cpu:
         description: 'Target CPU'
         type: choice
-        options: [arm64, arm, x64]
+        options: [arm64, arm]
         default: arm64
+
+permissions:
+  contents: read
 
 defaults:
   run:
@@ -39,13 +42,26 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
 
-      - name: version.json parses + has required keys
+      - name: Install workspace dependencies
+        working-directory: .
         run: |
-          node -e "const c=require('./config/version.json');
-            for (const k of ['chromiumVersion','ungoogledChromiumTag','targetOs','ninjaTargets'])
-              if (c[k]===undefined) { console.error('missing key:',k); process.exit(1); }
-            console.log('version.json OK — chromium', c.chromiumVersion, '→', c.ninjaTargets.join(', '));"
+          corepack enable
+          pnpm install --frozen-lockfile
+
+      - name: Validate scaffold and report release blockers
+        run: node scripts/preflight.mjs --mode scaffold
+
+      - name: Android engine checks
+        working-directory: .
+        run: |
+          pnpm --filter @tronbrowser/android-engine lint
+          pnpm --filter @tronbrowser/android-engine typecheck
+          pnpm --filter @tronbrowser/android-engine test
 
       - name: GN arg files present
         run: test -f config/gn-args/common.gni && test -f config/gn-args/android.gni
@@ -56,7 +72,7 @@ jobs:
 
       - name: Scripts dry-run without TB_RUN (guard works)
         run: |
-          for s in fetch sync apply-patches build package tor; do
+          for s in fetch sync apply-patches build package tor sign; do
             out="$(./scripts/$s.sh)"
             echo "$out" | grep -q 'dry-run' || { echo "guard failed: $s did not dry-run"; exit 1; }
             echo "guard ok: $s"
@@ -67,12 +83,21 @@ jobs:
     if: github.event_name == 'workflow_dispatch' && inputs.real_build
     runs-on: ${{ inputs.runner }}
     timeout-minutes: 720
+    env:
+      TB_WORKDIR: ${{ github.workspace }}/.cache/tronbrowser-android-chromium
     steps:
       - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
+      - name: Release preflight
+        env: { TB_TARGET_CPU: '${{ inputs.target_cpu }}' }
+        run: node scripts/preflight.mjs --mode release
       - name: Toolchain note
         run: |
           echo "Building native Android Chromium (cpu=${{ inputs.target_cpu }})."
-          echo "Requires ~50GB+ disk, many GB RAM, hours. GitHub-hosted runners"
+          echo "Requires 100GB+ free disk, 16GB+ RAM recommended, and hours. GitHub-hosted runners"
           echo "will run out of disk — use a large self-hosted Linux runner."
       - name: fetch
         env: { TB_RUN: '1', TB_TARGET_CPU: '${{ inputs.target_cpu }}' }
@@ -83,14 +108,33 @@ jobs:
       - name: apply-patches
         env: { TB_RUN: '1', TB_TARGET_CPU: '${{ inputs.target_cpu }}' }
         run: ./scripts/apply-patches.sh
+      - name: stage Tor assets
+        env: { TB_RUN: '1', TB_TARGET_CPU: '${{ inputs.target_cpu }}' }
+        run: ./scripts/tor.sh
       - name: build
         env: { TB_RUN: '1', TB_TARGET_CPU: '${{ inputs.target_cpu }}' }
         run: ./scripts/build.sh
       - name: package
         env: { TB_RUN: '1', TB_TARGET_CPU: '${{ inputs.target_cpu }}' }
         run: ./scripts/package.sh
+      - name: Prepare release keystore
+        env:
+          TB_KEYSTORE_BASE64: '${{ secrets.TRONBROWSER_ANDROID_KEYSTORE_BASE64 }}'
+        run: |
+          test -n "$TB_KEYSTORE_BASE64" || { echo "TRONBROWSER_ANDROID_KEYSTORE_BASE64 is required"; exit 1; }
+          printf '%s' "$TB_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/tronbrowser-release.keystore"
+          chmod 600 "$RUNNER_TEMP/tronbrowser-release.keystore"
+          echo "TB_KEYSTORE=$RUNNER_TEMP/tronbrowser-release.keystore" >> "$GITHUB_ENV"
+      - name: sign
+        env:
+          TB_RUN: '1'
+          TB_TARGET_CPU: '${{ inputs.target_cpu }}'
+          TB_KEYSTORE_PASS: '${{ secrets.TRONBROWSER_ANDROID_KEYSTORE_PASSWORD }}'
+          TB_KEY_ALIAS: '${{ secrets.TRONBROWSER_ANDROID_KEY_ALIAS }}'
+          TB_KEY_PASS: '${{ secrets.TRONBROWSER_ANDROID_KEY_PASSWORD }}'
+        run: ./scripts/sign.sh
       - uses: actions/upload-artifact@v4
         with:
           name: tronbrowser-android-${{ inputs.target_cpu }}
-          path: ~/.cache/tronbrowser-android-chromium/dist/*
-          if-no-files-found: warn
+          path: ${{ env.TB_WORKDIR }}/dist/*
+          if-no-files-found: error

@@ -1,17 +1,21 @@
 # TronBrowser Android engine — Android target GN args. Imported after
-# common.gni. $TB_TARGET_CPU is substituted by build.sh (arm64 | arm | x64).
+# common.gni. $TB_TARGET_CPU is substituted by build.sh (arm64 | arm).
 target_os = "android"
 target_cpu = "${TB_TARGET_CPU}"
 
-# Stable channel branding for the APK.
-android_channel = "stable"
+# `default` deliberately avoids Chromium's beta/dev/canary package suffixes;
+# release channels need separate app IDs if the project introduces them later.
+android_channel = "default"
+
+# Keep the native engine separate from Chromium and the Expo companion app.
+chrome_public_manifest_package = "dev.tronbrowser.browser"
 
 # De-Google Android surfaces that Ungoogled's desktop patches don't cover.
 # GMS/GCM/feedback are stripped by the Android patch series (see patches/series)
 # and the empty API keys above; these keep the rest off.
 enable_vr = false
 enable_arcore = false
-enable_gvr_services = false
 
-# Keep extensions/webview parity where Android supports it. (Full Chrome
-# extension support on Android ships via the fork's patches, Kiwi/Bromite-style.)
+# Upstream chrome_public_apk does not enable desktop extensions. Whether
+# TronBrowser must carry an Android extension port is still a product decision
+# and the highest-risk part of the proposed overlay.
