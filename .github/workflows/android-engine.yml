@@ -45,6 +45,7 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version-file: .nvmrc
+          package-manager-cache: false
 
       - name: Install workspace dependencies
         working-directory: .
@@ -89,6 +90,7 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version-file: .nvmrc
+          package-manager-cache: false
       - name: Release preflight
         env: { TB_TARGET_CPU: '${{ inputs.target_cpu }}' }
         run: node scripts/preflight.mjs --mode release
