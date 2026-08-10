@@ -68,33 +68,37 @@ Landed:
 Still open: adaptive/mobile window sizing tweaks; publishing (OpenStore submit,
 arm64 apt repo or Flatpak arm64 on Flathub).
 
-## Track 3 — Android full engine (native Chromium) — **skeleton started**
+## Track 3 — Android full engine (native Chromium) — **scaffold started**
 
-**Scope:** a separate **native Android Chromium build** (Bromite/Cromite-style)
-carrying the de-googled engine + hardening + bundled `tor` (SOCKS5). The *only*
-way to get the real engine + Chrome-extension power on Android. Lives in
+**Scope:** evaluate a separate **native Android Chromium build** carrying a
+de-googled engine, hardening, and optional bundled `tor` (SOCKS5). Desktop-style
+extension support is an open, high-risk requirement because upstream Android
+does not provide it on the normal APK target. This track lives in
 [`apps/android-engine/`](../apps/android-engine/README.md), the Android
 counterpart of `apps/desktop/chromium/`.
 
-Landed (skeleton, CI-validated):
+Landed (scaffold, CI-validated):
 
 - **Build pipeline** `apps/android-engine/chromium/scripts/`: fetch → sync →
   apply-patches → tor → build → package → sign, all guarded by `TB_RUN=1`
   (dry-run by default; source lands outside the repo in `$TB_WORKDIR`).
-- **Config**: pinned `version.json` (chromium + ungoogled, `target_os=android`,
-  `chrome_public_apk`/`_bundle`, tor-android), GN args (`common.gni` privacy +
-  `android.gni` target), branding (`dev.tronbrowser.browser` — distinct from the
-  companion's `dev.tronbrowser.app`).
+- **Config**: historical pinned `version.json` (chromium + ungoogled,
+  `target_os=android`, `chrome_public_apk`/`_bundle`), GN args
+  (`common.gni` privacy + `android.gni` target), and intended branding.
 - **Patch series** (roadmap): branding, telemetry residual, sponsored removal,
   default search/newtab, **strip GMS/GCM**, **extension support**, **Tor proxy
-  toggle**, privacy defaults.
-- **CI** `.github/workflows/android-engine.yml`: `validate` job proves the
-  skeleton on every push (parses config, `bash -n`, checks the dry-run guard);
-  `build-apk` is a manual opt-in dispatch (needs a large/self-hosted Linux
-  runner — ~50GB checkout, hours).
+  toggle**, privacy defaults. Android extension support is experimental and
+  must be validated against a maintained downstream before implementation.
+- **CI** `.github/workflows/android-engine.yml`: `validate` checks the scaffold
+  and reports release blockers on every push; `build-apk` is a manual opt-in
+  dispatch whose strict preflight requires a large Linux x64 runner and complete
+  patch/assets configuration.
+- **Source recommendation**: [ADR 0002](adr/0002-android-engine-source-strategy.md)
+  documents the conditional custom-overlay versus maintained-downstream choice.
 
-Still open: fill the `patches/tronbrowser-android/*.patch` bodies; first real
-compile on a big runner; signing keystore + Play/F-Droid publishing.
+Still open: update the historical Chromium pin; fill the Android patch bodies;
+add real branding and pinned Tor assets; first real compile on a runner with at
+least 100GB free; signing keystore + Play/F-Droid publishing.
 
 **Reminder:** iOS can never have this (WebKit-mandated). This + Track 2 are the
 only routes to the real Ungoogled-Chromium engine on a phone.

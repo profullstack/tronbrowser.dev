@@ -9,8 +9,8 @@ CONFIG_DIR="$CHROMIUM_DIR/config"
 PATCHES_DIR="$CHROMIUM_DIR/patches"
 BRANDING_DIR="$CHROMIUM_DIR/branding"
 
-# Work tree lives OUTSIDE the repo (Chromium src is ~50GB + the Android SDK/NDK
-# add several more); override with $TB_WORKDIR.
+# Work tree lives OUTSIDE the repo. Chromium's current Android instructions call
+# for at least 100GB free; override the location with $TB_WORKDIR.
 WORKDIR="${TB_WORKDIR:-$HOME/.cache/tronbrowser-android-chromium}"
 DEPOT_TOOLS_DIR="$WORKDIR/depot_tools"
 UNGOOGLED_DIR="$WORKDIR/ungoogled-chromium"
@@ -18,7 +18,7 @@ SRC_DIR="$WORKDIR/src"                            # chromium checkout
 OUT_DIR="$SRC_DIR/out/TronBrowserAndroid"
 DIST_DIR="$WORKDIR/dist"
 
-# Which CPU to build (arm64 = modern phones; arm = 32-bit; x64 = emulator).
+# Which configured CPU to build (arm64 = modern phones; arm = 32-bit).
 TB_TARGET_CPU="${TB_TARGET_CPU:-arm64}"
 
 read_cfg() { node -e "process.stdout.write(String(require('$CONFIG_DIR/version.json').$1))"; }

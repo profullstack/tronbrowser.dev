@@ -4,6 +4,8 @@
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/env.sh"
 require_run build
 
+node "$HERE/preflight.mjs" --mode release --target-cpu "$TB_TARGET_CPU"
+
 [[ "$(uname -s)" == "Linux" ]] || { echo "Android Chromium builds require a Linux host"; exit 1; }
 export PATH="$DEPOT_TOOLS_DIR:$PATH"
 

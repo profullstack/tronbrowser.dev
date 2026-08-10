@@ -1,0 +1,12 @@
+{
+  "name": "@tronbrowser/android-engine",
+  "version": "3.8.8",
+  "private": true,
+  "description": "Build-readiness tooling for the native TronBrowser Android engine",
+  "scripts": {
+    "build": "node chromium/scripts/preflight.mjs --mode scaffold",
+    "test": "vitest run --passWithNoTests chromium/scripts",
+    "lint": "eslint chromium/scripts/*.mjs",
+    "typecheck": "tsc -p tsconfig.json"
+  }
+}

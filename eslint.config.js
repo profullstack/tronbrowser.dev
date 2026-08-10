@@ -62,7 +62,11 @@ export default tseslint.config(
 
   // --- Plain Node scripts (scripts/*.mjs, *.config.js at package roots) ---
   {
-    files: ['scripts/**/*.{js,mjs,cjs}', '**/*.config.{js,mjs,cjs}'],
+    files: [
+      'scripts/**/*.{js,mjs,cjs}',
+      'apps/android-engine/chromium/scripts/*.{js,mjs,cjs}',
+      '**/*.config.{js,mjs,cjs}',
+    ],
     languageOptions: {
       globals: { ...globals.node },
     },

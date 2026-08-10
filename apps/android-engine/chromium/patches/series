@@ -2,9 +2,10 @@
 # Chromium patch set. One concern per patch. Generate patches with:
 #   git -C <chromium-src> diff > apps/android-engine/chromium/patches/tronbrowser-android/<name>.patch
 #
-# Empty/missing patches are skipped by apply-patches.sh, so this file doubles as
-# the roadmap for the Android fork. Desktop shares 0001-0004 conceptually;
-# 0005+ are Android-specific.
+# Every entry is required: preflight and apply-patches.sh fail closed when a
+# patch is missing or empty. Desktop shares 0001-0004 conceptually; 0005+ are
+# Android-specific. Entry 0006 is a high-risk roadmap item, not a claim that
+# upstream chrome_public_apk currently supports desktop-style extensions.
 tronbrowser-android/0001-branding-strings.patch
 tronbrowser-android/0002-disable-telemetry-residual.patch
 tronbrowser-android/0003-remove-sponsored-integrations.patch

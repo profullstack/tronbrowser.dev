@@ -13,6 +13,11 @@ TOR_REPO="$(read_cfg torAndroid.repo)"
 SOCKS_PORT="$(read_cfg torAndroid.socksPort)"
 ASSETS_DIR="$SRC_DIR/chrome/android/tronbrowser/assets/tor"
 
+if [[ "$(read_cfg torAndroid.integrationReady)" != "true" ]]; then
+  echo "Tor Android staging is not implemented; keep integrationReady=false until it downloads and verifies pinned artifacts" >&2
+  exit 1
+fi
+
 echo "==> Tor for Android (SOCKS5 :$SOCKS_PORT) from $TOR_REPO"
 mkdir -p "$ASSETS_DIR"
 
@@ -23,7 +28,6 @@ mkdir -p "$ASSETS_DIR"
 case "$TB_TARGET_CPU" in
   arm64) ABI="arm64-v8a" ;;
   arm)   ABI="armeabi-v7a" ;;
-  x64)   ABI="x86_64" ;;
   *)     echo "unknown TB_TARGET_CPU=$TB_TARGET_CPU"; exit 1 ;;
 esac
 echo "  target ABI: $ABI  -> $ASSETS_DIR"

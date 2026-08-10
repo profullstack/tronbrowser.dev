@@ -13,18 +13,31 @@ require_run sign
 : "${TB_KEYSTORE_PASS:?set TB_KEYSTORE_PASS}"
 : "${TB_KEY_ALIAS:?set TB_KEY_ALIAS}"
 TB_KEY_PASS="${TB_KEY_PASS:-$TB_KEYSTORE_PASS}"
+export TB_KEYSTORE_PASS TB_KEY_PASS
+[[ -f "$TB_KEYSTORE" ]] || { echo "keystore not found: $TB_KEYSTORE" >&2; exit 1; }
 
-APKSIGNER="$(command -v apksigner || echo "$SRC_DIR/third_party/android_sdk/public/build-tools"/*/apksigner)"
-[[ -x "$APKSIGNER" ]] || { echo "apksigner not found (Android SDK build-tools)"; exit 1; }
+APKSIGNER="$(command -v apksigner || true)"
+if [[ -z "$APKSIGNER" ]]; then
+  mapfile -t APKSIGNER_CANDIDATES < <(
+    find "$SRC_DIR/third_party/android_sdk/public/build-tools" -mindepth 2 \
+      -maxdepth 2 -type f -name apksigner -perm -u+x 2>/dev/null | sort -V
+  )
+  if [[ "${#APKSIGNER_CANDIDATES[@]}" -gt 0 ]]; then
+    APKSIGNER="${APKSIGNER_CANDIDATES[${#APKSIGNER_CANDIDATES[@]}-1]}"
+  fi
+fi
+[[ -x "$APKSIGNER" ]] || { echo "apksigner not found (Android SDK build-tools)" >&2; exit 1; }
 
 shopt -s nullglob
-for apk in "$DIST_DIR"/tronbrowser-android-*.apk; do
+APKS=("$DIST_DIR"/tronbrowser-android-*.apk)
+[[ "${#APKS[@]}" -gt 0 ]] || { echo "no packaged APKs found in $DIST_DIR" >&2; exit 1; }
+for apk in "${APKS[@]}"; do
   echo "==> sign $apk"
   "$APKSIGNER" sign \
     --ks "$TB_KEYSTORE" \
-    --ks-pass "pass:$TB_KEYSTORE_PASS" \
+    --ks-pass env:TB_KEYSTORE_PASS \
     --ks-key-alias "$TB_KEY_ALIAS" \
-    --key-pass "pass:$TB_KEY_PASS" \
+    --key-pass env:TB_KEY_PASS \
     "$apk"
   "$APKSIGNER" verify --verbose "$apk" | head -3
 done
