@@ -1,0 +1,43 @@
+{
+  "$schemaVersion": 1,
+  "$comment": "Offline adoption record for the Cromite Android-engine candidate. The tag suffix is Cromite's build identifier; commitSha is the independently pinned Git tag-target commit. Upstream facts are attested snapshots, not live verification.",
+  "candidate": {
+    "name": "Cromite",
+    "repository": "https://github.com/uazo/cromite",
+    "tag": "v148.0.7778.168-cb3baf14f52eb4365d017f640f85310735c19b79",
+    "commitSha": "cdf415cc86c8aa17faa26edf51e12f2fd49a274f",
+    "chromiumVersion": "148.0.7778.168",
+    "publishedAt": "2026-05-21T16:26:34Z"
+  },
+  "snapshot": {
+    "observedOn": "2026-08-17",
+    "recordedBy": "phucnguyen1707",
+    "chromeAndroidStable": {
+      "chromiumVersion": "151.0.7922.71",
+      "sourceUrl": "https://chromereleases.googleblog.com/2026/07/chrome-for-android-update_01846374933.html"
+    }
+  },
+  "policy": {
+    "maximumMajorLag": 1,
+    "maximumReleaseAgeDays": 35,
+    "maximumRecordAgeDays": 30,
+    "emergencySecurityUpdateSlaHours": null
+  },
+  "license": {
+    "spdxId": "GPL-3.0",
+    "sourceUrl": "https://github.com/uazo/cromite/blob/cdf415cc86c8aa17faa26edf51e12f2fd49a274f/LICENSE",
+    "decision": "pending",
+    "decidedBy": null,
+    "decidedOn": null
+  },
+  "extensionSupport": {
+    "requirement": "undecided",
+    "status": "experimental",
+    "enabledByDefault": false,
+    "patchPath": "build/patches/Experimental-support-for-extensions-on-Android.patch",
+    "patchUrl": "https://github.com/uazo/cromite/blob/v148.0.7778.168-cb3baf14f52eb4365d017f640f85310735c19b79/build/patches/Experimental-support-for-extensions-on-Android.patch",
+    "patchBlobSha": "5058d366e52954b10dbea33369562d1a3f0556c0",
+    "attestedBy": "phucnguyen1707",
+    "attestedOn": "2026-08-17"
+  }
+}

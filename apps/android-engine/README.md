@@ -17,6 +17,9 @@ path toward an Ungoogled Chromium engine and optional bundled Tor, built as an
 - ✅ Guarded pipeline and a tested release-readiness preflight.
 - ✅ Source evaluation and conditional recommendation documented in
   [ADR 0002](../../docs/adr/0002-android-engine-source-strategy.md).
+- ✅ A pinned Cromite candidate snapshot and offline adoption gate record
+  license, release-lag, freshness, and extension-support decisions without
+  treating external attestations as a verified build.
 - ⬜ Patch bodies (`chromium/patches/tronbrowser-android/*.patch`), real
   Android branding assets, and pinned/checksummed Tor artifacts.
 - ⬜ Current Chromium security pin and first real compile (Linux x64, at least
@@ -30,6 +33,9 @@ See [`chromium/README.md`](chromium/README.md). TL;DR (Linux host):
 ```bash
 cd apps/android-engine/chromium
 node scripts/preflight.mjs --mode scaffold
+# Validate the recorded source snapshot without claiming it is adoptable.
+node scripts/audit-candidate.mjs --mode record
+node scripts/audit-candidate.mjs --mode adopt  # fails while decisions are open
 # Checkout mode checks the host and reports release blockers before downloading.
 node scripts/preflight.mjs --mode checkout
 # Release mode additionally requires every patch, asset, and Tor input.
@@ -40,9 +46,10 @@ TB_RUN=1 ./scripts/build.sh && TB_RUN=1 ./scripts/package.sh
 ```
 
 CI ([`.github/workflows/android-engine.yml`](../../.github/workflows/android-engine.yml))
-validates the scaffold on every push. The manual heavy-build dispatch fails
-until the strict release preflight is clean; local source checkout remains
-available so the missing overlay can be developed and rebased.
+validates the scaffold and candidate-record structure on every push. The manual
+heavy-build dispatch fails until the strict release preflight is clean; local
+source checkout remains available so the missing overlay can be developed and
+rebased.
 
 ## Distinct app id
 

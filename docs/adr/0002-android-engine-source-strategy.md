@@ -75,6 +75,28 @@ build experiment only. Cromite and Vanadium remain references, not code
 sources, and GPL downstream code must not be copied into this ISC repository
 without a separate licensing decision.
 
+## Recorded adoption gate (Week 3)
+
+The candidate decision is now represented by the machine-readable
+[`cromite-candidate.json`](../../apps/android-engine/chromium/config/cromite-candidate.json)
+record. The 2026-08-17 snapshot pins Cromite's Chromium 148 release tag and
+independently records the tag's resolved Git commit. Cromite's 40-character tag
+suffix is a build identifier, not the Git commit. The snapshot records Chrome
+for Android 151 as the comparison point and pins the experimental extension
+patch by path and Git blob SHA.
+
+The initial policy permits at most one Chromium major of lag, a 35-day-old
+candidate release, and a 30-day-old evidence snapshot. `record` mode validates
+that evidence and reports blockers without breaking CI. `adopt` mode fails
+closed. The current snapshot is intentionally blocked: GPL obligations and the
+extension requirement are undecided, the candidate is three majors behind the
+recorded stable major and its release is 88 UTC calendar days old, and no
+emergency security-update SLA has been accepted.
+
+This audit is offline. Its upstream facts are attestations, not network or build
+verification, and they must be refreshed from primary sources before adoption.
+No Cromite or other GPL source is copied into this repository by this milestone.
+
 ## Build-readiness requirements
 
 - Linux x86-64 build host.

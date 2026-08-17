@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, test } from 'vitest';
 
-import { inspectAndroidEngine } from './preflight.mjs';
+import { inspectAndroidEngine, runCli } from './preflight.mjs';
 
 const fixtures = [];
 afterEach(() => {
@@ -163,4 +163,59 @@ test('rejects drift in supported CPUs and unreplaced GN placeholders', () => {
   assert(result.errors.some((item) => item.includes('unsupported target CPU')));
   assert(result.errors.some((item) => item.includes('exactly')));
   assert(result.errors.some((item) => item.includes('common.gni')));
+});
+
+test('JSON mode emits one machine-readable scaffold report', () => {
+  const root = makeFixture({ releaseApproved: false });
+  const output = [];
+  const errors = [];
+
+  const code = runCli(['--mode', 'scaffold', '--json'], {
+    root,
+    writeOut: (line) => output.push(line),
+    writeError: (line) => errors.push(line),
+  });
+
+  assert.equal(code, 0);
+  assert.equal(output.length, 1);
+  assert.equal(errors.length, 0);
+  const report = JSON.parse(output[0]);
+  assert.equal(report.status, 'blocked');
+  assert.equal(report.mode, 'scaffold');
+  assert.equal(report.targetCpu, 'arm64');
+  assert.equal(report.chromiumVersion, '131.0.6778.85');
+  assert.equal(report.fatalBlockers.length, 0);
+  assert(report.releaseBlockers.some((item) => item.includes('not approved')));
+});
+
+test('invalid CLI arguments return usage status 2 as JSON', () => {
+  const output = [];
+
+  const code = runCli(['--mode', 'ship', '--json'], {
+    writeOut: (line) => output.push(line),
+    writeError: () => {},
+  });
+
+  assert.equal(code, 2);
+  assert.equal(output.length, 1);
+  const report = JSON.parse(output[0]);
+  assert.equal(report.status, 'invalid');
+  assert(report.errors[0].includes('scaffold, checkout, or release'));
+});
+
+test('missing option values preserve JSON error output', () => {
+  const output = [];
+  const errors = [];
+
+  const code = runCli(['--target-cpu', '--json'], {
+    writeOut: (line) => output.push(line),
+    writeError: (line) => errors.push(line),
+  });
+
+  assert.equal(code, 2);
+  assert.equal(output.length, 1);
+  assert.equal(errors.length, 0);
+  const report = JSON.parse(output[0]);
+  assert.equal(report.status, 'invalid');
+  assert.equal(report.errors[0], '--target-cpu requires a value');
 });

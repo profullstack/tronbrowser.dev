@@ -5,6 +5,8 @@
   "description": "Build-readiness tooling for the native TronBrowser Android engine",
   "scripts": {
     "build": "node chromium/scripts/preflight.mjs --mode scaffold",
+    "audit:candidate": "node chromium/scripts/audit-candidate.mjs --mode record",
+    "audit:candidate:adopt": "node chromium/scripts/audit-candidate.mjs --mode adopt",
     "test": "vitest run --passWithNoTests chromium/scripts",
     "lint": "eslint chromium/scripts/*.mjs",
     "typecheck": "tsc -p tsconfig.json"

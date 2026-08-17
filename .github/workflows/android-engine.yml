@@ -54,7 +54,18 @@ jobs:
           pnpm install --frozen-lockfile
 
       - name: Validate scaffold and report release blockers
-        run: node scripts/preflight.mjs --mode scaffold
+        run: |
+          set -o pipefail
+          report="$RUNNER_TEMP/android-engine-preflight.json"
+          node scripts/preflight.mjs --mode scaffold --json | tee "$report"
+          jq -e '.status == "ready" or .status == "blocked"' "$report" > /dev/null
+
+      - name: Validate recorded Android source candidate
+        run: |
+          set -o pipefail
+          report="$RUNNER_TEMP/android-engine-candidate.json"
+          node scripts/audit-candidate.mjs --mode record --json | tee "$report"
+          jq -e '.status == "ready" or .status == "blocked"' "$report" > /dev/null
 
       - name: Android engine checks
         working-directory: .
