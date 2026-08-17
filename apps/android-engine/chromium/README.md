@@ -17,6 +17,7 @@ Track 3.
 chromium/
   config/
     version.json        # pinned chromium + ungoogled versions, targets, tor
+    cromite-candidate.json # attested downstream snapshot + adoption policy
     gn-args/            # common.gni + android.gni (privacy + branding)
   branding/             # product strings + APK icon assets
   patches/              # required TronBrowser Android overlay (after ungoogled)
@@ -29,6 +30,8 @@ chromium/
 node scripts/preflight.mjs --mode scaffold
 node scripts/preflight.mjs --mode checkout
 node scripts/preflight.mjs --mode release
+node scripts/audit-candidate.mjs --mode record
+node scripts/audit-candidate.mjs --mode adopt
 ```
 
 Scaffold mode validates configuration and reports unresolved release inputs.
@@ -36,6 +39,27 @@ Checkout mode checks the build host and reports release blockers without
 requiring release approval, so maintainers can develop patches against a real
 checkout. Release mode refuses to continue while the Chromium pin, required
 patches, branding assets, or pinned Tor integration are unapproved or missing.
+
+Candidate `record` mode validates the pinned downstream snapshot and reports
+licensing, release-lag, freshness, security-SLA, and extension-support blockers
+without failing CI merely because a product decision remains open. `adopt` mode
+fails closed until every blocker is resolved. Both modes are offline: repository
+tags, commits, releases, and patch metadata are recorded attestations, not live
+network verification, and must be refreshed from primary upstream sources before
+an adoption decision. A stale or malformed attestation fails both modes.
+Refresh the record at least every `policy.maximumRecordAgeDays` (currently 30):
+re-check the candidate tag, commit, version, and release date; the recorded stable
+version and source; and the extension patch URL, blob SHA, reviewer, and date.
+
+Use `--json` for machine-readable output. `--as-of YYYY-MM-DD` is available only
+in `record` mode for reproducing a historical snapshot; `adopt` always evaluates
+against the current UTC date. The audit exits with status 0 for a valid record
+(including unresolved product blockers in `record` mode), 1 for invalid evidence
+or a blocked adoption, and 2 for invalid command-line usage.
+
+Cromite release tags contain a 40-character build identifier after the Chromium
+version. That identifier is not assumed to be a Git commit: `commitSha`
+independently pins the tag's resolved Git target.
 
 ## Build (100GB+ free disk, 16GB+ RAM recommended, hours, Linux x64)
 

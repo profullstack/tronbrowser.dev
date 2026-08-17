@@ -347,12 +347,21 @@ export function inspectAndroidEngine(
 function parseArgs(args) {
   let mode = 'scaffold';
   let targetCpu = process.env.TB_TARGET_CPU ?? 'arm64';
+  let json = false;
+
+  const nextValue = (index, name) => {
+    const value = args[index + 1];
+    if (!value || value.startsWith('--')) throw new Error(`${name} requires a value`);
+    return value;
+  };
+
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
-    if (arg === '--release') mode = 'release';
-    else if (arg === '--mode') mode = args[++index];
+    if (arg === '--json') json = true;
+    else if (arg === '--release') mode = 'release';
+    else if (arg === '--mode') mode = nextValue(index++, '--mode');
     else if (arg.startsWith('--mode=')) mode = arg.slice('--mode='.length);
-    else if (arg === '--target-cpu') targetCpu = args[++index];
+    else if (arg === '--target-cpu') targetCpu = nextValue(index++, '--target-cpu');
     else if (arg.startsWith('--target-cpu=')) {
       targetCpu = arg.slice('--target-cpu='.length);
     } else throw new Error(`unknown argument: ${arg}`);
@@ -361,54 +370,98 @@ function parseArgs(args) {
     throw new Error(`mode must be scaffold, checkout, or release; received: ${mode}`);
   }
   if (!targetCpu) throw new Error('target CPU is required');
-  return { mode, targetCpu };
+  return { mode, targetCpu, json };
 }
 
-export function runCli(args = process.argv.slice(2)) {
+function reportFor(result, { mode, targetCpu }) {
+  const fatalBlockers =
+    mode === 'release'
+      ? result.blockers
+      : mode === 'checkout'
+        ? result.checkoutBlockers
+        : [];
+
+  return {
+    status:
+      result.errors.length > 0
+        ? 'invalid'
+        : result.blockers.length > 0
+          ? 'blocked'
+          : 'ready',
+    mode,
+    targetCpu,
+    chromiumVersion: result.config.chromiumVersion ?? null,
+    errors: result.errors,
+    blockers: result.blockers,
+    checkoutBlockers: result.checkoutBlockers,
+    releaseBlockers: result.releaseBlockers,
+    fatalBlockers,
+  };
+}
+
+export function runCli(
+  args = process.argv.slice(2),
+  {
+    root = DEFAULT_ROOT,
+    writeOut = (line) => console.log(line),
+    writeError = (line) => console.error(line),
+  } = {},
+) {
+  const jsonRequested = args.includes('--json');
   let options;
   try {
     options = parseArgs(args);
   } catch (error) {
-    console.error(`preflight: ${error.message}`);
+    if (jsonRequested) {
+      writeOut(JSON.stringify({ status: 'invalid', errors: [error.message] }));
+    } else {
+      writeError(`preflight: ${error.message}`);
+    }
     return 2;
   }
 
-  const result = inspectAndroidEngine(DEFAULT_ROOT, {
+  const result = inspectAndroidEngine(root, {
     targetCpu: options.targetCpu,
     checkHost: options.mode !== 'scaffold',
   });
+  const report = reportFor(result, options);
+
+  if (options.json) {
+    writeOut(JSON.stringify(report, null, 2));
+  }
 
   if (result.errors.length > 0) {
-    console.error('Android engine scaffold is invalid:');
-    for (const error of result.errors) console.error(`  - ${error}`);
+    if (!options.json) {
+      writeError('Android engine scaffold is invalid:');
+      for (const error of result.errors) writeError(`  - ${error}`);
+    }
     return 1;
   }
 
-  console.log(
-    `Android engine scaffold is valid for ${options.targetCpu} (Chromium ${result.config.chromiumVersion}).`,
-  );
-  if (result.checkoutBlockers.length > 0) {
-    console.log(`Checkout blockers (${result.checkoutBlockers.length}):`);
-    for (const blocker of result.checkoutBlockers) console.log(`  - ${blocker}`);
-  }
-  if (result.releaseBlockers.length > 0) {
-    const suffix = options.mode === 'checkout' ? ' (do not block source checkout)' : '';
-    console.log(`Release blockers (${result.releaseBlockers.length})${suffix}:`);
-    for (const blocker of result.releaseBlockers) console.log(`  - ${blocker}`);
-  }
-  if (result.blockers.length === 0) {
-    console.log('No readiness blockers found.');
+  if (!options.json) {
+    writeOut(
+      `Android engine scaffold is valid for ${options.targetCpu} (Chromium ${result.config.chromiumVersion}).`,
+    );
+    if (result.checkoutBlockers.length > 0) {
+      writeOut(`Checkout blockers (${result.checkoutBlockers.length}):`);
+      for (const blocker of result.checkoutBlockers) writeOut(`  - ${blocker}`);
+    }
+    if (result.releaseBlockers.length > 0) {
+      const suffix =
+        options.mode === 'checkout' ? ' (do not block source checkout)' : '';
+      writeOut(`Release blockers (${result.releaseBlockers.length})${suffix}:`);
+      for (const blocker of result.releaseBlockers) writeOut(`  - ${blocker}`);
+    }
+    if (result.blockers.length === 0) {
+      writeOut('No readiness blockers found.');
+    }
   }
 
-  const fatalBlockers =
-    options.mode === 'release'
-      ? result.blockers
-      : options.mode === 'checkout'
-        ? result.checkoutBlockers
-        : [];
-  if (fatalBlockers.length > 0) {
+  if (report.fatalBlockers.length > 0) {
     const action = options.mode === 'checkout' ? 'checkout' : 'heavy build';
-    console.error(`preflight: refusing the ${action} until its blockers are resolved`);
+    if (!options.json) {
+      writeError(`preflight: refusing the ${action} until its blockers are resolved`);
+    }
     return 1;
   }
   return 0;
