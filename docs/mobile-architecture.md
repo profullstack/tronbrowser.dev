@@ -95,10 +95,11 @@ Landed (scaffold, CI-validated):
   patch/assets configuration.
 - **Source recommendation**: [ADR 0002](adr/0002-android-engine-source-strategy.md)
   documents the conditional custom-overlay versus maintained-downstream choice.
-- **Candidate gate**: a pinned Cromite snapshot is checked offline for evidence
-  freshness, release lag, licensing, security SLA, and extension requirements.
-  CI records the unresolved blockers; adoption fails closed until maintainers
-  explicitly resolve them.
+- **Candidate gate**: a pinned Cromite snapshot is checked offline by default for
+  evidence freshness, release lag, licensing, security SLA, and extension
+  requirements. A manual workflow can opt into read-only GitHub verification of
+  the recorded release facts. CI records the unresolved blockers; adoption fails
+  closed until maintainers explicitly resolve them.
 
 Still open: update the historical Chromium pin; fill the Android patch bodies;
 add real branding and pinned Tor assets; first real compile on a runner with at
