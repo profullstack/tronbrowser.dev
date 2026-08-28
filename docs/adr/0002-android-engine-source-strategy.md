@@ -93,8 +93,10 @@ extension requirement are undecided, the candidate is three majors behind the
 recorded stable major and its release is 88 UTC calendar days old, and no
 emergency security-update SLA has been accepted.
 
-This audit is offline. Its upstream facts are attestations, not network or build
-verification, and they must be refreshed from primary sources before adoption.
+This audit is offline by default; its upstream facts are attestations, not build
+verification. An opt-in `--live` mode performs read-only GitHub API verification
+of the recorded release tag, commit, LICENSE blob, and extension patch blob.
+Records must still be refreshed from primary sources before adoption.
 No Cromite or other GPL source is copied into this repository by this milestone.
 
 ## Build-readiness requirements

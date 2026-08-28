@@ -26,6 +26,7 @@
   "license": {
     "spdxId": "GPL-3.0",
     "sourceUrl": "https://github.com/uazo/cromite/blob/cdf415cc86c8aa17faa26edf51e12f2fd49a274f/LICENSE",
+    "blobSha": "f288702d2fa16d3cdf0035b15a9fcbc552cd88e7",
     "decision": "pending",
     "decidedBy": null,
     "decidedOn": null

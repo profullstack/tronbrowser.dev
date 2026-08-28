@@ -1,10 +1,14 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, test } from 'vitest';
 
-import { inspectCandidate, runCli } from './audit-candidate.mjs';
+import {
+  inspectCandidate,
+  runCli,
+  verifyLiveCandidate,
+} from './audit-candidate.mjs';
 
 const fixtures = [];
 afterEach(() => {
@@ -16,8 +20,54 @@ afterEach(() => {
 const COMMIT_SHA = 'a'.repeat(40);
 const BUILD_IDENTIFIER = 'c'.repeat(40);
 const PATCH_BLOB_SHA = 'b'.repeat(40);
+const LICENSE_BLOB_SHA = 'd'.repeat(40);
 const CURRENT_VERSION = '151.0.7922.71';
 const DEFAULT_PATCH_PATH = 'build/patches/extensions.patch';
+const TAG_OBJECT_SHA = 'e'.repeat(40);
+
+function readManifest(path) {
+  return JSON.parse(readFileSync(path, 'utf8'));
+}
+
+function githubFixture({ annotated = false, cycle = false } = {}) {
+  const requests = [];
+  const fetchImpl = async (input) => {
+    const url = new URL(input);
+    requests.push(`${url.pathname}${url.search}`);
+    let body;
+
+    if (url.pathname.endsWith('/releases/latest')) {
+      body = {
+        tag_name: `v${CURRENT_VERSION}-${BUILD_IDENTIFIER}`,
+        published_at: '2026-08-10T00:00:00Z',
+      };
+    } else if (url.pathname.includes('/git/ref/tags/')) {
+      body = {
+        object: annotated
+          ? { type: 'tag', sha: TAG_OBJECT_SHA }
+          : { type: 'commit', sha: COMMIT_SHA },
+      };
+    } else if (url.pathname.includes('/git/tags/')) {
+      body = {
+        object: cycle
+          ? { type: 'tag', sha: TAG_OBJECT_SHA }
+          : { type: 'commit', sha: COMMIT_SHA },
+      };
+    } else if (url.pathname.endsWith('/contents/LICENSE')) {
+      body = { type: 'file', sha: LICENSE_BLOB_SHA };
+    } else if (url.pathname.includes('/contents/build/patches/extensions.patch')) {
+      body = { type: 'file', sha: PATCH_BLOB_SHA };
+    } else {
+      return new Response('{}', { status: 404 });
+    }
+
+    return new Response(JSON.stringify(body), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    });
+  };
+  return { fetchImpl, requests };
+}
 
 function makeManifest(overrides = {}) {
   const candidate = {
@@ -54,6 +104,7 @@ function makeManifest(overrides = {}) {
     license: {
       spdxId: 'GPL-3.0',
       sourceUrl: `https://github.com/uazo/cromite/blob/${candidate.commitSha}/LICENSE`,
+      blobSha: LICENSE_BLOB_SHA,
       decision: 'accepted',
       decidedBy: 'maintainer',
       decidedOn: '2026-08-11',
@@ -153,6 +204,7 @@ test('rejects unsafe or unverifiable provenance fields', () => {
     license: {
       spdxId: 'MIT',
       sourceUrl: 'https://attacker.example/LICENSE',
+      blobSha: 'short',
     },
     extensionSupport: {
       patchPath: '../extension.txt',
@@ -181,6 +233,7 @@ test('rejects unsafe or unverifiable provenance fields', () => {
     ),
   );
   assert(result.errors.some((item) => item.includes('spdxId')));
+  assert(result.errors.some((item) => item.includes('license.blobSha')));
   assert(result.errors.some((item) => item.includes('patchBlobSha')));
   assert(result.errors.some((item) => item.includes('attestedBy')));
 });
@@ -459,4 +512,141 @@ test('invalid CLI arguments return usage status 2 as JSON', () => {
   const report = JSON.parse(output[0]);
   assert.equal(report.status, 'invalid');
   assert(report.errors[0].includes('record or adopt'));
+});
+
+test('live verification matches a lightweight release tag and pinned blobs', async () => {
+  const manifest = readManifest(makeManifest());
+  const fixture = githubFixture();
+
+  const result = await verifyLiveCandidate(manifest, {
+    asOf: '2026-08-17',
+    fetchImpl: fixture.fetchImpl,
+  });
+
+  assert.equal(result.status, 'verified');
+  assert.deepEqual(result.errors, []);
+  assert.deepEqual(result.differences, []);
+  assert.deepEqual(result.observed, {
+    tag: `v${CURRENT_VERSION}-${BUILD_IDENTIFIER}`,
+    commitSha: COMMIT_SHA,
+    publishedAt: '2026-08-10T00:00:00Z',
+    licenseBlobSha: LICENSE_BLOB_SHA,
+    patchBlobSha: PATCH_BLOB_SHA,
+    releaseAgeDays: 7,
+  });
+  assert(fixture.requests.some((request) => request.includes('/git/ref/tags/')));
+  assert(!fixture.requests.some((request) => request.includes('/git/tags/')));
+  assert(
+    fixture.requests.includes(
+      `/repos/uazo/cromite/contents/LICENSE?ref=${COMMIT_SHA}`,
+    ),
+  );
+  assert(
+    fixture.requests.includes(
+      `/repos/uazo/cromite/contents/${DEFAULT_PATCH_PATH}?ref=${COMMIT_SHA}`,
+    ),
+  );
+});
+
+test('live verification dereferences annotated tags before reading blobs', async () => {
+  const fixture = githubFixture({ annotated: true });
+
+  const result = await verifyLiveCandidate(readManifest(makeManifest()), {
+    asOf: '2026-08-17',
+    fetchImpl: fixture.fetchImpl,
+  });
+
+  assert.equal(result.status, 'verified');
+  assert(
+    fixture.requests.includes(`/repos/uazo/cromite/git/tags/${TAG_OBJECT_SHA}`),
+  );
+});
+
+test('live verification fails closed on an annotated tag cycle', async () => {
+  const fixture = githubFixture({ annotated: true, cycle: true });
+
+  const result = await verifyLiveCandidate(readManifest(makeManifest()), {
+    asOf: '2026-08-17',
+    fetchImpl: fixture.fetchImpl,
+  });
+
+  assert.equal(result.status, 'failed');
+  assert(result.errors.some((error) => error.includes('cycle detected')));
+});
+
+test('live CLI explains exact recorded and observed differences', async () => {
+  const path = makeManifest({ candidate: { commitSha: 'f'.repeat(40) } });
+  const manifest = readManifest(path);
+  manifest.license.sourceUrl =
+    'https://github.com/uazo/cromite/blob/ffffffffffffffffffffffffffffffffffffffff/LICENSE';
+  writeFileSync(path, JSON.stringify(manifest));
+  const fixture = githubFixture();
+  const output = [];
+  const errors = [];
+
+  const code = await runCli(['--live', '--explain'], {
+    defaultManifestPath: path,
+    defaultAsOf: '2026-08-17',
+    fetchImpl: fixture.fetchImpl,
+    writeOut: (line) => output.push(line),
+    writeError: (line) => errors.push(line),
+  });
+
+  assert.equal(code, 1);
+  assert(
+    errors.includes(
+      `  - candidate.commitSha: recorded=${JSON.stringify('f'.repeat(40))} observed=${JSON.stringify(COMMIT_SHA)}`,
+    ),
+  );
+  assert(output.includes('Audit date (UTC): 2026-08-17.'));
+});
+
+test('offline CLI remains the default and never calls fetch', () => {
+  const path = makeManifest();
+  let fetchCalls = 0;
+
+  const code = runCli(['--json'], {
+    defaultManifestPath: path,
+    defaultAsOf: '2026-08-17',
+    fetchImpl: async () => {
+      fetchCalls += 1;
+      throw new Error('offline mode must not fetch');
+    },
+    writeOut: () => {},
+    writeError: () => {},
+  });
+
+  assert.equal(code, 0);
+  assert.equal(fetchCalls, 0);
+});
+
+test('live CLI emits structured failure for an unavailable GitHub API', async () => {
+  const output = [];
+
+  const code = await runCli(['--live', '--json'], {
+    defaultManifestPath: makeManifest(),
+    defaultAsOf: '2026-08-17',
+    fetchImpl: async () => {
+      throw new Error('offline');
+    },
+    writeOut: (line) => output.push(line),
+    writeError: () => {},
+  });
+
+  assert.equal(code, 1);
+  const report = JSON.parse(output[0]);
+  assert.equal(report.status, 'mismatch');
+  assert.equal(report.provenance, 'live-verification-failed');
+  assert(report.liveVerification.errors[0].includes('request failed: offline'));
+});
+
+test('--explain is rejected unless live verification is enabled', () => {
+  const output = [];
+  const code = runCli(['--explain', '--json'], {
+    writeOut: (line) => output.push(line),
+    writeError: () => {},
+  });
+
+  assert.equal(code, 2);
+  assert.equal(JSON.parse(output[0]).errors[0], '--explain requires --live');
 });

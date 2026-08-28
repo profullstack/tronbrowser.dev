@@ -31,6 +31,7 @@ node scripts/preflight.mjs --mode scaffold
 node scripts/preflight.mjs --mode checkout
 node scripts/preflight.mjs --mode release
 node scripts/audit-candidate.mjs --mode record
+node scripts/audit-candidate.mjs --mode record --live --explain
 node scripts/audit-candidate.mjs --mode adopt
 ```
 
@@ -43,15 +44,23 @@ patches, branding assets, or pinned Tor integration are unapproved or missing.
 Candidate `record` mode validates the pinned downstream snapshot and reports
 licensing, release-lag, freshness, security-SLA, and extension-support blockers
 without failing CI merely because a product decision remains open. `adopt` mode
-fails closed until every blocker is resolved. Both modes are offline: repository
-tags, commits, releases, and patch metadata are recorded attestations, not live
-network verification, and must be refreshed from primary upstream sources before
-an adoption decision. A stale or malformed attestation fails both modes.
+fails closed until every blocker is resolved. Both modes are offline by default:
+repository tags, commits, releases, and patch metadata remain recorded
+attestations unless `--live` is explicitly supplied. Live mode reads only the
+canonical GitHub API, resolves lightweight or annotated release tags, and checks
+the recorded commit and release timestamp, the LICENSE and extension patch blobs
+read at that resolved release commit, and locally computed release age. It never
+changes the record. `--explain` prints
+the exact recorded and observed values when they differ. A stale, malformed, or
+live-mismatched attestation fails closed.
 Refresh the record at least every `policy.maximumRecordAgeDays` (currently 30):
 re-check the candidate tag, commit, version, and release date; the recorded stable
-version and source; and the extension patch URL, blob SHA, reviewer, and date.
+version and source; the license blob SHA; and the extension patch URL, blob SHA,
+reviewer, and date.
 
-Use `--json` for machine-readable output. `--as-of YYYY-MM-DD` is available only
+Use `--json` for machine-readable output. The manual Android-engine workflow can
+run the same read-only check with its `verify_live` input; push and pull-request
+workflows never opt into network verification. `--as-of YYYY-MM-DD` is available only
 in `record` mode for reproducing a historical snapshot; `adopt` always evaluates
 against the current UTC date. The audit exits with status 0 for a valid record
 (including unresolved product blockers in `record` mode), 1 for invalid evidence

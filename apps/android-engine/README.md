@@ -20,6 +20,8 @@ path toward an Ungoogled Chromium engine and optional bundled Tor, built as an
 - ✅ A pinned Cromite candidate snapshot and offline adoption gate record
   license, release-lag, freshness, and extension-support decisions without
   treating external attestations as a verified build.
+- ✅ An opt-in, read-only GitHub verification mode for the pinned release tag,
+  commit, LICENSE blob, extension patch blob, and release freshness.
 - ⬜ Patch bodies (`chromium/patches/tronbrowser-android/*.patch`), real
   Android branding assets, and pinned/checksummed Tor artifacts.
 - ⬜ Current Chromium security pin and first real compile (Linux x64, at least
@@ -35,6 +37,7 @@ cd apps/android-engine/chromium
 node scripts/preflight.mjs --mode scaffold
 # Validate the recorded source snapshot without claiming it is adoptable.
 node scripts/audit-candidate.mjs --mode record
+node scripts/audit-candidate.mjs --mode record --live --explain
 node scripts/audit-candidate.mjs --mode adopt  # fails while decisions are open
 # Checkout mode checks the host and reports release blockers before downloading.
 node scripts/preflight.mjs --mode checkout
