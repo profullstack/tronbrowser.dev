@@ -1,3 +1,5 @@
+import { decideInstallTarget, lookupInstalled } from './install-state.js';
+
 // Open the AI side panel when the toolbar action is clicked.
 chrome.sidePanel
   .setPanelBehavior({ openPanelOnActionClick: true })
@@ -71,18 +73,38 @@ async function resolveTronStore(slug, name) {
 
 // Let pages (e.g. the new tab) ask to open the side panel.
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
-  if (msg?.type === 'resolve-tron-store') {
+  if (msg?.type === 'resolve-install-target') {
     (async () => {
-      const ext = await resolveTronStore(msg.slug, msg.name).catch(() => null);
-      if (ext) {
-        sendResponse({
-          found: true,
-          slug: ext.slug,
-          name: ext.name,
-          downloadUrl: `${TRON_STORE_API}/extensions/${encodeURIComponent(ext.slug)}/download`,
-        });
-      } else {
-        sendResponse({ found: false });
+      // The installed check comes first and decides the answer on its own: an
+      // extension already in this browser cannot be installed over, from either
+      // store, and offering it is what leaves the prompt spinning. chrome.management
+      // is only reachable here — content scripts don't get the API.
+      const [installed, ext] = await Promise.all([
+        lookupInstalled(msg.id),
+        resolveTronStore(msg.slug, msg.name).catch(() => null),
+      ]);
+      sendResponse(
+        decideInstallTarget({
+          installed,
+          tronDownloadUrl: ext
+            ? `${TRON_STORE_API}/extensions/${encodeURIComponent(ext.slug)}/download`
+            : null,
+          crxUrl: msg.crxUrl,
+        }),
+      );
+    })();
+    return true; // async sendResponse
+  }
+
+  // Turn an installed-but-disabled extension back on, for the store page's button.
+  // Only the service worker holds the management permission.
+  if (msg?.type === 'enable-extension' && msg.id) {
+    (async () => {
+      try {
+        await chrome.management.setEnabled(msg.id, true);
+        sendResponse({ ok: true });
+      } catch (err) {
+        sendResponse({ ok: false, error: String(err?.message || err) });
       }
     })();
     return true; // async sendResponse
