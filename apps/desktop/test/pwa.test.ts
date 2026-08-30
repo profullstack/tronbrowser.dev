@@ -302,6 +302,101 @@ describe('tron pwa list', () => {
   });
 });
 
+describe('Flatpak flextop exports', () => {
+  // What a Flathub TronBrowser actually produces, and what the first version of
+  // this helper missed entirely: the filename does not start with chrome-, the
+  // Exec is a `flatpak run` wrapper, and there is no --user-data-dir at all --
+  // so the shortcut opens the Flatpak's own default profile, where the app is
+  // not installed, and the browser exits a few seconds after starting.
+  const FLATPAK = 'io.github.ungoogled_software.ungoogled_chromium';
+  const flextopName = `${FLATPAK}.flextop.chrome-${APP_ID}-Default.desktop`;
+
+  function writeFlextop(env: Env, opts: { installed?: boolean } = {}): string {
+    if (opts.installed !== false) {
+      mkdirSync(join(env.profile, 'Default', 'Web Applications', 'Manifest Resources', APP_ID), {
+        recursive: true,
+      });
+    }
+    writeFileSync(
+      join(env.apps, flextopName),
+      [
+        '[Desktop Entry]',
+        'Type=Application',
+        'Name=Reeleel',
+        `Exec=/usr/bin/flatpak run --branch=stable --arch=x86_64 --command=/app/bin/chromium ${FLATPAK} --profile-directory=Default --app-id=${APP_ID}`,
+        `StartupWMClass=crx_${APP_ID}`,
+        '',
+      ].join('\n'),
+    );
+    return flextopName;
+  }
+
+  it('finds a shortcut whose filename does not start with chrome-', () => {
+    const env = setup();
+    const file = writeFlextop(env);
+
+    run(env, ['sync']);
+
+    expect(execLines(shortcut(file)(env))[0].split(' ')[0]).toBe(CLI);
+  });
+
+  it('claims it by the app being installed in the profile, with no --user-data-dir to go on', () => {
+    const env = setup();
+    writeFlextop(env);
+
+    expect(run(env, ['list']).stdout).toContain('Reeleel');
+    expect(run(env, ['list']).stdout).not.toContain('left alone');
+  });
+
+  it('fills in the profile the app is actually installed in', () => {
+    const env = setup();
+    const file = writeFlextop(env);
+
+    run(env, ['sync']);
+
+    // Without this the shortcut opens the browser's default profile, which is
+    // the entire bug: right browser, wrong profile, no such app, exit.
+    expect(execLines(shortcut(file)(env))[0]).toContain(`--user-data-dir=${env.profile}`);
+  });
+
+  it('drops the flatpak wrapper tokens instead of forwarding them to the CLI', () => {
+    const env = setup();
+    const file = writeFlextop(env);
+
+    run(env, ['sync']);
+
+    // `run` is a tron subcommand. Forwarding it would run a script, not a browser.
+    const [exec] = execLines(shortcut(file)(env));
+    expect(exec).not.toContain(' run ');
+    expect(exec).not.toContain('--branch=');
+    expect(exec).not.toContain('--command=');
+    expect(exec).not.toContain(FLATPAK + ' ');
+  });
+
+  it('restores the flatpak wrapper exactly on revert', () => {
+    const env = setup();
+    const file = writeFlextop(env);
+    const before = execLines(shortcut(file)(env))[0];
+
+    run(env, ['sync']);
+    run(env, ['revert']);
+
+    // Rebuilding this line is impossible once the wrapper tokens are dropped,
+    // so it has to have been recorded verbatim.
+    expect(execLines(shortcut(file)(env))[0]).toBe(before);
+  });
+
+  it('leaves a flextop app that is NOT in our profile alone', () => {
+    const env = setup();
+    const file = writeFlextop(env, { installed: false });
+    const before = shortcut(file)(env);
+
+    run(env, ['sync']);
+
+    expect(shortcut(file)(env)).toBe(before);
+  });
+});
+
 describe('the launcher runs the sync itself', () => {
   // A repair nobody invokes is not a fix. The engine rewrites these shortcuts
   // behind us, so the browser has to re-run this on every start — which means
