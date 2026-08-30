@@ -101,6 +101,10 @@ Usage:
                         (the new-tab box is set in TronBrowser Settings)
   tron gpu [mode]       Show or set the GPU backend: on | safe | off
                         (use when pages render blank or the window freezes)
+  tron pwa [list]       Show installed web apps and how their icons launch
+  tron pwa sync         Repoint their desktop icons at TronBrowser
+                        (use when an installed app dies from its icon but
+                         opens fine from the address bar)
   tron remove           Uninstall TronBrowser (keeps your profile data)
   tron version          Print the installed version
   tron help             Show this help
@@ -341,7 +345,29 @@ case "${1:-}" in
       printf '%s\n' "$_want" > "$_d/gpu-mode"
     done
     echo "GPU set to '$_want'. Restart TronBrowser to apply ('tron restart')." ;;
+  pwa)
+    # Installed web apps get a desktop icon written by the ENGINE, pointing at
+    # the engine — the one launch path that skips the launcher, and so the one
+    # that starts without our extensions, window class or GPU mode. Under the
+    # Flatpak engine the recorded path (/app/...) does not exist outside the
+    # sandbox at all. The launcher re-syncs these on every start; this is the
+    # manual handle, and `list` is the diagnostic.
+    shift
+    _ld="$(dirname "$(readlink -f "$CURRENT" 2>/dev/null || echo "$CURRENT")")"
+    ENTRY="$_ld/tron-pwa"
+    command -v python3 >/dev/null 2>&1 || { echo "tron pwa needs python3 on PATH." >&2; exit 1; }
+    [ -f "$ENTRY" ] || { echo "This TronBrowser build lacks the PWA helper. Run: tron upgrade" >&2; exit 1; }
+    # Name ourselves explicitly: this CLI is the stable path across upgrades,
+    # and a desktop icon runs with the session's PATH, which need not have it.
+    exec env TRONBROWSER_CLI="$PREFIX/bin/tron" python3 "$ENTRY" "$@" ;;
   remove|uninstall)
+    # Hand the web-app icons back to the engine before the launcher they point
+    # at disappears — otherwise uninstalling TronBrowser silently breaks every
+    # app the user installed through it.
+    _ld="$(dirname "$(readlink -f "$CURRENT" 2>/dev/null || echo "$CURRENT")")"
+    if [ -f "$_ld/tron-pwa" ] && command -v python3 >/dev/null 2>&1; then
+      python3 "$_ld/tron-pwa" revert || true
+    fi
     rm -rf "$APP_DIR"
     rm -f "$PREFIX/bin/tron" "$PREFIX/bin/tronbrowser" "$PREFIX/share/applications/tronbrowser.desktop"
     echo "Removed TronBrowser. (Profile data kept; delete ~/.tronbrowser and ~/TronBrowser to wipe it.)" ;;

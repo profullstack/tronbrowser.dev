@@ -1,0 +1,485 @@
+#!/usr/bin/env python3
+"""Keep installed-PWA desktop shortcuts pointing at the TronBrowser launcher.
+
+Installing a web app writes a freedesktop shortcut, and Chromium writes it
+against ITSELF: `Exec=` is the engine binary plus `--app-id=`. That is the one
+launch path in TronBrowser that never goes through `launcher/tronbrowser`, so
+none of what the launcher supplies is there — no bundled extensions, no
+`--class=TronBrowser`, and no GPU mode. It is why "install app" works from the
+address bar and the same app dies from its desktop icon: the address bar hands
+the request to a browser the launcher already configured, while the icon starts
+a fresh one it never touched.
+
+Two ways that presents:
+
+  * Flatpak (the usual Ungoogled Chromium on Linux). The recorded path is the
+    in-sandbox one, `/app/...`, which does not exist on the host. Nothing can
+    launch it and the desktop just reports a failure.
+  * A system Ungoogled Chromium. It launches, but with the stock backend — so a
+    machine kept usable by `tron gpu safe` or `tron gpu off` gets, in its PWA
+    windows only, exactly the GPU process that made those settings necessary.
+    That reads as the app crashing on open.
+
+So we rewrite `Exec=` to run the launcher instead, keeping every Chromium switch
+the shortcut already carried. Chromium rewrites these files whenever an app's
+manifest or icon changes, which would undo this — hence the launcher runs
+`sync` on every start rather than this being a one-time repair.
+
+Only shortcuts whose `--user-data-dir` is a TronBrowser profile are touched. A
+shortcut from someone's real Chrome is left exactly as it is.
+
+  tron pwa [list]      show every web-app shortcut and who owns it
+  tron pwa sync        point TronBrowser's shortcuts at the launcher
+  tron pwa revert      hand them back to the engine binary (used by uninstall)
+
+`--dry-run` reports what sync/revert would change without writing.
+"""
+
+from __future__ import annotations
+
+import os
+import sys
+import tempfile
+
+# Our own keys in the shortcut. PATCHED records that the file is ours to revert;
+# ENGINE remembers the binary Chromium wrote, so revert restores that and not a
+# guess. Freedesktop reserves the X- prefix for exactly this.
+KEY_PATCHED = "X-TronBrowser-Launcher"
+KEY_ENGINE = "X-TronBrowser-Engine"
+# The --class we added, so revert removes exactly that and not a --class the
+# shortcut arrived with.
+KEY_CLASS = "X-TronBrowser-Class"
+
+# Field codes are the desktop spec's argument placeholders. A web-app shortcut
+# is launched with no arguments, so they expand to nothing -- but a stray %U
+# left on the line would let a file manager pass a path through to the launcher,
+# which forwards unrecognised arguments to the browser as URLs.
+FIELD_CODES = {"%f", "%F", "%u", "%U", "%i", "%c", "%k", "%v", "%m", "%d", "%D", "%n", "%N"}
+
+
+def unescape_exec(value: str) -> list[str]:
+    """Split a desktop-entry Exec value into argv.
+
+    Quoting is the desktop spec's own: double quotes group, and inside them a
+    backslash escapes `"`, `` ` ``, `$` and `\\`. Splitting on whitespace alone
+    would break every profile path that has a space in it.
+    """
+    args: list[str] = []
+    cur = ""
+    in_quotes = False
+    started = False
+    i = 0
+    while i < len(value):
+        c = value[i]
+        if in_quotes:
+            if c == "\\" and i + 1 < len(value) and value[i + 1] in '"`$\\':
+                cur += value[i + 1]
+                i += 2
+                continue
+            if c == '"':
+                in_quotes = False
+                i += 1
+                continue
+            cur += c
+        elif c == '"':
+            in_quotes = True
+            started = True
+        elif c.isspace():
+            if started:
+                args.append(cur)
+            cur = ""
+            started = False
+        else:
+            cur += c
+            started = True
+        i += 1
+    if started:
+        args.append(cur)
+    return args
+
+
+def escape_exec(args: list[str]) -> str:
+    """Render argv back into an Exec value, quoting only what needs it."""
+    out = []
+    for a in args:
+        if a and not any(c in a for c in ' \t\n"\'\\><~|&;$*?#()`'):
+            out.append(a)
+            continue
+        escaped = a
+        for c in ("\\", '"', "`", "$"):
+            escaped = escaped.replace(c, "\\" + c)
+        out.append('"' + escaped + '"')
+    return " ".join(out)
+
+
+def applications_dir() -> str:
+    base = os.environ.get("XDG_DATA_HOME") or os.path.join(
+        os.path.expanduser("~"), ".local", "share"
+    )
+    return os.path.join(base, "applications")
+
+
+def profile_dirs() -> list[str]:
+    """Every directory that could be a TronBrowser profile on this machine.
+
+    Mirrors the launcher: `$TRONBROWSER_DATA` when set, `~/.tronbrowser`
+    normally, and `~/TronBrowser` under a snap-confined browser (which can only
+    read non-hidden files in $HOME).
+    """
+    home = os.path.expanduser("~")
+    dirs = [os.environ.get("TRONBROWSER_DATA") or os.path.join(home, ".tronbrowser")]
+    dirs.append(os.path.join(home, "TronBrowser"))
+    seen: list[str] = []
+    for d in dirs:
+        if d and d not in seen:
+            seen.append(d)
+    return seen
+
+
+def same_path(a: str, b: str) -> bool:
+    """Compare two paths that need not exist yet.
+
+    A profile directory is created on first launch, so realpath() is not always
+    available on both sides; normalising and expanding covers the rest.
+    """
+    def norm(p: str) -> str:
+        p = os.path.expanduser(os.path.expandvars(p))
+        p = os.path.abspath(p)
+        return os.path.realpath(p) if os.path.exists(p) else os.path.normpath(p)
+
+    return norm(a) == norm(b)
+
+
+def cli_from_browser_desktop() -> str | None:
+    """The `tron` path TronBrowser's own desktop entry was installed with.
+
+    This is the authoritative answer: the installer picked that prefix and wrote
+    it into tronbrowser.desktop, and it is a stable path across upgrades — the
+    versioned launcher directory this script sits in is not.
+    """
+    dirs = [applications_dir(), "/usr/local/share/applications", "/usr/share/applications"]
+    for d in dirs:
+        p = os.path.join(d, "tronbrowser.desktop")
+        try:
+            with open(p, encoding="utf-8") as f:
+                for line in f:
+                    if line.startswith("Exec="):
+                        argv = unescape_exec(line[len("Exec=") :].strip())
+                        if argv and os.path.isabs(argv[0]) and os.access(argv[0], os.X_OK):
+                            return argv[0]
+                        break
+        except (OSError, UnicodeDecodeError):
+            continue
+    return None
+
+
+def launcher_cli() -> str:
+    """Absolute path to put in Exec.
+
+    It has to stay valid across upgrades and it has to be found without a login
+    shell: a desktop icon launches us with whatever PATH the session manager
+    has, which on KDE frequently does not include ~/.local/bin. So PATH is only
+    one of the places we look, and never the first.
+    """
+    override = os.environ.get("TRONBROWSER_CLI")
+    if override:
+        return override
+    from_desktop = cli_from_browser_desktop()
+    if from_desktop:
+        return from_desktop
+    home = os.path.expanduser("~")
+    dirs = (os.environ.get("PATH") or "").split(os.pathsep) + [
+        os.path.join(home, ".local", "bin"),
+        "/usr/local/bin",
+        "/usr/bin",
+    ]
+    for name in ("tron", "tronbrowser"):
+        for d in dirs:
+            if not d:
+                continue
+            cand = os.path.join(d, name)
+            if os.path.isfile(cand) and os.access(cand, os.X_OK):
+                return os.path.abspath(cand)
+    # Last resort: the shim beside this script. Correct today, but it lives in a
+    # versioned directory, so say so rather than letting a shortcut silently
+    # rot at the next upgrade.
+    here = os.path.dirname(os.path.abspath(__file__))
+    fallback = os.path.join(here, "tronbrowser")
+    print(
+        f"tron pwa: no 'tron' on PATH — using {fallback}, which an upgrade will move.\n"
+        "  Re-run 'tron pwa sync' after upgrading, or put 'tron' on PATH.",
+        file=sys.stderr,
+    )
+    return fallback
+
+
+class Shortcut:
+    """One chrome-*.desktop file, parsed just enough to rewrite its Exec lines."""
+
+    def __init__(self, path: str, lines: list[str]):
+        self.path = path
+        self.lines = lines
+
+    @classmethod
+    def load(cls, path: str) -> "Shortcut | None":
+        try:
+            with open(path, encoding="utf-8") as f:
+                return cls(path, f.read().splitlines())
+        except (OSError, UnicodeDecodeError):
+            return None
+
+    def exec_lines(self) -> list[tuple[int, list[str]]]:
+        """Every Exec= line, as (index, argv).
+
+        A web-app shortcut can carry several: the entry itself, plus one per
+        [Desktop Action] when the app declares a shortcuts menu. All of them
+        launch the browser, so all of them need the same treatment.
+        """
+        found = []
+        for i, line in enumerate(self.lines):
+            if line.startswith("Exec="):
+                found.append((i, unescape_exec(line[len("Exec=") :])))
+        return found
+
+    def get(self, key: str) -> str | None:
+        prefix = key + "="
+        for line in self.lines:
+            if line.startswith(prefix):
+                return line[len(prefix) :].strip()
+        return None
+
+    def set(self, key: str, value: str) -> None:
+        prefix = key + "="
+        for i, line in enumerate(self.lines):
+            if line.startswith(prefix):
+                self.lines[i] = prefix + value
+                return
+        # Land it in [Desktop Entry], not in whichever group happens to be last.
+        for i, line in enumerate(self.lines):
+            if line.strip() == "[Desktop Entry]":
+                self.lines.insert(i + 1, prefix + value)
+                return
+        self.lines.append(prefix + value)
+
+    def unset(self, key: str) -> None:
+        prefix = key + "="
+        self.lines = [l for l in self.lines if not l.startswith(prefix)]
+
+    def user_data_dir(self) -> str | None:
+        for _, argv in self.exec_lines():
+            for a in argv:
+                if a.startswith("--user-data-dir="):
+                    return a[len("--user-data-dir=") :]
+        return None
+
+    def app_id(self) -> str | None:
+        for _, argv in self.exec_lines():
+            for a in argv:
+                if a.startswith("--app-id="):
+                    return a[len("--app-id=") :]
+        return None
+
+    def is_web_app(self) -> bool:
+        for _, argv in self.exec_lines():
+            for a in argv:
+                if a.startswith("--app-id=") or a.startswith("--app="):
+                    return True
+        return False
+
+    def patched(self) -> bool:
+        return (self.get(KEY_PATCHED) or "").strip() == "1"
+
+    def engine(self) -> str | None:
+        """The program each Exec line runs today."""
+        for _, argv in self.exec_lines():
+            if argv:
+                return argv[0]
+        return None
+
+    def write(self) -> None:
+        """Replace the file atomically.
+
+        A half-written shortcut is one the desktop cannot launch at all, and we
+        rewrite these on every browser start -- so the window where a crash
+        could leave one truncated has to be closed.
+        """
+        d = os.path.dirname(self.path) or "."
+        fd, tmp = tempfile.mkstemp(dir=d, prefix=".tron-pwa-")
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                f.write("\n".join(self.lines) + "\n")
+                f.flush()
+                os.fsync(f.fileno())
+            os.chmod(tmp, 0o644)
+            os.replace(tmp, self.path)
+        except Exception:
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
+            raise
+
+
+def rewrite_argv(argv: list[str], cli: str, wm_class: str | None) -> list[str]:
+    """Point one Exec argv at the launcher, keeping the switches it carried.
+
+    Everything Chromium put on the line stays: --app-id, --profile-directory,
+    --user-data-dir and the shortcuts-menu switches. The launcher drops its own
+    copy of any switch the caller also passes, so what is here wins -- which is
+    what keeps a shortcut opening the profile the app was actually installed in.
+
+    --class is the exception we add. The launcher stamps every window it starts
+    --class=TronBrowser, which stock Chromium does not do, and a window whose
+    class does not match the shortcut's StartupWMClass never binds to its
+    taskbar entry -- it shows up beside the app as a second, unnamed window with
+    the browser's icon. Passing the shortcut's own declared class back in makes
+    the two agree by construction.
+    """
+    kept = [a for a in argv[1:] if a not in FIELD_CODES]
+    if wm_class and not any(a == "--class" or a.startswith("--class=") for a in kept):
+        kept.append("--class=" + wm_class)
+    return [cli] + kept
+
+
+def find_shortcuts(apps_dir: str) -> list[Shortcut]:
+    try:
+        names = sorted(os.listdir(apps_dir))
+    except OSError:
+        return []
+    out = []
+    for name in names:
+        if not name.endswith(".desktop"):
+            continue
+        # Chromium names every installed web app chrome-<app-id>-<profile>.desktop
+        # regardless of which Chromium wrote it.
+        if not name.startswith("chrome-"):
+            continue
+        sc = Shortcut.load(os.path.join(apps_dir, name))
+        if sc and sc.is_web_app():
+            out.append(sc)
+    return out
+
+
+def ours(sc: Shortcut) -> bool:
+    """Is this shortcut for an app installed in a TronBrowser profile?
+
+    Chromium copies the running --user-data-dir into the shortcut, so the
+    profile path is the attribution. Anything without one came from a browser
+    running its default profile, which TronBrowser never does -- so it belongs
+    to some other Chrome or Chromium and we leave it alone.
+    """
+    udd = sc.user_data_dir()
+    if not udd:
+        return False
+    return any(same_path(udd, p) for p in profile_dirs())
+
+
+def cmd_list(apps_dir: str) -> int:
+    shortcuts = find_shortcuts(apps_dir)
+    if not shortcuts:
+        print(f"No web-app shortcuts in {apps_dir}")
+        return 0
+    print(f"Web-app shortcuts in {apps_dir}:\n")
+    for sc in shortcuts:
+        name = sc.get("Name") or os.path.basename(sc.path)
+        if not ours(sc):
+            udd = sc.user_data_dir() or "default profile"
+            print(f"  {name}\n    not TronBrowser's ({udd}) — left alone")
+            continue
+        if sc.patched():
+            state = "launches via TronBrowser"
+        else:
+            state = f"launches the engine directly ({sc.engine()}) — run 'tron pwa sync'"
+        print(f"  {name}\n    {state}\n    {os.path.basename(sc.path)}")
+    return 0
+
+
+def cmd_sync(apps_dir: str, dry_run: bool) -> int:
+    cli = launcher_cli()
+    changed = 0
+    for sc in find_shortcuts(apps_dir):
+        if not ours(sc):
+            continue
+        engine = sc.engine()
+        lines = sc.exec_lines()
+        if not lines:
+            continue
+        # The shortcut's own StartupWMClass, or the class Chromium would give an
+        # app window if the shortcut never declared one.
+        wm_class = sc.get("StartupWMClass")
+        if not wm_class:
+            app_id = sc.app_id()
+            wm_class = "crx_" + app_id if app_id else None
+        new_lines = {i: rewrite_argv(argv, cli, wm_class) for i, argv in lines}
+        if all(escape_exec(new) == escape_exec(dict(lines)[i]) for i, new in new_lines.items()):
+            continue
+        name = sc.get("Name") or os.path.basename(sc.path)
+        if dry_run:
+            print(f"would rewrite {name} ({os.path.basename(sc.path)})")
+            changed += 1
+            continue
+        for i, new in new_lines.items():
+            sc.lines[i] = "Exec=" + escape_exec(new)
+        # Remember the engine only the first time, so re-running after Chromium
+        # has rewritten the file does not record our own CLI as the engine and
+        # make revert a no-op.
+        if not sc.get(KEY_ENGINE) and engine:
+            sc.set(KEY_ENGINE, engine)
+        if wm_class and not any(
+            a == "--class" or a.startswith("--class=") for _, argv in lines for a in argv[1:]
+        ):
+            sc.set(KEY_CLASS, wm_class)
+        sc.set(KEY_PATCHED, "1")
+        sc.write()
+        print(f"TronBrowser: {name} now launches through the TronBrowser launcher.")
+        changed += 1
+    return 0 if changed or dry_run else 0
+
+
+def cmd_revert(apps_dir: str, dry_run: bool) -> int:
+    for sc in find_shortcuts(apps_dir):
+        if not sc.patched():
+            continue
+        engine = sc.get(KEY_ENGINE)
+        if not engine:
+            print(f"{os.path.basename(sc.path)}: no engine recorded, skipping", file=sys.stderr)
+            continue
+        name = sc.get("Name") or os.path.basename(sc.path)
+        if dry_run:
+            print(f"would restore {name} to {engine}")
+            continue
+        added_class = sc.get(KEY_CLASS)
+        for i, argv in sc.exec_lines():
+            restored = [engine] + [
+                a for a in argv[1:] if not (added_class and a == "--class=" + added_class)
+            ]
+            sc.lines[i] = "Exec=" + escape_exec(restored)
+        sc.unset(KEY_PATCHED)
+        sc.unset(KEY_ENGINE)
+        sc.unset(KEY_CLASS)
+        sc.write()
+        print(f"Restored {name} to {engine}.")
+    return 0
+
+
+def main(argv: list[str]) -> int:
+    args = [a for a in argv if a != "--dry-run"]
+    dry_run = "--dry-run" in argv
+    cmd = args[0] if args else "list"
+    apps_dir = applications_dir()
+
+    if cmd in ("-h", "--help", "help"):
+        print(__doc__.strip())
+        return 0
+    if cmd == "list":
+        return cmd_list(apps_dir)
+    if cmd == "sync":
+        return cmd_sync(apps_dir, dry_run)
+    if cmd == "revert":
+        return cmd_revert(apps_dir, dry_run)
+    print(f"tron pwa: unknown command '{cmd}'. Try: list, sync, revert", file=sys.stderr)
+    return 2
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))
