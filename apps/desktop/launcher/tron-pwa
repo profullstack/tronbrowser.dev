@@ -49,12 +49,31 @@ KEY_ENGINE = "X-TronBrowser-Engine"
 # The --class we added, so revert removes exactly that and not a --class the
 # shortcut arrived with.
 KEY_CLASS = "X-TronBrowser-Class"
+# Each original Exec line, verbatim, as X-TronBrowser-OrigExec<N> in file order.
+# Revert restores these rather than rebuilding a command line: we deliberately
+# drop tokens we do not understand (a `flatpak run --command=… <app-id>`
+# wrapper), and nothing that drops information can reconstruct it afterwards.
+KEY_ORIG_EXEC = "X-TronBrowser-OrigExec"
 
 # Field codes are the desktop spec's argument placeholders. A web-app shortcut
 # is launched with no arguments, so they expand to nothing -- but a stray %U
 # left on the line would let a file manager pass a path through to the launcher,
 # which forwards unrecognised arguments to the browser as URLs.
 FIELD_CODES = {"%f", "%F", "%u", "%U", "%i", "%c", "%k", "%v", "%m", "%d", "%D", "%n", "%N"}
+
+# The only switches worth carrying from a shortcut onto the launcher's command
+# line: they say which app, in which profile, under which window class. An
+# allowlist rather than "everything after the program" because the program is
+# not always the engine -- a flextop export wraps it in `flatpak run`, whose own
+# arguments would otherwise be forwarded to the `tron` CLI as if they were ours.
+KEEP_SWITCHES = (
+    "--app-id=",
+    "--app=",
+    "--profile-directory=",
+    "--user-data-dir=",
+    "--app-launch-url-for-shortcuts-menu-item=",
+    "--class=",
+)
 
 
 def unescape_exec(value: str) -> list[str]:
@@ -320,22 +339,39 @@ class Shortcut:
             raise
 
 
-def rewrite_argv(argv: list[str], cli: str, wm_class: str | None) -> list[str]:
-    """Point one Exec argv at the launcher, keeping the switches it carried.
+def rewrite_argv(
+    argv: list[str], cli: str, wm_class: str | None, user_data_dir: str | None
+) -> list[str]:
+    """Point one Exec argv at the launcher, carrying over the switches that matter.
 
-    Everything Chromium put on the line stays: --app-id, --profile-directory,
-    --user-data-dir and the shortcuts-menu switches. The launcher drops its own
-    copy of any switch the caller also passes, so what is here wins -- which is
-    what keeps a shortcut opening the profile the app was actually installed in.
+    We keep an ALLOWLIST rather than everything after the program, because the
+    program is not always the engine. Flatpak exports its web apps through
+    flextop, whose Exec is a `flatpak run --branch=… --command=… <app-id>`
+    wrapper: passing those tokens through would hand the `tron` CLI a bare
+    `run`, which is one of its own subcommands. Only the switches that say WHICH
+    app in WHICH profile mean anything here; the launcher supplies the rest.
 
-    --class is the exception we add. The launcher stamps every window it starts
+    --user-data-dir is filled in when the shortcut has none. A flextop entry
+    does not carry one, so it opens the Flatpak's own default profile -- where
+    the app is not installed, so the browser starts, finds nothing, and exits.
+    That is the crash: not a crash at all, but the right browser opening the
+    wrong profile.
+
+    --class is added because the launcher stamps every window it starts
     --class=TronBrowser, which stock Chromium does not do, and a window whose
     class does not match the shortcut's StartupWMClass never binds to its
-    taskbar entry -- it shows up beside the app as a second, unnamed window with
-    the browser's icon. Passing the shortcut's own declared class back in makes
-    the two agree by construction.
+    taskbar entry.
     """
-    kept = [a for a in argv[1:] if a not in FIELD_CODES]
+    kept = []
+    for a in argv[1:]:
+        if a in FIELD_CODES:
+            continue
+        for keep in KEEP_SWITCHES:
+            if a.startswith(keep):
+                kept.append(a)
+                break
+    if user_data_dir and not any(a.startswith("--user-data-dir=") for a in kept):
+        kept.insert(0, "--user-data-dir=" + user_data_dir)
     if wm_class and not any(a == "--class" or a.startswith("--class=") for a in kept):
         kept.append("--class=" + wm_class)
     return [cli] + kept
@@ -350,28 +386,69 @@ def find_shortcuts(apps_dir: str) -> list[Shortcut]:
     for name in names:
         if not name.endswith(".desktop"):
             continue
-        # Chromium names every installed web app chrome-<app-id>-<profile>.desktop
-        # regardless of which Chromium wrote it.
-        if not name.startswith("chrome-"):
-            continue
+        # Do NOT filter by filename. Chromium names its own web apps
+        # chrome-<app-id>-<profile>.desktop, but that is not the only writer: a
+        # Flatpak exports them through flextop as
+        # <flatpak-app-id>.flextop.chrome-<app-id>-<profile>.desktop, and a
+        # chrome- prefix match silently skips every one of those. What makes a
+        # file a web-app shortcut is --app-id on its Exec line, so ask that.
         sc = Shortcut.load(os.path.join(apps_dir, name))
         if sc and sc.is_web_app():
             out.append(sc)
     return out
 
 
-def ours(sc: Shortcut) -> bool:
-    """Is this shortcut for an app installed in a TronBrowser profile?
+def installed_apps() -> dict[str, str]:
+    """Map every app id installed in a TronBrowser profile to that profile.
 
-    Chromium copies the running --user-data-dir into the shortcut, so the
-    profile path is the attribution. Anything without one came from a browser
-    running its default profile, which TronBrowser never does -- so it belongs
-    to some other Chrome or Chromium and we leave it alone.
+    Chromium keeps one directory per installed web app under
+    <user-data-dir>/<profile>/Web Applications/Manifest Resources/<app-id>, so
+    the profile itself is the register of what TronBrowser has installed. This
+    is the attribution that holds when the shortcut carries no --user-data-dir
+    to compare against -- which is exactly the case for a flextop export.
+    """
+    found: dict[str, str] = {}
+    for data in profile_dirs():
+        try:
+            profiles = os.listdir(data)
+        except OSError:
+            continue
+        for profile in profiles:
+            manifests = os.path.join(data, profile, "Web Applications", "Manifest Resources")
+            try:
+                for app_id in os.listdir(manifests):
+                    if os.path.isdir(os.path.join(manifests, app_id)):
+                        found.setdefault(app_id, data)
+            except OSError:
+                continue
+    return found
+
+
+def ours(sc: Shortcut, installed: dict[str, str]) -> str | None:
+    """The TronBrowser profile this shortcut belongs to, or None.
+
+    Two ways to establish it, and both are needed:
+
+    * The shortcut names a --user-data-dir that is one of ours. This is what
+      Chromium writes when it records the running command line.
+    * The app id is installed in one of our profiles. A flextop export carries
+      no --user-data-dir at all, so the first rule alone reads every Flatpak
+      web app as "somebody else's" and skips it -- which is precisely how a
+      whole machine's worth of shortcuts stayed broken. The profile knows what
+      it has installed, and that answer does not depend on what the engine
+      chose to write into the file.
+
+    A shortcut matching neither is another browser's, and is left alone.
     """
     udd = sc.user_data_dir()
-    if not udd:
-        return False
-    return any(same_path(udd, p) for p in profile_dirs())
+    if udd:
+        for p in profile_dirs():
+            if same_path(udd, p):
+                return p
+    app_id = sc.app_id()
+    if app_id and app_id in installed:
+        return installed[app_id]
+    return None
 
 
 def cmd_list(apps_dir: str) -> int:
@@ -379,15 +456,23 @@ def cmd_list(apps_dir: str) -> int:
     if not shortcuts:
         print(f"No web-app shortcuts in {apps_dir}")
         return 0
+    installed = installed_apps()
     print(f"Web-app shortcuts in {apps_dir}:\n")
     for sc in shortcuts:
         name = sc.get("Name") or os.path.basename(sc.path)
-        if not ours(sc):
-            udd = sc.user_data_dir() or "default profile"
+        profile = ours(sc, installed)
+        if not profile:
+            udd = sc.user_data_dir() or "no profile recorded, and not installed in ours"
             print(f"  {name}\n    not TronBrowser's ({udd}) — left alone")
             continue
         if sc.patched():
             state = "launches via TronBrowser"
+        elif not sc.user_data_dir():
+            state = (
+                f"launches {sc.engine()} with NO profile — it opens the browser's default "
+                f"profile, where this app is not installed, so it exits on startup. "
+                f"Run 'tron pwa sync'"
+            )
         else:
             state = f"launches the engine directly ({sc.engine()}) — run 'tron pwa sync'"
         print(f"  {name}\n    {state}\n    {os.path.basename(sc.path)}")
@@ -396,21 +481,25 @@ def cmd_list(apps_dir: str) -> int:
 
 def cmd_sync(apps_dir: str, dry_run: bool) -> int:
     cli = launcher_cli()
+    installed = installed_apps()
     changed = 0
     for sc in find_shortcuts(apps_dir):
-        if not ours(sc):
+        profile = ours(sc, installed)
+        if not profile:
             continue
         engine = sc.engine()
         lines = sc.exec_lines()
         if not lines:
             continue
+        # Verbatim Exec values, before we touch anything, keyed by line index.
+        original_text = {i: sc.lines[i][len("Exec=") :] for i, _ in lines}
         # The shortcut's own StartupWMClass, or the class Chromium would give an
         # app window if the shortcut never declared one.
         wm_class = sc.get("StartupWMClass")
         if not wm_class:
             app_id = sc.app_id()
             wm_class = "crx_" + app_id if app_id else None
-        new_lines = {i: rewrite_argv(argv, cli, wm_class) for i, argv in lines}
+        new_lines = {i: rewrite_argv(argv, cli, wm_class, profile) for i, argv in lines}
         if all(escape_exec(new) == escape_exec(dict(lines)[i]) for i, new in new_lines.items()):
             continue
         name = sc.get("Name") or os.path.basename(sc.path)
@@ -425,10 +514,11 @@ def cmd_sync(apps_dir: str, dry_run: bool) -> int:
         # make revert a no-op.
         if not sc.get(KEY_ENGINE) and engine:
             sc.set(KEY_ENGINE, engine)
-        if wm_class and not any(
-            a == "--class" or a.startswith("--class=") for _, argv in lines for a in argv[1:]
-        ):
-            sc.set(KEY_CLASS, wm_class)
+        # Record the originals only the first time, for the same reason as the
+        # engine: a re-sync reads Exec lines we already wrote.
+        if not sc.get(KEY_ORIG_EXEC + "0"):
+            for n, (i, _) in enumerate(lines):
+                sc.set(KEY_ORIG_EXEC + str(n), original_text[i])
         sc.set(KEY_PATCHED, "1")
         sc.write()
         print(f"TronBrowser: {name} now launches through the TronBrowser launcher.")
@@ -448,15 +538,40 @@ def cmd_revert(apps_dir: str, dry_run: bool) -> int:
         if dry_run:
             print(f"would restore {name} to {engine}")
             continue
-        added_class = sc.get(KEY_CLASS)
-        for i, argv in sc.exec_lines():
-            restored = [engine] + [
-                a for a in argv[1:] if not (added_class and a == "--class=" + added_class)
-            ]
-            sc.lines[i] = "Exec=" + escape_exec(restored)
+        originals = []
+        n = 0
+        while True:
+            v = sc.get(KEY_ORIG_EXEC + str(n))
+            if v is None:
+                break
+            originals.append(v)
+            n += 1
+        lines = sc.exec_lines()
+        if originals and len(originals) == len(lines):
+            for (i, _), text in zip(lines, originals):
+                sc.lines[i] = "Exec=" + text
+        elif originals:
+            print(
+                f"{os.path.basename(sc.path)}: {len(lines)} Exec lines but "
+                f"{len(originals)} recorded, skipping",
+                file=sys.stderr,
+            )
+            continue
+        else:
+            # Patched by a build that recorded only the engine (3.9.9). Rebuild
+            # the line: correct whenever the engine ran the shortcut directly,
+            # which is every case that build was able to touch.
+            added_class = sc.get(KEY_CLASS)
+            for i, argv in lines:
+                sc.lines[i] = "Exec=" + escape_exec(
+                    [engine]
+                    + [a for a in argv[1:] if not (added_class and a == "--class=" + added_class)]
+                )
         sc.unset(KEY_PATCHED)
         sc.unset(KEY_ENGINE)
         sc.unset(KEY_CLASS)
+        for k in range(len(originals)):
+            sc.unset(KEY_ORIG_EXEC + str(k))
         sc.write()
         print(f"Restored {name} to {engine}.")
     return 0
