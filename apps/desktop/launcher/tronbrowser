@@ -441,6 +441,27 @@ if [ "$TOR" != "1" ]; then
   printf '%s\n' "$ENGINE" > "$ENGINE_MARK" 2>/dev/null || true
 fi
 
+# --- Installed web apps (PWAs) ---------------------------------------------
+# Installing a web app writes a freedesktop shortcut, and the browser writes it
+# against ITSELF — `Exec=` is the engine binary — so clicking that icon is the
+# one launch path that never comes through here. The app then starts with none
+# of what this script sets up: no bundled extensions, no --class, and no GPU
+# mode, which is why an app opens fine from the address bar and dies from its
+# desktop icon. Under the Flathub engine it is worse: the recorded path is the
+# in-sandbox /app/... one, which does not exist on the host at all.
+#
+# tron-pwa repoints those shortcuts at this launcher. It runs on every start
+# rather than once at install because the browser rewrites the files whenever an
+# app's manifest or icon changes, which puts the engine path back. Only
+# shortcuts whose --user-data-dir is a TronBrowser profile are touched, so a
+# real Chrome's web apps are left alone. Best-effort and quiet: needs python3,
+# and a desktop that cannot be repaired must not stop the browser opening.
+if [ "$TOR" != "1" ] && [ -z "$MAC_APP" ] && [ -f "$DIR/tron-pwa" ]; then
+  if command -v python3 >/dev/null 2>&1; then
+    TRONBROWSER_DATA="$DATA" python3 "$DIR/tron-pwa" sync >&2 || true
+  fi
+fi
+
 # --- GPU backend -----------------------------------------------------------
 # A crashing GPU process does not look like a crash. The window stays up and the
 # page keeps whatever it had already rasterized — a logo, a header — while
