@@ -397,6 +397,106 @@ describe('Flatpak flextop exports', () => {
   });
 });
 
+describe('single-quoted Exec values', () => {
+  // Verbatim from a real Flathub install. The desktop-entry spec defines only
+  // double quotes, but GLib -- which is what actually launches these -- honours
+  // single quotes, so writers use them. Parsed to the spec, every argument here
+  // is a literal token with an apostrophe on the front, so every switch test
+  // fails and the file reads as "not a web app". That is how eleven working
+  // shortcuts stayed invisible to two releases of this helper.
+  const REAL_EXEC =
+    "flatpak 'run' '--command=/app/bin/chromium' " +
+    "'io.github.ungoogled_software.ungoogled_chromium' " +
+    `'--user-data-dir=PROFILE' '--profile-directory=Default' '--app-id=${APP_ID}'`;
+
+  function writeReal(env: Env): string {
+    const file = `io.github.ungoogled_software.ungoogled_chromium.flextop.chrome-${APP_ID}-Default.desktop`;
+    writeFileSync(
+      join(env.apps, file),
+      [
+        '[Desktop Entry]',
+        'Version=1.0',
+        'Terminal=false',
+        'Type=Application',
+        'Name=Sulata Note',
+        `Exec=${REAL_EXEC.replace('PROFILE', env.profile)}`,
+        `Icon=chrome-${APP_ID}-Default`,
+        `StartupWMClass=crx_${APP_ID}`,
+        'X-Flatpak-Part-Of=io.github.ungoogled_software.ungoogled_chromium',
+        'TryExec=/var/lib/flatpak/exports/bin/io.github.ungoogled_software.ungoogled_chromium',
+        '',
+      ].join('\n'),
+    );
+    return file;
+  }
+
+  it('recognises a single-quoted --app-id as a web app at all', () => {
+    const env = setup();
+    writeReal(env);
+
+    expect(run(env, ['list']).stdout).toContain('Sulata Note');
+  });
+
+  it('rewrites it, keeping the app and profile and dropping the flatpak wrapper', () => {
+    const env = setup();
+    const file = writeReal(env);
+
+    run(env, ['sync']);
+
+    const [exec] = execLines(shortcut(file)(env));
+    expect(exec.split(' ')[0]).toBe(CLI);
+    expect(exec).toContain(`--app-id=${APP_ID}`);
+    expect(exec).toContain(`--user-data-dir=${env.profile}`);
+    expect(exec).toContain('--profile-directory=Default');
+    expect(exec).not.toContain('--command=');
+    expect(exec).not.toContain("'");
+  });
+
+  it('reverts byte-for-byte, single quotes and all', () => {
+    const env = setup();
+    const file = writeReal(env);
+    const before = shortcut(file)(env);
+
+    run(env, ['sync']);
+    run(env, ['revert']);
+
+    expect(shortcut(file)(env)).toBe(before);
+  });
+
+  it('still parses double quotes and backslash escapes', () => {
+    const env = setup();
+    const profile = join(env.home, 'a b');
+    mkdirSync(profile, { recursive: true });
+    const file = `chrome-${APP_ID}-Default.desktop`;
+    writeFileSync(
+      join(env.apps, file),
+      [
+        '[Desktop Entry]',
+        'Type=Application',
+        'Name=Mixed',
+        `Exec=/app/chromium/chrome "--user-data-dir=${profile}" '--app-id=${APP_ID}'`,
+        '',
+      ].join('\n'),
+    );
+
+    const result = spawnSync('python3', [TRON_PWA, 'sync'], {
+      encoding: 'utf8',
+      env: {
+        PATH: process.env.PATH ?? '/usr/bin:/bin',
+        HOME: env.home,
+        XDG_DATA_HOME: join(env.home, '.local', 'share'),
+        TRONBROWSER_DATA: profile,
+        TRONBROWSER_CLI: CLI,
+      },
+    });
+    expect(result.status).toBe(0);
+
+    const [exec] = execLines(shortcut(file)(env));
+    expect(exec).toContain(`"--user-data-dir=${profile}"`);
+    expect(exec).toContain(`--app-id=${APP_ID}`);
+  });
+});
+
 describe('the launcher runs the sync itself', () => {
   // A repair nobody invokes is not a fix. The engine rewrites these shortcuts
   // behind us, so the browser has to re-run this on every start — which means

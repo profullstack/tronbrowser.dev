@@ -77,40 +77,64 @@ KEEP_SWITCHES = (
 
 
 def unescape_exec(value: str) -> list[str]:
-    """Split a desktop-entry Exec value into argv.
+    """Split a desktop-entry Exec value into argv, the way the desktop does.
 
-    Quoting is the desktop spec's own: double quotes group, and inside them a
-    backslash escapes `"`, `` ` ``, `$` and `\\`. Splitting on whitespace alone
-    would break every profile path that has a space in it.
+    Follow GLib's g_shell_parse_argv rather than the desktop-entry spec. The
+    spec defines only double quotes, but GLib is what actually launches these
+    entries, and it honours SINGLE quotes too -- so writers use them. Flatpak's
+    flextop exports every argument single-quoted:
+
+        Exec=flatpak 'run' '--command=/app/bin/chromium' '--app-id=abc…'
+
+    Parsed to the spec, `'--app-id=abc…'` is one literal token with an
+    apostrophe on the front, so every test for a switch fails and the whole file
+    reads as "not a web app". Being stricter than the launcher here means not
+    seeing files that work perfectly well for everyone else.
+
+    Rules: outside quotes a backslash escapes the next character; single quotes
+    are literal to the next single quote with no escapes inside; double quotes
+    are literal except that a backslash escapes `"`, `` ` ``, `$` and `\\`.
     """
     args: list[str] = []
     cur = ""
-    in_quotes = False
     started = False
     i = 0
     while i < len(value):
         c = value[i]
-        if in_quotes:
-            if c == "\\" and i + 1 < len(value) and value[i + 1] in '"`$\\':
-                cur += value[i + 1]
-                i += 2
-                continue
-            if c == '"':
-                in_quotes = False
-                i += 1
-                continue
-            cur += c
-        elif c == '"':
-            in_quotes = True
+        if c == "'":
             started = True
-        elif c.isspace():
+            i += 1
+            while i < len(value) and value[i] != "'":
+                cur += value[i]
+                i += 1
+            i += 1  # closing quote (or end of string, if unbalanced)
+            continue
+        if c == '"':
+            started = True
+            i += 1
+            while i < len(value) and value[i] != '"':
+                if value[i] == "\\" and i + 1 < len(value) and value[i + 1] in '"`$\\':
+                    cur += value[i + 1]
+                    i += 2
+                    continue
+                cur += value[i]
+                i += 1
+            i += 1
+            continue
+        if c == "\\" and i + 1 < len(value):
+            cur += value[i + 1]
+            started = True
+            i += 2
+            continue
+        if c.isspace():
             if started:
                 args.append(cur)
             cur = ""
             started = False
-        else:
-            cur += c
-            started = True
+            i += 1
+            continue
+        cur += c
+        started = True
         i += 1
     if started:
         args.append(cur)
