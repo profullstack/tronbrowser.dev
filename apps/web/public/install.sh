@@ -642,6 +642,51 @@ ensure_tor() {
   return 1
 }
 
+# Chromium takes user-added trust only from the per-user NSS database at
+# ~/.pki/nssdb, never from /etc/ssl/certs. The launcher mirrors Moshpit's
+# certificates into it on every start so `.hacker` / `.rank` names load over
+# HTTPS — but writing an NSS database needs `certutil`, and that is the one part
+# of the job that needs a package installed. Doing it here is the difference
+# between the launcher fixing the problem and the launcher printing a command
+# for the user to run, which is the manual step this is meant to remove.
+#
+# Only on a machine that actually has Moshpit certificates: a package nobody
+# needs is not ours to install. Best-effort throughout — the launcher explains
+# what to do if this cannot get there.
+ensure_certutil() {
+  # macOS Chromium reads the system keychain, which `moshcode dns enable`
+  # already writes. There is no NSS database in the picture at all.
+  [ "$(uname -s)" = "Linux" ] || return 0
+  command -v certutil >/dev/null 2>&1 && return 0
+
+  _have_moshpit=0
+  for _c in /usr/local/share/ca-certificates/moshpit-*.crt \
+            /etc/ca-certificates/trust-source/anchors/moshpit-*.crt \
+            /etc/pki/ca-trust/source/anchors/moshpit-*.crt \
+            "$HOME/.moshpit/ca/ca.crt"; do
+    if [ -f "$_c" ]; then _have_moshpit=1; break; fi
+  done
+  [ "$_have_moshpit" = "1" ] || return 0
+
+  info "Setting up certutil (so Moshpit names load over HTTPS)…"
+  uid="$(id -u 2>/dev/null || echo 0)"
+  SUDO=""
+  if [ "$uid" -ne 0 ] && command -v sudo >/dev/null 2>&1 && { [ -t 1 ] || [ -t 2 ]; }; then SUDO="sudo"; fi
+  if [ "$uid" -eq 0 ] || [ -n "$SUDO" ]; then
+    # The tool is the same everywhere; only the package carrying it differs.
+    if   command -v apt-get >/dev/null 2>&1; then $SUDO apt-get update -y >/dev/null 2>&1; $SUDO apt-get install -y libnss3-tools >/dev/null 2>&1 || true
+    elif command -v dnf     >/dev/null 2>&1; then $SUDO dnf install -y nss-tools >/dev/null 2>&1 || true
+    elif command -v yum     >/dev/null 2>&1; then $SUDO yum install -y nss-tools >/dev/null 2>&1 || true
+    elif command -v pacman  >/dev/null 2>&1; then $SUDO pacman -Sy --noconfirm nss >/dev/null 2>&1 || true
+    elif command -v zypper  >/dev/null 2>&1; then $SUDO zypper --non-interactive install mozilla-nss-tools >/dev/null 2>&1 || true
+    elif command -v apk     >/dev/null 2>&1; then $SUDO apk add nss-tools >/dev/null 2>&1 || true
+    fi
+    command -v certutil >/dev/null 2>&1 && return 0
+  fi
+  warn "Couldn't install certutil automatically. Moshpit names (.hacker, .rank) will fail TLS in TronBrowser until it is installed (e.g. 'sudo apt install libnss3-tools' / 'sudo pacman -S nss')."
+  return 1
+}
+
 do_install() {
   need uname
   asset="$(detect_asset)"
@@ -692,7 +737,11 @@ DESKTOP
   command -v update-desktop-database >/dev/null 2>&1 && update-desktop-database "$apps_dir" 2>/dev/null || true
 
   ensure_browser
-  ensure_tor   # so the in-browser 🧅 Tor toggle works out of the box
+  # `|| true` because this script runs under `set -eu`: both of these return 1
+  # when they could not install their tool, and a missing nice-to-have must not
+  # abort an install that has already put the browser on disk.
+  ensure_tor      || true  # so the in-browser 🧅 Tor toggle works out of the box
+  ensure_certutil || true  # so Moshpit names load over HTTPS on first launch
   brand_macos_icon "$(dirname "$bin")/tronbrowser.png"
 
   info "Installed TronBrowser $tag to $APP_DIR"
@@ -791,8 +840,9 @@ do_upgrade() {
   [ -n "$latest" ] || err "could not resolve the latest release of $REPO"
   if [ "$current" = "$latest" ] && [ "${TB_FORCE:-0}" != "1" ]; then
     info "TronBrowser is already up to date ($current)."
-    ensure_browser   # still make sure Ungoogled Chromium is installed
-    ensure_tor       # and that Tor is available for the toggle
+    ensure_browser            # still make sure Ungoogled Chromium is installed
+    ensure_tor      || true   # and that Tor is available for the toggle
+    ensure_certutil || true   # and that Moshpit trust can be written
     brand_macos_icon "$(find "$APP_DIR" -maxdepth 3 -name tronbrowser.png 2>/dev/null | head -n1)"  # re-apply icon (Chromium updates reset it)
     info "Re-install anyway with: TB_FORCE=1 tron upgrade"
     return
@@ -851,6 +901,7 @@ case "$cmd" in
     esac ;;
   remove|uninstall) do_remove ;;
   ensure-tor) ensure_tor ;;
+  ensure-certutil) ensure_certutil ;;
   version|--version|-v) do_version ;;
   help|--help|-h) usage ;;
   *) err "unknown command: $cmd (try 'help')" ;;

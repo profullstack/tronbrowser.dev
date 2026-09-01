@@ -462,6 +462,102 @@ if [ "$TOR" != "1" ] && [ -z "$MAC_APP" ] && [ -f "$DIR/tron-pwa" ]; then
   fi
 fi
 
+# --- Moshpit names over HTTPS ----------------------------------------------
+# Chromium does not read /etc/ssl/certs. On Linux the only user-added trust it
+# honours lives in the per-user NSS database at ~/.pki/nssdb — a path keyed off
+# $HOME, not off --user-data-dir, so no TronBrowser profile can carry it and no
+# amount of reinstalling puts it there.
+#
+# Moshpit installs its certificates into the OpenSSL store instead. That is why
+# `curl https://chovy.hacker` returns the page while the same URL here fails
+# with ERR_CERT_AUTHORITY_INVALID: the two are reading different stores. It
+# reads as a TronBrowser bug, and there is nothing the user can do about it from
+# inside the browser, so mirror whatever Moshpit installed into the store
+# Chromium actually reads.
+#
+# Two certificate shapes, and the trust flag differs:
+#   * the Moshpit Local CA (CA:TRUE) — an anchor, "C,,". This is what a machine
+#     behind the pinned-TLS proxy is served.
+#   * a per-name origin leaf (CA:FALSE, self-signed, SAN = the name) — "P,,",
+#     a trusted peer. Importing one as "C,," fails: Chromium will not anchor a
+#     CA:FALSE certificate. Reading basicConstraints beats guessing from the
+#     filename, because getting this backwards fails exactly like doing nothing.
+#
+# Runs on every start rather than once at install. Names get pointed and trusted
+# long after the browser is installed, and re-importing one already in the
+# database is skipped by nickname, so the steady state costs a `certutil -L`.
+# Set TRONBROWSER_NO_MOSHPIT_TRUST=1 to opt out entirely.
+#
+# The Local CA keeps the nickname `moshcode dns enable` gives it, so a database
+# it already wrote is recognised as done rather than imported a second time.
+moshpit_nickname() { # cert_file
+  case "$1" in
+    */moshpit-local-ca.crt|*/.moshpit/ca/ca.crt) printf 'Moshpit Local CA' ;;
+    *)
+      _base="$(basename "$1" .crt)"
+      printf 'moshpit %s' "${_base#moshpit-}"
+      ;;
+  esac
+}
+
+sync_moshpit_trust() {
+  if [ "$(uname -s)" != "Linux" ]; then return 0; fi
+  if [ "${TRONBROWSER_NO_MOSHPIT_TRUST:-0}" = "1" ]; then return 0; fi
+
+  _nssdb="$HOME/.pki/nssdb"
+  _ready=0
+
+  # Each word below is a literal path or a glob result, so this stays
+  # whitespace-safe; an unmatched glob arrives as the pattern itself and fails
+  # the -f test.
+  for _cert in /usr/local/share/ca-certificates/moshpit-*.crt \
+               /etc/ca-certificates/trust-source/anchors/moshpit-*.crt \
+               /etc/pki/ca-trust/source/anchors/moshpit-*.crt \
+               "$HOME/.moshpit/ca/ca.crt"; do
+    if [ ! -f "$_cert" ]; then continue; fi
+
+    # Deferred until we know there is something to import: a machine that never
+    # heard of Moshpit should not be told to go install anything.
+    if [ "$_ready" = "0" ]; then
+      if ! command -v certutil >/dev/null 2>&1; then
+        echo "TronBrowser: Moshpit certificates are installed, but 'certutil' is not." >&2
+        echo "  Chromium reads its own trust store, so .hacker/.rank names fail TLS here." >&2
+        echo "  Debian/Ubuntu: sudo apt install libnss3-tools   Fedora: sudo dnf install nss-tools" >&2
+        echo "  Arch: sudo pacman -S nss   Then start TronBrowser again." >&2
+        return 0
+      fi
+      if [ ! -f "$_nssdb/cert9.db" ]; then
+        mkdir -p "$_nssdb" 2>/dev/null || return 0
+        certutil -d "sql:$_nssdb" -N --empty-password >/dev/null 2>&1 || return 0
+      fi
+      _ready=1
+    fi
+
+    _nick="$(moshpit_nickname "$_cert")"
+    if certutil -d "sql:$_nssdb" -L -n "$_nick" >/dev/null 2>&1; then continue; fi
+
+    _flag="P,,"
+    if command -v openssl >/dev/null 2>&1; then
+      if openssl x509 -noout -text -in "$_cert" 2>/dev/null | grep -q 'CA:TRUE'; then
+        _flag="C,,"
+      fi
+    else
+      # No openssl: the Local CA is the only anchor Moshpit ships, and it is the
+      # one file we can identify by name alone.
+      case "$_nick" in "Moshpit Local CA") _flag="C,," ;; esac
+    fi
+
+    if certutil -d "sql:$_nssdb" -A -t "$_flag" -n "$_nick" -i "$_cert" >/dev/null 2>&1; then
+      echo "TronBrowser: trusted $_nick for Moshpit HTTPS." >&2
+    fi
+  done
+  return 0
+}
+
+# Best-effort and never fatal: a trust store we could not write must not stop
+# the browser from opening.
+sync_moshpit_trust || true
+
 # --- GPU backend -----------------------------------------------------------
 # A crashing GPU process does not look like a crash. The window stays up and the
 # page keeps whatever it had already rasterized — a logo, a header — while
