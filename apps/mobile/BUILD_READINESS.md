@@ -27,6 +27,25 @@ The exception is declared in `package.json`; typecheck, tests, lint, and both
 platform bundles remain the CI acceptance checks. Expo Doctor is a
 network-backed local diagnostic and is not run in CI.
 
+## GitHub Actions preview APK
+
+Every mobile pull request and push to `main` also generates the Android native
+project and runs Gradle on a GitHub-hosted runner. Download the
+`tronbrowser-android-preview-*` artifact from the `Mobile` workflow, extract it,
+then install the APK on a connected Android device:
+
+```bash
+adb install -r app-release.apk
+```
+
+If another build of the app is installed with a different signing key, uninstall
+that build before installing this preview APK.
+
+This standalone build embeds its JavaScript bundle and is signed with the
+generated debug keystore for sideload testing. It is not store-signed. The job
+does not use Expo EAS credits, publish an app, or commit the generated `android/`
+directory.
+
 ## EAS preview build
 
 The app is linked to the `profullstack/tronbrowserdev` EAS project. Cloud builds
@@ -40,6 +59,8 @@ After the secret is present, run the `Mobile` workflow manually with:
 - profile: `preview`
 - submit: `false`
 
-The workflow starts an asynchronous EAS build. Its EAS build URL is the handoff
-artifact for review. Store submission remains a separate production step and
-requires the corresponding Apple or Google developer account and signing setup.
+The workflow waits for EAS to finish, so a successful Actions job means the
+remote build completed rather than merely entered the queue. Its EAS build URL
+is the handoff artifact for review. Store submission is only available with the
+`production` build profile and still requires the corresponding Apple or Google
+developer account and signing setup.

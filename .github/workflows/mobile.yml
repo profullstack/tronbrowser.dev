@@ -75,12 +75,72 @@ jobs:
       - name: Bundle (expo export)
         run: pnpm export
 
+  # Produce a standalone, installable companion-app APK without consuming EAS build
+  # credits. The native project remains generated output and is not committed.
+  android-apk:
+    if: github.event_name != 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Set up JDK
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v4
+        with:
+          log-accepted-android-sdk-licenses: false
+          packages: 'platform-tools platforms;android-36 build-tools;36.0.0 ndk;27.1.12297006'
+
+      - name: Install
+        working-directory: .
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate Android project
+        run: pnpm exec expo prebuild --platform android --clean --no-install
+
+      # Expo/RN debuggable variants omit the embedded JS bundle and require a
+      # Metro server. Release embeds the bundle; Expo's generated project signs
+      # it with the debug keystore, making it installable but not store-ready.
+      - name: Build standalone APK
+        run: ./android/gradlew --no-daemon --stacktrace -p android :app:assembleRelease
+
+      - name: Upload standalone APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: tronbrowser-android-preview-${{ github.sha }}
+          path: apps/mobile/android/app/build/outputs/apk/release/app-release.apk
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 14
+
+      - name: Add artifact instructions
+        run: |
+          {
+            echo '### TronBrowser Android preview APK'
+            echo
+            echo 'Download the `tronbrowser-android-preview-*` artifact from this workflow run.'
+            echo 'After extracting it, install with `adb install -r app-release.apk`.'
+          } >> "$GITHUB_STEP_SUMMARY"
+
   # Cloud build + optional store submit via EAS. Requires the EXPO_TOKEN repo
   # secret (Expo account access token). iOS/Android signing credentials are
   # managed by EAS (`eas credentials`) — not stored here.
   eas-build:
     if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v5
 
@@ -100,9 +160,16 @@ jobs:
           eas-version: latest
           token: ${{ secrets.EXPO_TOKEN }}
 
+      - name: Validate EAS request
+        run: |
+          if [[ '${{ inputs.submit }}' == 'true' && '${{ inputs.profile }}' != 'production' ]]; then
+            echo '::error::Store submission requires the production build profile.'
+            exit 1
+          fi
+
       - name: EAS build
-        run: eas build --platform ${{ inputs.platform }} --profile ${{ inputs.profile }} --non-interactive --no-wait
+        run: eas build --platform ${{ inputs.platform }} --profile ${{ inputs.profile }} --non-interactive
 
       - name: EAS submit
         if: ${{ inputs.submit }}
-        run: eas submit --platform ${{ inputs.platform }} --profile ${{ inputs.profile }} --non-interactive --latest
+        run: eas submit --platform ${{ inputs.platform }} --profile production --non-interactive --latest
