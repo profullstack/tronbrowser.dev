@@ -11,7 +11,7 @@ import { setMockSafeAreaInsets } from './mocks/react-native-safe-area-context';
 
 import type { ReactTestInstance } from 'react-test-renderer';
 
-const shellRoot = (root: ReactTestInstance) => hosts(root, 'View')[0];
+const shellRoot = (root: ReactTestInstance) => hosts(root, 'KeyboardAvoidingView')[0];
 
 const tabBar = (root: ReactTestInstance) =>
   hostWhere(

@@ -3,7 +3,15 @@
 // app, NOT the Ungoogled Chromium engine — see docs/mobile-architecture.md.
 import { StatusBar } from 'expo-status-bar';
 import { useState, type ReactNode } from 'react';
-import { Keyboard, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import {
+  Keyboard,
+  KeyboardAvoidingView,
+  Platform,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BrowserScreen } from './src/screens/BrowserScreen';
 import { ChatScreen } from './src/screens/ChatScreen';
@@ -57,7 +65,12 @@ function AppShell() {
   const insets = useSafeAreaInsets();
 
   return (
-    <View
+    <KeyboardAvoidingView
+      // Edge-to-edge Android windows do not reliably resize the absolute tab
+      // scenes for the IME. Resize their shared root, including the tab bar.
+      enabled={Platform.OS === 'android'}
+      behavior={Platform.OS === 'android' ? 'height' : undefined}
+      keyboardVerticalOffset={0}
       style={[
         styles.root,
         { paddingTop: insets.top, paddingLeft: insets.left, paddingRight: insets.right },
@@ -98,7 +111,7 @@ function AppShell() {
           );
         })}
       </View>
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 
