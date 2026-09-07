@@ -1,10 +1,15 @@
 import Constants from 'expo-constants';
-import { Linking, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Linking, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { theme } from '../theme';
 
 /** Settings / sync / about (PRD §Mobile). */
 export function SettingsScreen() {
   const version = Constants.expoConfig?.version ?? '—';
+  // `thirdPartyCookiesEnabled={false}` is an Android-only WebView setting; on
+  // iOS the WKWebView cookie policy belongs to WebKit, not this app, so the UI
+  // must not claim we block anything there.
+  const cookieStatus =
+    Platform.OS === 'android' ? 'Blocked in browser tab' : 'Decided by iOS WebKit';
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       <Text style={styles.header}>Settings</Text>
@@ -16,7 +21,7 @@ export function SettingsScreen() {
 
       <Section title="Privacy">
         <Row label="Telemetry" value="Off (always)" />
-        <Row label="Third-party cookies" value="Blocked in browser tab" />
+        <Row label="Third-party cookies" value={cookieStatus} />
       </Section>
 
       <Section title="Tor / .onion">

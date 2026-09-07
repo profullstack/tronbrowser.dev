@@ -46,6 +46,36 @@ generated debug keystore for sideload testing. It is not store-signed. The job
 does not use Expo EAS credits, publish an app, or commit the generated `android/`
 directory.
 
+## Android runtime smoke checklist
+
+Run on one Android 15+ device or emulator with the sideloaded preview APK.
+These behaviors are covered by component tests with a mocked native boundary;
+this checklist is the real-device gate that the mocks cannot replace.
+
+1. **Search, no account** — type `privacy first browser` in the address bar and
+   submit: a DuckDuckGo results page loads (no Kagi login wall).
+2. **Two-page history** — from the results page open any result, then tap the
+   in-app `‹` button: the results page returns.
+3. **Tab-state survival** — load a page, scroll partway, switch to Chat, type a
+   draft (don't send), visit Agents and Settings, return to Browse: the same
+   page and scroll position are still there; return to Chat: the draft is
+   still there.
+4. **System Back** — with two pages of history and Browse active, the system
+   back gesture/button goes to the previous page; on the first page it leaves
+   the app. With Chat active it leaves the app immediately, even when the
+   hidden Browse tab still has history.
+5. **System-bar insets** — the URL toolbar sits fully below the status bar and
+   the tab bar fully above the gesture/navigation bar, in portrait, with no
+   content underlapping either bar.
+6. **Popup links** — open a `target="_blank"` link (e.g. a result on a site
+   that opens externally): it loads visibly in the same tab and Back returns
+   to the referring page. A `javascript:` or `data:` popup does nothing.
+7. **Cookie wording** — Settings → Privacy shows "Blocked in browser tab" on
+   Android (an iOS build must show the WebKit wording instead).
+
+Record the device model, Android version, and each step's result honestly —
+an APK that has not passed this list is not release-ready.
+
 ## EAS preview build
 
 The app is linked to the `profullstack/tronbrowserdev` EAS project. Cloud builds
