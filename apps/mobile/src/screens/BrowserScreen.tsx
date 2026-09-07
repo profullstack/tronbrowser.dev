@@ -1,6 +1,7 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  BackHandler,
   Platform,
   StyleSheet,
   Text,
@@ -9,7 +10,7 @@ import {
   View,
 } from 'react-native';
 import { WebView } from 'react-native-webview';
-import { HOME, normalizeUrl } from '../lib/navigation';
+import { HOME, navigableHttpUrl, normalizeUrl } from '../lib/navigation';
 import { theme } from '../theme';
 
 /**
@@ -19,8 +20,12 @@ import { theme } from '../theme';
  * iOS (mandatory), the system WebView on Android. It is deliberately NOT the
  * Ungoogled Chromium engine (see docs/mobile-architecture.md — the engine ships
  * via the native Android build and the Linux-phone desktop build, not Expo).
+ *
+ * The screen stays mounted while other tabs are shown (App.tsx keeps every
+ * scene alive), so `isActive` — not mount state — says whether this tab owns
+ * the Android hardware Back button.
  */
-export function BrowserScreen() {
+export function BrowserScreen({ isActive = true }: { isActive?: boolean }) {
   const webRef = useRef<WebView>(null);
   const [address, setAddress] = useState(HOME);
   const [uri, setUri] = useState(HOME);
@@ -28,8 +33,37 @@ export function BrowserScreen() {
   const [canGoBack, setCanGoBack] = useState(false);
   const [canGoForward, setCanGoForward] = useState(false);
 
+  // Android system Back pops WebView history. Subscribe only while this tab is
+  // the visible one AND there is history to pop; otherwise no handler exists at
+  // all, so the event keeps its default meaning (leave the app) and a hidden
+  // Browser tab can never swallow it.
+  useEffect(() => {
+    if (Platform.OS !== 'android' || !isActive || !canGoBack) return;
+    const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
+      webRef.current?.goBack();
+      return true;
+    });
+    return () => subscription.remove();
+  }, [isActive, canGoBack]);
+
   const go = () => {
     const next = normalizeUrl(address);
+    setUri(next);
+    setAddress(next);
+  };
+
+  // Android hands `window.open` / `target="_blank"` to a detached WebView the
+  // user never sees. Show those navigations in this single tab instead — but a
+  // page-supplied URL only reaches `source` once validated as plain HTTP(S);
+  // javascript:/data:/intent: targets are dropped.
+  const openWindowInThisTab = (targetUrl: string) => {
+    const next = navigableHttpUrl(targetUrl);
+    if (!next) return;
+    // In-page navigation can leave `uri` unchanged. Updating the same source
+    // would do nothing; navigate the existing WebView without discarding history.
+    if (next === uri) {
+      webRef.current?.injectJavaScript(`window.location.assign(${JSON.stringify(next)});true;`);
+    }
     setUri(next);
     setAddress(next);
   };
@@ -93,6 +127,7 @@ export function BrowserScreen() {
           setCanGoBack(state.canGoBack);
           setCanGoForward(state.canGoForward);
         }}
+        onOpenWindow={(event) => openWindowInThisTab(event.nativeEvent.targetUrl)}
         // Privacy-leaning defaults consistent with the desktop ethos.
         thirdPartyCookiesEnabled={false}
         allowsInlineMediaPlayback

@@ -28,10 +28,18 @@ Bundle ids: `dev.tronbrowser.app` (iOS + Android).
 
 ## Features
 
-Implemented screens (tabbed shell, `App.tsx`):
+Implemented screens (tabbed shell, `App.tsx`). Every tab stays mounted across
+switches — WebView history/scroll, chat messages, and drafts survive — while
+inactive tabs are hidden from touch and accessibility. Safe areas come from
+`react-native-safe-area-context` (Android 15/16 edge-to-edge), not React
+Native's deprecated iOS-only `SafeAreaView`.
 
 - **Browse** — in-app browser via `react-native-webview` (system engine),
-  URL/search bar, back/reload, third-party cookies blocked.
+  URL/search bar with a DuckDuckGo default that needs no account (the desktop
+  correction), back/forward/reload. Android hardware Back walks page history
+  only while this tab is active; `window.open` / `target="_blank"` opens in
+  the same tab after HTTP(S) validation; third-party cookies are blocked on
+  Android (on iOS the WKWebView cookie policy belongs to WebKit).
 - **Chat** — AI chat UI; the provider seam is `src/lib/ai.ts`
   (set `EXPO_PUBLIC_AI_ENDPOINT`, else offline echo).
 - **Agents** — agent dashboard (sample data → wire `@tronbrowser/agent-runtime`).
@@ -39,6 +47,13 @@ Implemented screens (tabbed shell, `App.tsx`):
 
 Still to wire (PRD §Mobile): real model provider, sync backend, voice,
 push notifications.
+
+## Tests
+
+`pnpm test` runs the URL/search unit tests plus component tests that render
+the real `App`/screens with only the native boundary mocked (`test/mocks/*`,
+aliased in `vitest.config.ts`): tab-state preservation, hardware-Back policy,
+safe-area insets, `window.open` handling, and platform cookie wording.
 
 ## EAS (builds & submission)
 

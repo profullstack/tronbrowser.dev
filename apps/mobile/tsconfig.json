@@ -4,6 +4,14 @@
     "strict": true,
     "jsx": "react-jsx"
   },
-  "include": ["App.tsx", "index.js", "src/**/*.ts", "src/**/*.tsx"],
+  "include": [
+    "App.tsx",
+    "index.js",
+    "src/**/*.ts",
+    "src/**/*.tsx",
+    "test/**/*.ts",
+    "test/**/*.tsx",
+    "vitest.config.ts"
+  ],
   "exclude": ["node_modules", "dist"]
 }
