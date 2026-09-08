@@ -120,7 +120,9 @@ export function BrowserScreen({ isActive = true }: { isActive?: boolean }) {
         ref={webRef}
         source={{ uri }}
         style={styles.web}
-        onLoadStart={() => setLoading(true)}
+        // Android also emits load-start for history updates after loading ends.
+        // iOS emits start before allowing navigation, so retain its start flag.
+        onLoadStart={(event) => setLoading(Platform.OS === 'android' ? event.nativeEvent.loading : true)}
         onLoadEnd={() => setLoading(false)}
         onNavigationStateChange={(state) => {
           setAddress(state.url);
