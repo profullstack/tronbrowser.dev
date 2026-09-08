@@ -41,6 +41,16 @@ describe('BrowserScreen loading state', () => {
     expect(hosts(root, 'ActivityIndicator')).toHaveLength(0);
   });
 
+  it('preserves iOS start indication before navigation policy allows the load', async () => {
+    Platform.OS = 'ios';
+    const { root } = await renderScreen(<BrowserScreen />);
+    // iOS samples the current loading flag before allowing the new navigation.
+    await fire(webView(root), 'onLoadStart', navigationEvent(false));
+    expect(hosts(root, 'ActivityIndicator')).toHaveLength(1);
+    await fire(webView(root), 'onLoadEnd', navigationEvent(false));
+    expect(hosts(root, 'ActivityIndicator')).toHaveLength(0);
+  });
+
   it.each([
     { code: -2, description: 'net::ERR_NAME_NOT_RESOLVED', url: 'https://offline.example.test/' },
     { code: -1, description: 'net::ERR_CLEARTEXT_NOT_PERMITTED', url: 'http://example.test/' },
