@@ -62,12 +62,18 @@ jobs:
       # build-release.sh stages only when it can build them. That takes pnpm and
       # the workspace's dev dependencies; without this step the stage is skipped
       # with a one-line note and every release ships without `sdk/`.
+      # Same setup ci.yml uses. Not corepack: `corepack enable` symlinks into
+      # /usr/local/bin, which the ubuntu runner user cannot write (EACCES), while
+      # the macOS runner can, so the linux build failed and macOS passed.
+      - uses: pnpm/action-setup@v6
+        if: matrix.platform != 'windows'
+      - uses: actions/setup-node@v5
+        if: matrix.platform != 'windows'
+        with:
+          node-version-file: .nvmrc
       - name: Install workspace (for the automation runtime)
         if: matrix.platform != 'windows'
-        run: |
-          corepack enable
-          corepack prepare pnpm@9.12.0 --activate
-          pnpm install --frozen-lockfile --filter @tronbrowser/sdk...
+        run: pnpm install --frozen-lockfile --filter @tronbrowser/sdk...
 
       - name: Package (linux/macos)
         if: matrix.platform != 'windows'
