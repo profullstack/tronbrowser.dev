@@ -93,6 +93,12 @@ Usage:
   tron run <script>     Run a JS/TS script using @tronbrowser/sdk (--headless/--trace)
   tron analyze [goal]   Analyze/fill a form or page (--data, --execute, --json)
   tron mcp              Run a local MCP server over stdio (--headless)
+  tron automate         MCP server: Obscura for scraping, Chromium for full-JS
+                        pages (fetch_page picks; --engine pins one)
+  tron automate serve   Same server over HTTP with an OpenMCP descriptor
+  tron automate fetch <url>
+                        Print a page as markdown (--format text|links|html)
+  tron automate status  Which engines are usable (--json)
   tron trace start|stop Record commands into a .trontrace bundle
   tron replay <bundle>  Replay a recorded trace against the session
   tron upgrade          Update to the latest release ('tron update' works too)
@@ -225,6 +231,20 @@ case "${1:-}" in
     command -v node >/dev/null 2>&1 || { echo "tron mcp needs Node.js (>=22) on PATH." >&2; exit 1; }
     [ -f "$ENTRY" ] || { echo "This TronBrowser build lacks the MCP server. Run: tron upgrade" >&2; exit 1; }
     exec env TRON_SESSION_BIN="$(session_bin)" node "$_ld/tron-node.mjs" "$ENTRY" "$@" ;;
+  automate)
+    # Obscura for scraping, the managed Chromium session for full-JS pages, one
+    # MCP server (PRD M3.8). Obscura lives next to the launcher (obscura-bin/),
+    # put there by the installer; TRON_OBSCURA_BIN tells the runtime where.
+    shift
+    _ld="$(dirname "$(readlink -f "$CURRENT" 2>/dev/null || echo "$CURRENT")")"
+    ENTRY="$_ld/sdk/automate-bin.js"
+    command -v node >/dev/null 2>&1 || { echo "tron automate needs Node.js (>=22) on PATH." >&2; exit 1; }
+    [ -f "$ENTRY" ] || { echo "This TronBrowser build lacks the automate runtime. Run: tron upgrade" >&2; exit 1; }
+    _ob="${TRON_OBSCURA_BIN:-$_ld/obscura-bin/obscura}"
+    if [ ! -x "$_ob" ] && [ "${1:-}" != "status" ] && [ "${TRON_OBSCURA_QUIET:-0}" != "1" ]; then
+      echo "tron automate: Obscura is not installed; every fetch will use Chromium. Install it with: curl -fsSL $INSTALL_URL | sh -s -- ensure-obscura" >&2
+    fi
+    exec env TRON_SESSION_BIN="$(session_bin)" TRON_OBSCURA_BIN="$_ob" node "$_ld/tron-node.mjs" "$ENTRY" "$@" ;;
   run)
     # Execute a JS/TS automation script that imports @tronbrowser/sdk (PRD M3.4).
     shift
@@ -626,6 +646,65 @@ download_tor_expert_bundle() { # dest_dir
   rm -rf "$tmp"; return 1
 }
 
+# Obscura (github.com/h4ckf0r0day/obscura, Apache-2.0) is the scraping engine
+# behind `tron automate`: its own renderer plus V8, ~30 MB a page, tens of
+# milliseconds on a light page. It is two ~100 MB binaries, so it is not in the
+# release tarball; the installer fetches the pinned release next to the
+# launcher (obscura-bin/) instead. Best-effort: without it `tron automate` runs
+# everything through Chromium. Skip with TB_NO_OBSCURA_INSTALL=1, pin another
+# release with TRONBROWSER_OBSCURA_VERSION.
+OBSCURA_VERSION="${TRONBROWSER_OBSCURA_VERSION:-0.2.2}"
+
+obscura_asset() { # -> asset name for this OS/arch, or nothing
+  os="$(uname -s)"; arch="$(uname -m)"
+  case "$os" in
+    Linux)  ob_os=linux ;;
+    Darwin) ob_os=macos ;;
+    *) return 1 ;;
+  esac
+  case "$arch" in
+    x86_64|amd64)  ob_arch=x86_64 ;;
+    aarch64|arm64) ob_arch=aarch64 ;;
+    *) return 1 ;;
+  esac
+  # The stealth build is a superset: --stealth turns the TLS fingerprint and
+  # tracker blocklist on, and without the flag it behaves like the plain build.
+  echo "obscura-${ob_arch}-${ob_os}-stealth.tar.gz"
+}
+
+download_obscura() { # dest_dir
+  dst="$1"
+  asset="$(obscura_asset)" || return 1
+  url="https://github.com/h4ckf0r0day/obscura/releases/download/v${OBSCURA_VERSION}/${asset}"
+  tmp="$(mktemp -d)"
+  info "Downloading Obscura ${OBSCURA_VERSION} ($asset)…"
+  if fetch "$url" "$tmp/obscura.tgz" 2>/dev/null && tar -xzf "$tmp/obscura.tgz" -C "$tmp" 2>/dev/null && [ -f "$tmp/obscura" ]; then
+    mkdir -p "$dst"
+    cp "$tmp/obscura" "$dst/obscura"
+    [ -f "$tmp/obscura-worker" ] && cp "$tmp/obscura-worker" "$dst/obscura-worker"
+    chmod +x "$dst/obscura" "$dst/obscura-worker" 2>/dev/null || true
+    echo "$OBSCURA_VERSION" > "$dst/VERSION"
+    rm -rf "$tmp"
+    [ -x "$dst/obscura" ] && return 0
+  fi
+  rm -rf "$tmp"; return 1
+}
+
+ensure_obscura() {
+  [ "${TB_NO_OBSCURA_INSTALL:-0}" = "1" ] && return 0
+  obdest="$APP_DIR/obscura-bin"
+  _ldir="$(find "$APP_DIR" -maxdepth 3 -type f -name tronbrowser 2>/dev/null | head -n1)"
+  [ -n "$_ldir" ] && obdest="$(dirname "$_ldir")/obscura-bin"
+  if [ -x "$obdest/obscura" ] && [ "$(cat "$obdest/VERSION" 2>/dev/null)" = "$OBSCURA_VERSION" ]; then return 0; fi
+  info "Setting up Obscura (the scraping engine for 'tron automate')…"
+  if download_obscura "$obdest"; then
+    info "Installed Obscura $OBSCURA_VERSION to $obdest"
+    return 0
+  fi
+  warn "Couldn't install Obscura; 'tron automate' will use Chromium for every page. Retry with: curl -fsSL $INSTALL_URL | sh -s -- ensure-obscura"
+  return 1
+}
+
 # Make a `tor` daemon available for the in-browser 🧅 Tor toggle. We install OUR
 # OWN standalone tor (the Tor Expert Bundle) and run it on our OWN port (9071),
 # never touching any system tor. We prefer the bundle because the system `tor`
@@ -770,6 +849,7 @@ DESKTOP
   # abort an install that has already put the browser on disk.
   ensure_tor      || true  # so the in-browser 🧅 Tor toggle works out of the box
   ensure_certutil || true  # so Moshpit names load over HTTPS on first launch
+  ensure_obscura  || true  # so 'tron automate' has its scraping engine
   brand_macos_icon "$(dirname "$bin")/tronbrowser.png"
 
   info "Installed TronBrowser $tag to $APP_DIR"
@@ -877,6 +957,7 @@ do_upgrade() {
     ensure_browser            # still make sure Ungoogled Chromium is installed
     ensure_tor      || true   # and that Tor is available for the toggle
     ensure_certutil || true   # and that Moshpit trust can be written
+    ensure_obscura  || true   # and that the scraping engine is current
     brand_macos_icon "$(find "$APP_DIR" -maxdepth 3 -name tronbrowser.png 2>/dev/null | head -n1)"  # re-apply icon (Chromium updates reset it)
     info "Re-install anyway with: TB_FORCE=1 tron upgrade"
     return
@@ -920,6 +1001,8 @@ Env:
   TRONBROWSER_REPO            GitHub repo (default: $REPO)
   TRONBROWSER_CACHE_LIMIT_MB  clear profile caches on upgrade once they exceed
                               this (default: 1024; 0 disables)
+  TRONBROWSER_OBSCURA_VERSION Obscura release to install for 'tron automate'
+                              (default: 0.2.2; TB_NO_OBSCURA_INSTALL=1 skips it)
 EOF
 }
 
@@ -936,6 +1019,7 @@ case "$cmd" in
     esac ;;
   remove|uninstall) do_remove ;;
   ensure-tor) ensure_tor ;;
+  ensure-obscura) ensure_obscura ;;
   ensure-certutil) ensure_certutil ;;
   version|--version|-v) do_version ;;
   help|--help|-h) usage ;;
