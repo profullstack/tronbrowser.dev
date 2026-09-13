@@ -2,8 +2,9 @@
  * `tron mcp` — local MCP server over stdio (PRD M3.6). Built into the launcher
  * payload (sdk/mcp-bin.js) and run via tron-node.mjs so @tronbrowser/* resolve.
  */
-import { createMcpServer } from './mcp/server.js';
-import { serveStdio } from './mcp/server.js';
+import { automateTools } from './mcp/automate.js';
+import { ObscuraClient } from './mcp/obscura.js';
+import { createMcpServer, serveStdio } from './mcp/server.js';
 import { McpBrowserSession } from './mcp/session.js';
 
 const argv = process.argv.slice(2);
@@ -12,7 +13,9 @@ const profileIdx = argv.indexOf('--profile');
 const profile = profileIdx >= 0 ? argv[profileIdx + 1] : undefined;
 
 const session = McpBrowserSession.fromSdk({ headless, ...(profile ? { profile } : {}) });
-const server = createMcpServer(session);
+// fetch_page rides along (PRD M3.8): Obscura when installed, Chromium otherwise.
+const obscura = new ObscuraClient({ stealth: argv.includes('--stealth') });
+const server = createMcpServer(session, undefined, automateTools({ obscura, session }));
 
 process.stderr.write('tron mcp: TronBrowser MCP server on stdio\n');
 

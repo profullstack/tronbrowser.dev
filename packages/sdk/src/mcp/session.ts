@@ -48,6 +48,11 @@ export class McpBrowserSession {
     });
   }
 
+  /** True once a tool has launched the managed session and it is still open. */
+  isOpen(): boolean {
+    return this.#current !== undefined;
+  }
+
   async getPage(): Promise<McpPage> {
     this.#current ??= await this.#launch();
     return this.#current.page;

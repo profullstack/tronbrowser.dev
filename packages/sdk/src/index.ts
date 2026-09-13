@@ -18,6 +18,10 @@ export { Browser, type LaunchOptions } from './browser.js';
 export { Page } from './page.js';
 export type { SdkDeps, LaunchArgs } from './deps.js';
 
+// MCP server, the Obscura/Chromium engines and the fetch_page router (M3.6/M3.8),
+// so a host process (the tronbrowser.dev relay) can serve the same tools.
+export * from './mcp/index.js';
+
 // Re-export the shared automation types so scripts can annotate results.
 export type {
   AgentSnapshot,

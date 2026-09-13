@@ -17,6 +17,12 @@
 	@api path /api/* /api
 	reverse_proxy @api localhost:8090
 
+	# OpenMCP relay (tronbrowser.dev/mcp/tron): same API process. Its descriptor
+	# is the static /.well-known/openmcp.json below, which is what makes the
+	# listing "verified" on a catalog (served from this origin, not registered).
+	@mcp path /mcp/* /mcp
+	reverse_proxy @mcp localhost:8090
+
 	# Security headers on every response.
 	header {
 		Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
@@ -35,6 +41,8 @@
 	header /install.sh Content-Type "text/x-shellscript; charset=utf-8"
 	header /sitemap.xml Content-Type "application/xml; charset=utf-8"
 	header /manifest.json Content-Type "application/manifest+json; charset=utf-8"
+	header /.well-known/openmcp.json Content-Type "application/json; charset=utf-8"
+	header /.well-known/openmcp.json Access-Control-Allow-Origin "*"
 
 	# Caching: long for images, SHORT for code/HTML so updates propagate fast
 	# (no content hashing yet — don't let stale JS strand logged-in users).

@@ -2,15 +2,16 @@
  * Assemble the MCP server from a browser session, and a newline-delimited stdio
  * transport (PRD M3.6). Local only — the host speaks JSON-RPC over stdin/stdout.
  */
-import { McpServer, type McpServerInfo } from './protocol.js';
+import { McpServer, type McpServerInfo, type McpTool } from './protocol.js';
 import type { McpBrowserSession } from './session.js';
 import { browserTools } from './tools.js';
 
 const DEFAULT_INFO: McpServerInfo = { name: 'tronbrowser', version: '3.7' };
 
-export function createMcpServer(session: McpBrowserSession, info: McpServerInfo = DEFAULT_INFO): McpServer {
+export function createMcpServer(session: McpBrowserSession, info: McpServerInfo = DEFAULT_INFO, extras: McpTool[] = []): McpServer {
   const server = new McpServer(info);
   for (const tool of browserTools(session)) server.register(tool);
+  for (const tool of extras) server.register(tool);
   return server;
 }
 

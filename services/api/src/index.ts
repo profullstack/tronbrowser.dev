@@ -12,6 +12,7 @@ import { sendEmail } from './email.js';
 import { store } from './store/routes.js';
 import { swarmRoutes } from './swarm.js';
 import { dnsRoutes } from './dns.js';
+import { tronRelay } from './mcp/tron.js';
 import { safeRedirect } from './redirect.js';
 import { extLoginTarget } from './ext-login.js';
 
@@ -58,6 +59,12 @@ app.route('/api/swarm', swarmRoutes({ currentUser }));
 
 /* ---------- DNS verifier (signed-in ops tool for /dns) ---------- */
 app.route('/api/dns', dnsRoutes({ currentUser }));
+
+/* ---------- OpenMCP relay: tronbrowser.dev/mcp/tron (Obscura + ungoogled-chromium) ---------- */
+// Public, keyless, stateless: fetch_page / screenshot_page only, one fresh tab
+// per call, capped and rate-limited. The descriptor a catalog reads is the
+// static /.well-known/openmcp.json. TRON_MCP_DISABLED=1 turns it off.
+if (process.env.TRON_MCP_DISABLED !== '1') app.route('/mcp/tron', tronRelay().app);
 
 /* ---------- Extension sign-in (adopts an existing website session) ---------- */
 // The browser extension calls this instead of /coinpay/login directly: it can't

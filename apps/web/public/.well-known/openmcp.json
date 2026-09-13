@@ -1,0 +1,12 @@
+{
+  "openmcp": "0.1",
+  "mcp": "https://tronbrowser.dev/mcp/tron",
+  "name": "TronBrowser",
+  "description": "Fetch any public web page as markdown, text, links or html, or take a screenshot, through TronBrowser: Obscura renders first (fast, light) and the ungoogled-chromium engine takes over for JS-heavy pages and bot walls. Keyless; a few fetches at a time.",
+  "url": "https://tronbrowser.dev",
+  "auth": { "kind": "none", "open": ["fetch_page", "screenshot_page"] },
+  "tags": ["browser", "fetch", "scrape", "screenshot", "chromium", "ungoogled-chromium", "obscura", "web", "hosted"],
+  "operator": "https://logicsrc.com/.well-known/openprofile.md",
+  "tools": ["fetch_page", "screenshot_page"],
+  "catalogs": ["https://openmcp.logicsrc.com"]
+}

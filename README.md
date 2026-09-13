@@ -58,6 +58,12 @@ Linux phones (Librem 5 / PinePhone / Ubuntu Touch). See
   to the cloud SQLite (Turso) or your own self-hosted backend.
 - Keeps all Chromium features: extensions, profiles, bookmarks, history, PWAs,
   DevTools.
+- **`tron automate`** — an MCP server for agents: Obscura renders pages first
+  (fast, light), the Chromium session takes over for full-JS pages and bot
+  walls. Stdio for a local host, HTTP with an OpenMCP descriptor for a catalog.
+  The same relay runs hosted at **tronbrowser.dev/mcp/tron** (keyless
+  `fetch_page` + `screenshot_page`, listed on openmcp.logicsrc.com). See
+  [docs/mcp.md](docs/mcp.md).
 
 ## Monorepo
 
