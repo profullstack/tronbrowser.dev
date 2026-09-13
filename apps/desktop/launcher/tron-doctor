@@ -1,0 +1,618 @@
+#!/usr/bin/env python3
+"""Diagnose, and where it is safe to, repair a TronBrowser profile that will not open.
+
+The dialog this exists for reads "Something went wrong when opening your
+profile. Some features may be unavailable." It is Chromium's profile-error
+dialog, and it is shown once per consumer of the database that failed. The
+autofill, keyword, token, payments and account services all sit on the one
+`Web Data` file, so a single database that cannot be opened arrives as ten
+identical dialogs. Nothing in TronBrowser's own history need have changed for
+this to start one morning, and reinstalling TronBrowser never touches the
+profile, so it cannot fix it either. The causes all live on the machine:
+
+  * The engine went BACKWARDS. TronBrowser ships no engine; it drives whatever
+    Ungoogled Chromium is installed. A profile carries the schema of whichever
+    build wrote it last, and an older build refuses every database at once.
+    The Flathub Flatpak updates itself, and a distro package appearing beside
+    it used to be preferred by the launcher regardless of version.
+  * A lock is stale: a killed instance left SingletonLock behind, or an
+    instance is still shutting down.
+  * A database is corrupt: a hard kill mid-write, a full disk, a bad shutdown.
+  * The disk is full, or the profile is not writable.
+
+`doctor` reports all of it and exits non-zero when something is wrong.
+`repair` does what can be done without losing data it cannot get back: a
+stale lock is removed, a database that no longer opens is MOVED aside, never
+deleted, so the browser rebuilds it. It refuses to run under a live browser.
+
+  tron doctor            report on the engine, the locks, the databases, the disk
+  tron doctor --json     the same, for a script
+  tron repair            fix what the report found, with the browser closed
+  tron repair --dry-run  say what repair would do and touch nothing
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import re
+import shutil
+import socket
+import sqlite3
+import subprocess
+import sys
+import time
+
+FLATPAK_APPS = (
+    "io.github.ungoogled_software.ungoogled_chromium",
+    "com.github.Eloston.UngoogledChromium",
+)
+NATIVE_NAMES = ("ungoogled-chromium", "ungoogled-chromium-stable")
+
+# The databases the profile-error dialog can be about, and what each holds, so
+# a repair says in plain words what it is taking away rather than a filename.
+DATABASES = {
+    "Web Data": "autofill entries, saved addresses and cards, and custom search engines",
+    "History": "browsing history and the address bar's visited-site suggestions",
+    "Login Data": "SAVED PASSWORDS",
+    "Cookies": "every site login (you will be signed out everywhere)",
+    "Favicons": "site icons (rebuilt as you browse)",
+    "Top Sites": "new-tab thumbnails (rebuilt as you browse)",
+    "Shortcuts": "address-bar shortcuts (rebuilt as you browse)",
+    "Affiliation Database": "password-manager site groupings (rebuilt on demand)",
+}
+STATE_FILES = ("Local State", "Default/Preferences", "Default/Secure Preferences")
+LOCK_FILES = ("SingletonLock", "SingletonSocket", "SingletonCookie")
+
+# Lines in the engine's log that explain a profile failure. Everything else in
+# there is the usual Chromium noise.
+LOG_PATTERN = re.compile(
+    r"sqlite|\bsql\b|database|Failed to (open|init|create)|Unable to open|"
+    r"No space left|Permission denied|read-only|readonly|too new|profile_error|"
+    r"ProfileError|WebDatabase|HistoryBackend",
+    re.IGNORECASE,
+)
+
+MB = 1024 * 1024
+LOW_DISK_MB = 200
+BIG_LOG_MB = 200
+
+
+class Report:
+    def __init__(self) -> None:
+        self.problems: list[dict] = []
+        self.notes: list[dict] = []
+        self.facts: dict = {}
+
+    def problem(self, code: str, text: str, hint: str = "") -> None:
+        self.problems.append({"code": code, "text": text, "hint": hint})
+
+    def note(self, code: str, text: str) -> None:
+        self.notes.append({"code": code, "text": text})
+
+
+# --- Where things are -------------------------------------------------------
+
+
+def data_dir() -> str:
+    d = os.environ.get("TRONBROWSER_DATA")
+    if d:
+        return d
+    home = os.path.expanduser("~")
+    hidden = os.path.join(home, ".tronbrowser")
+    visible = os.path.join(home, "TronBrowser")  # the snap-shaped install
+    if not os.path.isdir(hidden) and os.path.isdir(visible):
+        return visible
+    return hidden
+
+
+def version_tuple(text: str) -> tuple[int, ...]:
+    """The first dotted number in a version string, as integers.
+
+    "Chromium 152.0.7977.82" and the Flatpak's "152.0.7977.82-1" both give
+    (152, 0, 7977, 82); a build suffix never takes part in the comparison.
+    """
+    m = re.search(r"\d+(?:\.\d+)+", text or "")
+    if not m:
+        return ()
+    return tuple(int(p) for p in m.group(0).split("."))
+
+
+def dotted(v: tuple[int, ...]) -> str:
+    return ".".join(str(p) for p in v)
+
+
+def run(cmd: list[str], timeout: float = 8.0) -> str:
+    try:
+        out = subprocess.run(
+            cmd, capture_output=True, text=True, timeout=timeout, check=False
+        )
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    return out.stdout if out.returncode == 0 else ""
+
+
+# --- The engine --------------------------------------------------------------
+
+
+def engine_candidates() -> list[dict]:
+    """Every Ungoogled Chromium the launcher could pick, with its version.
+
+    Mirrors the launcher: an explicit TRONBROWSER_BROWSER, else a native
+    binary on PATH, else the Flathub Flatpak. When more than one is installed
+    the launcher runs the newest, so this lists them all.
+    """
+    found: list[dict] = []
+    override = os.environ.get("TRONBROWSER_BROWSER")
+    if override:
+        ver = run([override, "--version"]).strip().splitlines()
+        found.append({"source": override, "kind": "override", "version": ver[0] if ver else ""})
+        return found
+    for name in NATIVE_NAMES:
+        path = shutil.which(name)
+        if not path:
+            continue
+        ver = run([path, "--version"]).strip().splitlines()
+        found.append({"source": path, "kind": "native", "version": ver[0] if ver else ""})
+    if shutil.which("flatpak"):
+        for app in FLATPAK_APPS:
+            info = run(["flatpak", "info", app])
+            if not info:
+                continue
+            m = re.search(r"^\s*Version:\s*(.+)$", info, re.MULTILINE)
+            found.append(
+                {"source": f"flatpak {app}", "kind": "flatpak", "version": m.group(1).strip() if m else ""}
+            )
+    return found
+
+
+def pick_engine(cands: list[dict]) -> dict | None:
+    """The one the launcher runs: the newest, first-found on a tie."""
+    best = None
+    for c in cands:
+        if best is None or version_tuple(c["version"]) > version_tuple(best["version"]):
+            best = c
+    return best
+
+
+def check_engine(rep: Report, data: str) -> None:
+    cands = engine_candidates()
+    rep.facts["engines"] = cands
+    engine = pick_engine(cands)
+    rep.facts["engine"] = engine
+    last = ""
+    try:
+        with open(os.path.join(data, "Last Version"), encoding="utf-8", errors="replace") as f:
+            last = f.read().strip()
+    except OSError:
+        pass
+    rep.facts["last_version"] = last
+    try:
+        with open(os.path.join(data, ".tron-engine"), encoding="utf-8", errors="replace") as f:
+            rep.facts["last_engine"] = f.read().strip()
+    except OSError:
+        rep.facts["last_engine"] = ""
+
+    if engine is None:
+        rep.problem(
+            "no-engine",
+            "No Ungoogled Chromium is installed, so there is nothing to run the profile with.",
+            "flatpak install -y flathub io.github.ungoogled_software.ungoogled_chromium",
+        )
+        return
+
+    have = version_tuple(engine["version"])
+    wrote = version_tuple(last)
+    if wrote and have and have < wrote:
+        newer = [c for c in cands if version_tuple(c["version"]) >= wrote]
+        hint = (
+            f"Run the newer one: TRONBROWSER_BROWSER is the override, and the launcher "
+            f"now prefers the newest engine on its own; {newer[0]['source']} is {newer[0]['version']}."
+            if newer
+            else "Update Ungoogled Chromium (flatpak update, or your package manager) back "
+            "to at least that version. There is no safe way to take the profile backwards."
+        )
+        rep.problem(
+            "engine-downgrade",
+            f"The engine that would run ({dotted(have)}, {engine['source']}) is OLDER than the "
+            f"{dotted(wrote)} that last opened this profile. Chromium cannot open a profile written "
+            "by a newer build: every database fails, which is the profile-error dialog, once per feature.",
+            hint,
+        )
+    if len(cands) > 1:
+        others = ", ".join(f"{c['version'] or '?'} ({c['source']})" for c in cands if c is not engine)
+        rep.note("engines", f"More than one engine is installed; the launcher runs the newest. Also here: {others}")
+
+
+# --- Running instances and locks --------------------------------------------
+
+
+def running_pids(data: str) -> list[int]:
+    """Processes holding this profile open, by the switch on their command line."""
+    needle = f"--user-data-dir={data}"
+    me = os.getpid()
+    pids: list[int] = []
+    if os.path.isdir("/proc"):
+        for entry in os.listdir("/proc"):
+            if not entry.isdigit() or int(entry) == me:
+                continue
+            try:
+                with open(f"/proc/{entry}/cmdline", "rb") as f:
+                    argv = f.read().split(b"\0")
+            except OSError:
+                continue
+            if any(a.decode("utf-8", "replace").startswith(needle) for a in argv):
+                pids.append(int(entry))
+        return sorted(pids)
+    out = run(["ps", "ax", "-o", "pid=,command="])
+    for line in out.splitlines():
+        parts = line.strip().split(None, 1)
+        if len(parts) == 2 and needle in parts[1] and int(parts[0]) != me:
+            pids.append(int(parts[0]))
+    return sorted(pids)
+
+
+def lock_state(data: str) -> dict:
+    """What SingletonLock says: which host and pid claim the profile."""
+    path = os.path.join(data, "SingletonLock")
+    state = {"present": os.path.lexists(path), "host": "", "pid": 0, "alive": None}
+    if not state["present"]:
+        return state
+    try:
+        target = os.readlink(path)
+    except OSError:
+        return state
+    host, sep, pid = target.rpartition("-")
+    if sep and pid.isdigit():
+        state["host"] = host
+        state["pid"] = int(pid)
+        try:
+            os.kill(int(pid), 0)
+            state["alive"] = True
+        except ProcessLookupError:
+            state["alive"] = False
+        except PermissionError:
+            state["alive"] = True
+        except OSError:
+            state["alive"] = None
+    return state
+
+
+def check_locks(rep: Report, data: str) -> None:
+    pids = running_pids(data)
+    rep.facts["running"] = pids
+    lock = lock_state(data)
+    rep.facts["lock"] = lock
+    if pids:
+        rep.note("running", f"TronBrowser is running on this profile (pid {', '.join(map(str, pids))}).")
+        return
+    if not lock["present"]:
+        return
+    # Nothing has the profile open, yet a lock claims it. That is what a killed
+    # instance leaves behind. Chromium clears it when the pid is dead on THIS
+    # host; a lock naming another host, or a pid that is alive but is not a
+    # browser, is the one it cannot see through.
+    host = socket.gethostname()
+    if lock["host"] and lock["host"] != host:
+        rep.problem(
+            "lock-other-host",
+            f"SingletonLock says the profile is open on '{lock['host']}' (this machine is '{host}'). "
+            "Chromium treats that as another computer using the profile and will not open it here. "
+            "A hostname change does this too.",
+            "tron repair removes the lock (nothing is running on the profile).",
+        )
+    else:
+        rep.problem(
+            "lock-stale",
+            f"SingletonLock points at pid {lock['pid'] or '?'} but nothing has the profile open. "
+            "A previous instance was killed rather than closed.",
+            "tron repair removes the lock.",
+        )
+
+
+# --- Databases and state files ----------------------------------------------
+
+
+def check_db(path: str, running: bool) -> dict:
+    """Open one SQLite file read-only and ask it whether it is intact."""
+    info = {"name": os.path.basename(path), "path": path, "size_mb": 0.0, "status": "ok", "detail": "", "version": ""}
+    try:
+        info["size_mb"] = round(os.path.getsize(path) / MB, 1)
+    except OSError as e:
+        info["status"] = "unreadable"
+        info["detail"] = str(e)
+        return info
+    if not os.access(path, os.R_OK | os.W_OK):
+        info["status"] = "not-writable"
+        info["detail"] = "the file is not writable by this user"
+        return info
+    uri = "file:" + path.replace("?", "%3f").replace("#", "%23") + "?mode=ro"
+    try:
+        con = sqlite3.connect(uri, uri=True, timeout=1.0)
+        try:
+            rows = con.execute("PRAGMA quick_check").fetchall()
+            if rows and rows[0][0] != "ok":
+                info["status"] = "corrupt"
+                info["detail"] = "; ".join(str(r[0]) for r in rows[:3])
+            try:
+                meta = dict(con.execute("SELECT key, value FROM meta").fetchall())
+                info["version"] = str(meta.get("version", ""))
+                if meta.get("last_compatible_version"):
+                    info["version"] += f" (compatible back to {meta['last_compatible_version']})"
+            except sqlite3.Error:
+                pass
+        finally:
+            con.close()
+    except sqlite3.DatabaseError as e:
+        text = str(e)
+        if "locked" in text or "busy" in text:
+            info["status"] = "busy" if running else "locked"
+        elif "not a database" in text or "malformed" in text or "corrupt" in text:
+            info["status"] = "corrupt"
+        elif "unable to open" in text:
+            info["status"] = "unreadable"
+        elif "disk I/O" in text or "I/O error" in text:
+            info["status"] = "io-error"
+        else:
+            info["status"] = "error"
+        info["detail"] = text
+    return info
+
+
+def check_databases(rep: Report, data: str) -> None:
+    running = bool(rep.facts.get("running"))
+    profile = os.path.join(data, "Default")
+    results = []
+    for name in DATABASES:
+        path = os.path.join(profile, name)
+        if not os.path.exists(path):
+            continue
+        r = check_db(path, running)
+        results.append(r)
+        if r["status"] == "ok":
+            continue
+        if r["status"] == "busy":
+            rep.note("db-busy", f"{name} is in use by the running browser, so it was not checked.")
+            continue
+        if r["status"] == "locked":
+            rep.problem(
+                "db-locked",
+                f"{name} is locked, but nothing has the profile open: a process is still holding it, "
+                f"or a lock file outlived its owner. ({r['detail']})",
+                "Wait a few seconds and run tron doctor again; then tron repair.",
+            )
+            continue
+        holds = DATABASES[name]
+        rep.problem(
+            f"db-{r['status']}",
+            f"{name} cannot be opened ({r['status']}: {r['detail'] or 'no detail'}). It holds {holds}.",
+            "tron repair moves it aside so the browser rebuilds it; the original is kept in the profile.",
+        )
+    rep.facts["databases"] = results
+
+
+def check_state_files(rep: Report, data: str) -> None:
+    for rel in STATE_FILES:
+        path = os.path.join(data, rel)
+        if not os.path.exists(path):
+            continue
+        try:
+            with open(path, encoding="utf-8") as f:
+                json.load(f)
+        except (OSError, ValueError) as e:
+            rep.problem(
+                "state-unparseable",
+                f"{rel} does not parse as JSON ({e}). Chromium starts with defaults when this happens, "
+                "which reads as every setting gone.",
+                "Restore it from a backup if you have one; the launcher never overwrites a file it cannot read.",
+            )
+
+
+# --- Disk, permissions, log --------------------------------------------------
+
+
+def check_disk(rep: Report, data: str) -> None:
+    probe = data if os.path.isdir(data) else os.path.dirname(data) or "."
+    try:
+        usage = shutil.disk_usage(probe)
+    except OSError:
+        return
+    free_mb = usage.free // MB
+    rep.facts["disk_free_mb"] = free_mb
+    if free_mb < LOW_DISK_MB:
+        rep.problem(
+            "disk-full",
+            f"Only {free_mb}MB free on the disk holding the profile. SQLite cannot write its journal "
+            "on a full disk, and every database then fails to open.",
+            "Free space (tron clean clears the browser caches), then start again.",
+        )
+    for rel in ("", "Default"):
+        path = os.path.join(data, rel)
+        if os.path.isdir(path) and not os.access(path, os.W_OK):
+            rep.problem(
+                "not-writable",
+                f"{path} is not writable by this user, so the profile cannot be opened for use.",
+                f"chmod u+rwx '{path}' (and check who owns it: ls -ld '{path}').",
+            )
+
+
+def check_log(rep: Report, data: str) -> None:
+    path = os.environ.get("TRONBROWSER_LOG") or os.path.join(data, "tron.log")
+    rep.facts["log"] = path
+    try:
+        size = os.path.getsize(path)
+    except OSError:
+        rep.facts["log_lines"] = []
+        return
+    rep.facts["log_mb"] = round(size / MB, 1)
+    if size > BIG_LOG_MB * MB:
+        rep.note("log-big", f"{path} is {size // MB}MB; it only ever grows. Safe to delete while the browser is closed.")
+    try:
+        with open(path, "rb") as f:
+            f.seek(max(0, size - 2 * MB))
+            tail = f.read().decode("utf-8", "replace").splitlines()
+    except OSError:
+        rep.facts["log_lines"] = []
+        return
+    hits = [line for line in tail if LOG_PATTERN.search(line)]
+    rep.facts["log_lines"] = hits[-15:]
+
+
+# --- Reporting ---------------------------------------------------------------
+
+
+def diagnose(data: str) -> Report:
+    rep = Report()
+    rep.facts["profile"] = data
+    rep.facts["profile_exists"] = os.path.isdir(data)
+    if not os.path.isdir(data):
+        rep.note("no-profile", f"{data} does not exist yet; the first launch creates it.")
+        check_engine(rep, data)
+        check_disk(rep, data)
+        return rep
+    check_engine(rep, data)
+    check_locks(rep, data)
+    check_databases(rep, data)
+    check_state_files(rep, data)
+    check_disk(rep, data)
+    check_log(rep, data)
+    return rep
+
+
+def print_report(rep: Report) -> None:
+    f = rep.facts
+    eng = f.get("engine")
+    print(f"Profile:  {f['profile']}" + ("" if f.get("profile_exists") else "  (not created yet)"))
+    if eng:
+        print(f"Engine:   {eng['version'] or 'unknown version'}  [{eng['source']}]")
+    else:
+        print("Engine:   none found")
+    if f.get("last_version"):
+        print(f"Profile last opened by: {f['last_version']}")
+    if f.get("running"):
+        print(f"Running:  yes (pid {', '.join(map(str, f['running']))})")
+    else:
+        print("Running:  no")
+    if "disk_free_mb" in f:
+        print(f"Disk:     {f['disk_free_mb']}MB free")
+    dbs = f.get("databases") or []
+    if dbs:
+        print("Databases:")
+        for d in dbs:
+            ver = f"  schema {d['version']}" if d["version"] else ""
+            flag = "" if d["status"] == "ok" else f"  <-- {d['status']}"
+            print(f"  {d['name']:<22} {d['size_mb']:>8}MB{ver}{flag}")
+    print()
+    if rep.problems:
+        print(f"{len(rep.problems)} problem(s):")
+        for p in rep.problems:
+            print(f"  * {p['text']}")
+            if p["hint"]:
+                print(f"    -> {p['hint']}")
+    else:
+        print("No problems found in the profile, its locks, the databases or the disk.")
+        if eng:
+            print(
+                "If the profile-error dialog still appears, the cause is not in the profile files: "
+                "quit every TronBrowser window, wait ten seconds, and start it again. If it persists, "
+                f"the engine's own log is the next place to look: {f.get('log', '')}"
+            )
+    for n in rep.notes:
+        print(f"  - {n['text']}")
+    lines = f.get("log_lines") or []
+    if lines:
+        print()
+        print(f"From {f.get('log')} (lines about databases and the profile, newest last):")
+        for line in lines:
+            print(f"  {line[:200]}")
+
+
+# --- Repair ------------------------------------------------------------------
+
+
+def repair(data: str, dry_run: bool) -> int:
+    rep = diagnose(data)
+    if rep.facts.get("running"):
+        pids = ", ".join(map(str, rep.facts["running"]))
+        print(f"TronBrowser is running on this profile (pid {pids}). Quit it first, then run tron repair.", file=sys.stderr)
+        return 1
+
+    fixable = [p for p in rep.problems if p["code"].startswith(("lock-", "db-"))]
+    unfixable = [p for p in rep.problems if p not in fixable]
+    if not fixable:
+        print("Nothing for repair to do.")
+        for p in unfixable:
+            print(f"  * {p['text']}")
+            if p["hint"]:
+                print(f"    -> {p['hint']}")
+        return 0 if not unfixable else 1
+
+    verb = "Would" if dry_run else "Will"
+    stamp = time.strftime("%Y%m%d-%H%M%S")
+    backup = os.path.join(data, f"tron-repair-{stamp}")
+    moved = False
+
+    if any(p["code"].startswith("lock-") for p in fixable):
+        for name in LOCK_FILES:
+            path = os.path.join(data, name)
+            if not os.path.lexists(path):
+                continue
+            print(f"{verb} remove stale {name}")
+            if not dry_run:
+                try:
+                    os.unlink(path)
+                except OSError as e:
+                    print(f"  could not remove {path}: {e}", file=sys.stderr)
+
+    for d in rep.facts.get("databases") or []:
+        if d["status"] in ("ok", "busy"):
+            continue
+        if d["status"] == "locked":
+            print(f"{d['name']} is still locked; nothing has the profile open, so this should clear on its own. Not touching it.")
+            continue
+        holds = DATABASES.get(d["name"], "its data")
+        print(f"{verb} move {d['name']} ({d['status']}) into {backup}/ so the browser rebuilds it.")
+        print(f"  This gives up {holds}. The original stays in that folder; nothing is deleted.")
+        if dry_run:
+            continue
+        os.makedirs(backup, exist_ok=True)
+        for suffix in ("", "-journal", "-wal", "-shm"):
+            src = d["path"] + suffix
+            if os.path.lexists(src):
+                shutil.move(src, os.path.join(backup, d["name"] + suffix))
+                moved = True
+
+    for p in unfixable:
+        print(f"Not something repair can fix: {p['text']}")
+        if p["hint"]:
+            print(f"  -> {p['hint']}")
+
+    if dry_run:
+        print("Dry run: nothing was changed.")
+        return 0
+    if moved:
+        print(f"Originals kept in {backup}. Delete that folder once the browser is back to normal.")
+    print("Done. Start TronBrowser again.")
+    return 0
+
+
+def main(argv: list[str]) -> int:
+    mode = argv[1] if len(argv) > 1 and not argv[1].startswith("-") else "doctor"
+    flags = set(a for a in argv[1:] if a.startswith("-"))
+    if mode not in ("doctor", "repair") or flags - {"--json", "--dry-run"}:
+        print(__doc__.strip().splitlines()[0], file=sys.stderr)
+        print("usage: tron doctor [--json] | tron repair [--dry-run]", file=sys.stderr)
+        return 2
+    data = data_dir()
+    if mode == "repair":
+        return repair(data, "--dry-run" in flags)
+    rep = diagnose(data)
+    if "--json" in flags:
+        print(json.dumps({"problems": rep.problems, "notes": rep.notes, **rep.facts}, indent=2))
+    else:
+        print_report(rep)
+    return 1 if rep.problems else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))

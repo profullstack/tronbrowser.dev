@@ -105,6 +105,11 @@ Usage:
   tron pwa sync         Repoint their desktop icons at TronBrowser
                         (use when an installed app dies from its icon but
                          opens fine from the address bar)
+  tron doctor           Check the engine, locks, databases and disk
+                        (use when "Something went wrong when opening your
+                         profile" appears; --json for machine output)
+  tron repair           Fix what doctor found, with the browser closed
+                        (--dry-run to see what it would do)
   tron remove           Uninstall TronBrowser (keeps your profile data)
   tron version          Print the installed version
   tron help             Show this help
@@ -134,7 +139,12 @@ maybe_auto_upgrade() {
   [ "$((now - last))" -lt 86400 ] && return 0
 
   printf '%s\n' "$now" > "$AUTO_UPGRADE_STAMP" 2>/dev/null || return 0
+  # This fires as the browser is starting, and the upgrade begins by clearing
+  # oversized caches if nothing has the profile open. Chromium takes a moment
+  # to appear on the process list, so without the pause that check can pass
+  # and the caches get pulled out from under a browser that is now running.
   (
+    sleep 30
     TRONBROWSER_AUTO_UPGRADE=0 sh -c "curl -fsSL '$INSTALL_URL' | sh -s -- upgrade"
   ) >/dev/null 2>&1 &
 }
@@ -360,6 +370,17 @@ case "${1:-}" in
     # Name ourselves explicitly: this CLI is the stable path across upgrades,
     # and a desktop icon runs with the session's PATH, which need not have it.
     exec env TRONBROWSER_CLI="$PREFIX/bin/tron" python3 "$ENTRY" "$@" ;;
+  doctor|repair)
+    # "Something went wrong when opening your profile" is Chromium reporting
+    # one database it could not open, shown once per feature that needed it —
+    # ten dialogs from one file. No TronBrowser release causes it and no
+    # reinstall fixes it: the engine, the locks and the databases all live on
+    # this machine. So this is the diagnosis, and `repair` the safe fixes.
+    _ld="$(dirname "$(readlink -f "$CURRENT" 2>/dev/null || echo "$CURRENT")")"
+    ENTRY="$_ld/tron-doctor"
+    command -v python3 >/dev/null 2>&1 || { echo "tron $1 needs python3 on PATH." >&2; exit 1; }
+    [ -f "$ENTRY" ] || { echo "This TronBrowser build lacks the doctor. Run: tron upgrade" >&2; exit 1; }
+    exec python3 "$ENTRY" "$@" ;;
   remove|uninstall)
     # Hand the web-app icons back to the engine before the launcher they point
     # at disappears — otherwise uninstalling TronBrowser silently breaks every
@@ -811,6 +832,12 @@ prune_profile_caches() {
       continue
     fi
     if [ "$_total" -eq 0 ]; then
+      continue
+    fi
+    # Sizing gigabytes of cache takes a while; a browser started in the
+    # meantime has these directories open. Ask again right before unlinking.
+    if command -v pgrep >/dev/null 2>&1 && pgrep -f "user-data-dir=$_data" >/dev/null 2>&1; then
+      warn "TronBrowser started while measuring — leaving $_data alone. Quit it, then run 'tron clean'."
       continue
     fi
 
