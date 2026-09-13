@@ -21,7 +21,11 @@
 	# is the static /.well-known/openmcp.json below, which is what makes the
 	# listing "verified" on a catalog (served from this origin, not registered).
 	@mcp path /mcp/* /mcp
-	reverse_proxy @mcp localhost:8090
+	reverse_proxy @mcp localhost:8090 {
+		# Railway terminates TLS and Caddy sees plain HTTP, so the proto it
+		# forwards is "http"; the relay's health reply echoes the caller's scheme.
+		header_up X-Forwarded-Proto https
+	}
 
 	# Security headers on every response.
 	header {
