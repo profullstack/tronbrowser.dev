@@ -42,6 +42,26 @@ BROWSER=""        # a binary path, or "flatpak"
 FLATPAK_APP=""
 IS_SNAP=0
 
+# The first dotted number in a version string: "Chromium 152.0.7977.82" and the
+# Flatpak's "152.0.7977.82-1" both give 152.0.7977.82. A build suffix never
+# takes part in a comparison.
+ver_of() {
+  printf '%s\n' "$1" | sed -n 's/^[^0-9]*\([0-9][0-9]*\(\.[0-9][0-9]*\)*\).*/\1/p' | head -n1
+}
+# ver_gt A B: true when A is a strictly newer dotted version than B. An empty
+# side is the oldest possible, so a candidate whose version could not be read
+# never displaces one whose version could.
+ver_gt() {
+  awk -v a="$1" -v b="$2" 'BEGIN {
+    na = split(a, x, "."); nb = split(b, y, ".");
+    n = (na > nb) ? na : nb;
+    for (i = 1; i <= n; i++) {
+      p = (i <= na) ? x[i] + 0 : 0; q = (i <= nb) ? y[i] + 0 : 0;
+      if (p > q) exit 0; if (p < q) exit 1;
+    }
+    exit 1 }'
+}
+
 if [ -n "${TRONBROWSER_BROWSER:-}" ]; then
   BROWSER="$TRONBROWSER_BROWSER"
 elif [ -x "$DIR/chrome" ]; then
@@ -49,14 +69,32 @@ elif [ -x "$DIR/chrome" ]; then
 else
   # Ungoogled Chromium ONLY. Never regular Chromium/Chrome, never snap (snap
   # chromium is regular AND can't be isolated). No fallbacks.
+  #
+  # More than one can be installed — a distro package beside the Flathub
+  # Flatpak — and they are rarely the same version. Run the NEWEST. A profile
+  # carries the schema of whichever build wrote it last, and an older build
+  # opening it fails every database at once: that is the "Something went wrong
+  # when opening your profile" dialog, once per feature, ten times over.
+  # Taking the first candidate found meant a package install could downgrade
+  # the engine underneath the profile with nothing in TronBrowser changing.
+  # A tie keeps the earlier candidate, so a native binary still beats the
+  # Flatpak of the same version.
+  BEST_VERSION=""
   for c in ungoogled-chromium ungoogled-chromium-stable; do
     p="$(command -v "$c" 2>/dev/null)" || continue
-    BROWSER="$p"; break
+    v="$(ver_of "$("$p" --version 2>/dev/null | head -n1)")"
+    if [ -z "$BROWSER" ] || ver_gt "$v" "$BEST_VERSION"; then
+      BROWSER="$p"; FLATPAK_APP=""; BEST_VERSION="$v"
+    fi
   done
   # Flatpak Ungoogled Chromium (Flathub) — fully de-googled.
-  if [ -z "$BROWSER" ] && command -v flatpak >/dev/null 2>&1; then
+  if command -v flatpak >/dev/null 2>&1; then
     for app in io.github.ungoogled_software.ungoogled_chromium com.github.Eloston.UngoogledChromium; do
-      if flatpak info "$app" >/dev/null 2>&1; then BROWSER="flatpak"; FLATPAK_APP="$app"; break; fi
+      flatpak info "$app" >/dev/null 2>&1 || continue
+      v="$(ver_of "$(flatpak info "$app" 2>/dev/null | sed -n 's/^[[:space:]]*Version:[[:space:]]*//p' | head -n1)")"
+      if [ -z "$BROWSER" ] || ver_gt "$v" "$BEST_VERSION"; then
+        BROWSER="flatpak"; FLATPAK_APP="$app"; BEST_VERSION="$v"
+      fi
     done
   fi
 fi
@@ -439,6 +477,20 @@ if [ "$TOR" != "1" ]; then
     echo "  If the browser now feels different (scrolling, video, GPU), start here." >&2
   fi
   printf '%s\n' "$ENGINE" > "$ENGINE_MARK" 2>/dev/null || true
+
+  # Chromium records which build last opened the profile. An engine older than
+  # that cannot open it: the databases carry a newer schema, every one of them
+  # fails, and the user sees "Something went wrong when opening your profile"
+  # once per feature. Selection above already prefers the newest engine, so
+  # this fires when the newer build has actually gone — an uninstalled package,
+  # a Flatpak rolled back — and says what happened before the dialogs do.
+  LAST_VERSION="$(cat "$DATA/Last Version" 2>/dev/null | tr -d '[:space:]' || true)"
+  _engine_num="$(ver_of "$ENGINE_VERSION")"
+  if [ -n "$LAST_VERSION" ] && [ -n "$_engine_num" ] && ver_gt "$(ver_of "$LAST_VERSION")" "$_engine_num"; then
+    echo "TronBrowser: engine $_engine_num is OLDER than the $LAST_VERSION that last opened this profile." >&2
+    echo "  Chromium cannot open a profile written by a newer build. Expect 'Something went wrong" >&2
+    echo "  when opening your profile' on every start until that build is back. See 'tron doctor'." >&2
+  fi
 fi
 
 # --- Installed web apps (PWAs) ---------------------------------------------

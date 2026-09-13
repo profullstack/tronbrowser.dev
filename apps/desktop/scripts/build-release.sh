@@ -68,6 +68,9 @@ stage() { # dest dir
   # on every start (the engine rewrites those files behind us); `tron pwa` is
   # the manual handle.
   install -m 0755 "$DESKTOP/launcher/tron-pwa" "$s/tron-pwa"
+  # `tron doctor` / `tron repair`: the profile-error dialog explained and, where
+  # safe, fixed. Python, like tron-pwa; the CLI resolves it next to the shim.
+  install -m 0755 "$DESKTOP/launcher/tron-doctor" "$s/tron-doctor"
   # Managed-session engine for `tron browser …` / `tron open` (PRD M3.1). Sits
   # next to the shim; the `tron` dispatcher resolves it relative to $CURRENT.
   install -m 0755 "$DESKTOP/launcher/tron-session" "$s/tron-session"
