@@ -15,6 +15,10 @@ profile, so it cannot fix it either. The causes all live on the machine:
     build wrote it last, and an older build refuses every database at once.
     The Flathub Flatpak updates itself, and a distro package appearing beside
     it used to be preferred by the launcher regardless of version.
+  * An instance is stuck. A browser process with no window — a crashed
+    shutdown, an orphaned app window, a managed session — still holds the
+    databases, and every new launch fails to open them. Killing it is the
+    fix; `TB_FORCE=1 tron upgrade` and `tron restart` both do that.
   * A lock is stale: a killed instance left SingletonLock behind, or an
     instance is still shutting down.
   * A database is corrupt: a hard kill mid-write, a full disk, a bad shutdown.
@@ -284,7 +288,13 @@ def check_locks(rep: Report, data: str) -> None:
     lock = lock_state(data)
     rep.facts["lock"] = lock
     if pids:
-        rep.note("running", f"TronBrowser is running on this profile (pid {', '.join(map(str, pids))}).")
+        rep.note(
+            "running",
+            f"TronBrowser is running on this profile (pid {', '.join(map(str, pids))}). "
+            "If you have no TronBrowser window open, that is a stuck instance holding the "
+            "databases, and the profile-error dialog is what every new launch gets. "
+            "'tron restart' or 'TB_FORCE=1 tron upgrade' stops it.",
+        )
         return
     if not lock["present"]:
         return
@@ -534,7 +544,12 @@ def repair(data: str, dry_run: bool) -> int:
     rep = diagnose(data)
     if rep.facts.get("running"):
         pids = ", ".join(map(str, rep.facts["running"]))
-        print(f"TronBrowser is running on this profile (pid {pids}). Quit it first, then run tron repair.", file=sys.stderr)
+        print(
+            f"TronBrowser is running on this profile (pid {pids}). Quit it first, then run tron repair.\n"
+            "No window open? Then it is a stuck instance, and stopping it is the whole fix: "
+            "'tron restart', or 'TB_FORCE=1 tron upgrade'.",
+            file=sys.stderr,
+        )
         return 1
 
     fixable = [p for p in rep.problems if p["code"].startswith(("lock-", "db-"))]

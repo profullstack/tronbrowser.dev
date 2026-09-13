@@ -371,3 +371,113 @@ describe('engine reporting', () => {
     expect(second.stderr).not.toContain('CHANGED');
   });
 });
+
+/**
+ * A Flatpak stub beside the native stub. `info` answers only for the Flathub
+ * app id, with the version given; `run` records everything after it the way
+ * the native stub records its argv. `null` means no Flatpak is installed.
+ */
+function flatpakStub(home: string, version: string | null): string {
+  const dir = join(home, 'bin');
+  mkdirSync(dir, { recursive: true });
+  const out = join(home, 'argv-flatpak.txt');
+  writeFileSync(
+    join(dir, 'flatpak'),
+    [
+      '#!/bin/sh',
+      'APP=io.github.ungoogled_software.ungoogled_chromium',
+      'case "$1" in',
+      '  info)',
+      '    [ "$2" = "--show-commit" ] && shift',
+      '    [ "$2" = "$APP" ] || exit 1',
+      version === null ? '    exit 1 ;;' : `    echo "Version: ${version}"; echo "Commit: abc123def456"; exit 0 ;;`,
+      '  run)',
+      `    : > "${out}"`,
+      `    for a in "$@"; do printf '%s\\n' "$a" >> "${out}"; done`,
+      '    exit 0 ;;',
+      'esac',
+      'exit 1',
+    ].join('\n'),
+    { mode: 0o755 },
+  );
+  return out;
+}
+
+/** Run with auto-detection instead of TRONBROWSER_BROWSER: the stubs on PATH decide. */
+function runDetecting(home: string, nativeVersion: string): Run {
+  return run([], {
+    home,
+    version: nativeVersion,
+    env: { TRONBROWSER_BROWSER: '', PATH: `${join(home, 'bin')}:${process.env.PATH ?? '/usr/bin:/bin'}` },
+  });
+}
+
+describe('engine selection', () => {
+  // The profile carries the schema of whichever build wrote it last, and an
+  // older build then fails every database at once. So when more than one
+  // Ungoogled Chromium is installed, the newest runs — not the first found.
+  it('runs the Flatpak when it is newer than the native binary', () => {
+    const home = mkdtempSync(join(tmpdir(), 'tron-launcher-'));
+    homes.push(home);
+    const flatpakArgv = flatpakStub(home, '152.0.7977.82-1');
+    const { argv, stderr } = runDetecting(home, 'Chromium 141.0.7390.54');
+    expect(argv).toEqual([]); // the native stub never ran
+    const ran = readFileSync(flatpakArgv, 'utf8').split('\n').filter(Boolean);
+    expect(ran).toContain('io.github.ungoogled_software.ungoogled_chromium');
+    expect(ran.some((a) => a.startsWith('--user-data-dir='))).toBe(true);
+    expect(stderr).toContain('engine 152.0.7977.82-1');
+  });
+
+  it('runs the native binary when it is newer than the Flatpak', () => {
+    const home = mkdtempSync(join(tmpdir(), 'tron-launcher-'));
+    homes.push(home);
+    const flatpakArgv = flatpakStub(home, '141.0.7390.54-1');
+    const { argv, stderr } = runDetecting(home, 'Chromium 152.0.7977.82');
+    expect(valueOf(argv, '--user-data-dir')).toEqual([join(home, 'profile')]);
+    expect(existsSync(flatpakArgv)).toBe(false);
+    expect(stderr).toContain('engine Chromium 152.0.7977.82');
+  });
+
+  it('keeps the native binary on a tie, whatever the build suffix', () => {
+    const home = mkdtempSync(join(tmpdir(), 'tron-launcher-'));
+    homes.push(home);
+    const flatpakArgv = flatpakStub(home, '152.0.7977.82-1');
+    const { argv } = runDetecting(home, 'Chromium 152.0.7977.82');
+    expect(valueOf(argv, '--user-data-dir')).toEqual([join(home, 'profile')]);
+    expect(existsSync(flatpakArgv)).toBe(false);
+  });
+
+  it('still runs the only engine there is', () => {
+    const home = mkdtempSync(join(tmpdir(), 'tron-launcher-'));
+    homes.push(home);
+    flatpakStub(home, null);
+    const { argv } = runDetecting(home, 'Chromium 141.0.7390.54');
+    expect(valueOf(argv, '--user-data-dir')).toEqual([join(home, 'profile')]);
+  });
+});
+
+describe('profile written by a newer engine', () => {
+  const seedLastVersion = (home: string, version: string) => {
+    mkdirSync(join(home, 'profile'), { recursive: true });
+    writeFileSync(join(home, 'profile', 'Last Version'), `${version}\n`);
+  };
+
+  it('warns that the engine is older than the build that last opened the profile', () => {
+    const home = mkdtempSync(join(tmpdir(), 'tron-launcher-'));
+    homes.push(home);
+    seedLastVersion(home, '152.0.7977.82');
+    const { argv, stderr } = run([], { home, version: 'Chromium 141.0.7390.54' });
+    expect(stderr).toContain('engine 141.0.7390.54 is OLDER than the 152.0.7977.82');
+    expect(stderr).toContain('tron doctor');
+    // A warning, not a refusal: the browser still starts.
+    expect(valueOf(argv, '--user-data-dir')).toEqual([join(home, 'profile')]);
+  });
+
+  it('stays quiet when the engine is the same build or newer', () => {
+    const home = mkdtempSync(join(tmpdir(), 'tron-launcher-'));
+    homes.push(home);
+    seedLastVersion(home, '152.0.7977.82');
+    expect(run([], { home, version: 'Chromium 152.0.7977.82' }).stderr).not.toContain('OLDER');
+    expect(run([], { home, version: 'Chromium 153.0.8010.36' }).stderr).not.toContain('OLDER');
+  });
+});

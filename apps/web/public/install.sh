@@ -95,7 +95,12 @@ Usage:
   tron mcp              Run a local MCP server over stdio (--headless)
   tron trace start|stop Record commands into a .trontrace bundle
   tron replay <bundle>  Replay a recorded trace against the session
-  tron upgrade          Update to the latest release
+  tron upgrade          Update to the latest release ('tron update' works too)
+  TB_FORCE=1 tron upgrade
+                        Reinstall the current release. Stops every TronBrowser
+                        process first, so it also clears "Something went wrong
+                        when opening your profile" when a stuck instance is
+                        holding the profile's databases (see 'tron doctor')
   tron clean            Clear browser caches (keeps bookmarks, logins, history)
   tron search [engine]  Show or set the ADDRESS BAR's search engine
                         (the new-tab box is set in TronBrowser Settings)
@@ -109,7 +114,9 @@ Usage:
                         (use when "Something went wrong when opening your
                          profile" appears; --json for machine output)
   tron repair           Fix what doctor found, with the browser closed
-                        (--dry-run to see what it would do)
+                        (--dry-run to see what it would do; if doctor says
+                         the browser is running and you see no window,
+                         'tron restart' or TB_FORCE=1 tron upgrade)
   tron remove           Uninstall TronBrowser (keeps your profile data)
   tron version          Print the installed version
   tron help             Show this help
@@ -899,6 +906,7 @@ Usage: curl -fsSL $INSTALL_URL | sh [-s -- <command>]
 Commands:
   install    Download and install the latest TronBrowser (default)
   upgrade    Update an existing install to the latest release
+             (TB_FORCE=1 reinstalls the current one; stops TronBrowser first)
   clean      Clear the profile's browser caches (keeps bookmarks/logins).
              'clean --if-large' only acts past TRONBROWSER_CACHE_LIMIT_MB
   remove     Uninstall TronBrowser (keeps your profile data)
