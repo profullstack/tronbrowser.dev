@@ -50,9 +50,10 @@ describe('DirectChromium.args', () => {
   });
 });
 
-// The live half runs only where a browser is installed (dev boxes, the relay
-// image); CI has none and skips it.
-const LIVE = resolveChromiumBin();
+// The live half is opt-in: TRON_CHROMIUM_LIVE_TEST=1 on a box with a browser
+// (a dev machine, the relay image). GitHub runners carry a Chrome that cannot
+// start under the default sandbox, so "binary present" is not the switch.
+const LIVE = process.env.TRON_CHROMIUM_LIVE_TEST === '1' ? resolveChromiumBin() : undefined;
 describe.skipIf(!LIVE || !existsSync(LIVE))('DirectChromium live', () => {
   it('hands out isolated tabs, evaluates in them, closes them, and shuts down', async () => {
     const c = new DirectChromium({ bin: LIVE, noSandbox: process.getuid?.() === 0, idleMs: 0 });
