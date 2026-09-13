@@ -42,7 +42,12 @@ stage_automation() { # dest dir
   local s="$1"
   command -v node >/dev/null 2>&1 && command -v pnpm >/dev/null 2>&1 || {
     echo "  ! automation runtime skipped (needs node + pnpm)"; return; }
-  if ( cd "$REPO_ROOT" && pnpm --filter @tronbrowser/browser-core --filter @tronbrowser/agent-runtime --filter @tronbrowser/sdk build >/dev/null 2>&1 ); then
+  # Keep the build log: a silent skip here shipped releases with no sdk/ for a
+  # while (nothing installed pnpm on the release runner) and the only trace was
+  # one line in the job log.
+  local log="$s/../automation-build.log"
+  if ( cd "$REPO_ROOT" && pnpm --filter @tronbrowser/browser-core --filter @tronbrowser/agent-runtime --filter @tronbrowser/sdk build >"$log" 2>&1 ); then
+    rm -f "$log"
     rm -rf "$s/automate" "$s/analyze" "$s/sdk"
     cp -R "$REPO_ROOT/packages/browser-core/dist" "$s/automate"
     printf '{\n  "type": "module"\n}\n' > "$s/automate/package.json"
@@ -52,7 +57,9 @@ stage_automation() { # dest dir
     printf '{\n  "type": "module"\n}\n' > "$s/sdk/package.json"
     echo "  + bundled automation + analyze + SDK (tron snapshot/extract/analyze/run)"
   else
-    echo "  ! automation runtime skipped (browser-core/agent-runtime/sdk build failed)"
+    echo "  ! automation runtime skipped (browser-core/agent-runtime/sdk build failed):"
+    tail -n 20 "$log" 2>/dev/null | sed 's/^/    /'
+    rm -f "$log"
   fi
 }
 

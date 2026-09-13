@@ -169,7 +169,8 @@ export function tronRelay(deps: TronRelayDeps = {}): TronRelay {
     c.json({
       ok: true,
       name: 'TronBrowser',
-      mcp: `${new URL(c.req.url).origin}/mcp/tron`,
+      // Railway terminates TLS, so the origin seen here is http://; report what the caller used.
+      mcp: `${(c.req.header('x-forwarded-proto') ?? new URL(c.req.url).protocol.replace(':', '')).split(',')[0]}://${new URL(c.req.url).host}/mcp/tron`,
       descriptor: DESCRIPTOR_URL,
       tools: toolNames,
       engines: engines

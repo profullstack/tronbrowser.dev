@@ -57,9 +57,28 @@ jobs:
       - name: Sync version
         run: node scripts/set-version.mjs "${{ needs.create-release.outputs.version }}"
 
+      # The automation runtime (tron snapshot/analyze/run/mcp/automate) is the
+      # compiled browser-core, agent-runtime and sdk packages, which
+      # build-release.sh stages only when it can build them. That takes pnpm and
+      # the workspace's dev dependencies; without this step the stage is skipped
+      # with a one-line note and every release ships without `sdk/`.
+      - name: Install workspace (for the automation runtime)
+        if: matrix.platform != 'windows'
+        run: |
+          corepack enable
+          corepack prepare pnpm@9.12.0 --activate
+          pnpm install --frozen-lockfile --filter @tronbrowser/sdk...
+
       - name: Package (linux/macos)
         if: matrix.platform != 'windows'
         run: bash apps/desktop/scripts/build-release.sh "v${{ needs.create-release.outputs.version }}" ${{ matrix.platform }}
+
+      - name: Check the automation runtime is in the archive
+        if: matrix.platform != 'windows'
+        run: |
+          if [ "${{ matrix.platform }}" = linux ]; then list="tar -tzf dist/tronbrowser-linux-x64.tar.gz"; else list="unzip -Z1 dist/tronbrowser-macos.zip"; fi
+          $list | grep -q 'sdk/automate-bin.js' \
+            || { echo "::error::release archive has no sdk/automate-bin.js (automation runtime was not staged)"; exit 1; }
 
       - name: Package (linux deb + rpm + AppImage)
         if: matrix.platform == 'linux'
