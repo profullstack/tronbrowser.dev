@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { BrowserScreen } from '../src/screens/BrowserScreen';
 import { actAsync, fire, hosts, hostWhere, renderScreen, textContents } from './harness';
-import { Platform, emitHardwareBackPress } from './mocks/react-native';
+import { Platform, StyleSheet, emitHardwareBackPress } from './mocks/react-native';
 import { theWebView, webViewRegistry } from './mocks/react-native-webview';
 import type { ReactTestInstance } from 'react-test-renderer';
 
@@ -111,6 +111,52 @@ describe.each(['android', 'ios'] as const)('browser recovery on %s', platform =>
     await fire(web(root), 'onLoadEnd', event(FIRST, false));
     expect(textContents(root)).not.toContain('This page did not finish loading.');
     expect(hosts(root, 'ActivityIndicator')).toHaveLength(1);
+  });
+
+  it('uses the pending address for manual retry if the native failure omits its URL', async () => {
+    const { root } = await renderScreen(<BrowserScreen />);
+    await submit(root, FIRST);
+    await fire(web(root), 'onError', errorEvent(''));
+    expect(textContents(root)).toContain('This page did not finish loading.');
+    const hidden = hostWhere(root, 'View', n => n.props.pointerEvents === 'none', 'failed page');
+    expect(hidden.props.accessibilityElementsHidden).toBe(true);
+    expect(hidden.props.importantForAccessibility).toBe('no-hide-descendants');
+    await fire(button(root, 'Retry page'), 'onPress');
+    expect(theWebView().props.source?.uri).toBe(FIRST);
+    expect(textContents(root)).not.toContain('This page did not finish loading.');
+  });
+
+  it('covers the entire content area on failure without covering the address bar', async () => {
+    const { root } = await renderScreen(<BrowserScreen />);
+    await fire(web(root), 'onLoadStart', event(FIRST));
+    await fire(web(root), 'onError', errorEvent(FIRST));
+    const overlay = hostWhere(root, 'View', n => n.props.accessibilityRole === 'alert', 'page error');
+    expect(StyleSheet.flatten(overlay.props.style)).toMatchObject(StyleSheet.absoluteFillObject);
+    const content = overlay.parent!;
+    expect(hosts(content, 'WebView')).toHaveLength(1);
+    expect(hosts(content, 'TextInput')).toHaveLength(0);
+    expect(StyleSheet.flatten(content.props.style)).toMatchObject({ flex: 1 });
+    expect(button(root, 'Reload')).toBeDefined();
+    expect(webViewRegistry()).toHaveLength(1);
+  });
+
+  it('hides only the failed native page from touch and accessibility, then restores it on retry', async () => {
+    const { root } = await renderScreen(<BrowserScreen />);
+    const nativePage = () => hostWhere(root, 'View',
+      n => n.props.collapsable === false && hosts(n, 'WebView').length === 1,
+      'native page accessibility boundary');
+    expect(nativePage().props.importantForAccessibility).toBe('auto');
+    expect(nativePage().props.pointerEvents).toBe('auto');
+    await fire(web(root), 'onError', errorEvent(FIRST));
+    expect(nativePage().props.importantForAccessibility).toBe('no-hide-descendants');
+    expect(nativePage().props.accessibilityElementsHidden).toBe(true);
+    expect(nativePage().props.pointerEvents).toBe('none');
+    expect(nativePage().findAll(n => n.props.accessibilityLabel === 'Retry page')).toHaveLength(0);
+    await fire(button(root, 'Retry page'), 'onPress');
+    expect(nativePage().props.importantForAccessibility).toBe('auto');
+    expect(nativePage().props.accessibilityElementsHidden).toBe(false);
+    expect(nativePage().props.pointerEvents).toBe('auto');
+    expect(textContents(root)).not.toContain('This page did not finish loading.');
   });
 
   it('stops manually and does not surface cancellation as a page failure', async () => {

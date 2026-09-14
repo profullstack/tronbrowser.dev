@@ -34,6 +34,7 @@ export function BrowserScreen({ isActive = true }: { isActive?: boolean }) {
   const [canGoBack, setCanGoBack] = useState(false);
   const [canGoForward, setCanGoForward] = useState(false);
   const [failedUrl, setFailedUrl] = useState<string | null>(null);
+  const hasFailed = failedUrl !== null;
   const [slowLoad, setSlowLoad] = useState(false);
   const editingRef = useRef(false);
   const currentUrlRef = useRef(HOME);
@@ -86,7 +87,7 @@ export function BrowserScreen({ isActive = true }: { isActive?: boolean }) {
   }, [isActive, canGoBack]);
 
   const navigateTo = (next: string) => {
-    const recovering = failedUrl !== null;
+    const recovering = hasFailed;
     const reloadCurrent = next === currentUrlRef.current &&
       (!pendingRef.current || activeLoadRef.current === next);
     beginLoad(next);
@@ -119,7 +120,7 @@ export function BrowserScreen({ isActive = true }: { isActive?: boolean }) {
   };
 
   const reload = () => {
-    if (failedUrl) {
+    if (failedUrl !== null) {
       navigateTo(failedUrl);
       return;
     }
@@ -212,79 +213,85 @@ export function BrowserScreen({ isActive = true }: { isActive?: boolean }) {
           </TouchableOpacity>
         </View>
       )}
-      {loading && (
-        <ActivityIndicator style={styles.spinner} color={theme.accent} size="small" />
-      )}
-      <WebView
-        key={viewKey}
-        ref={webRef}
-        source={{ uri }}
-        style={styles.web}
-        accessibilityElementsHidden={failedUrl !== null}
-        importantForAccessibility={failedUrl ? 'no-hide-descendants' : 'auto'}
-        // Android also emits load-start for history updates after loading ends.
-        // iOS emits start before allowing navigation, so retain its start flag.
-        onLoadStart={({ nativeEvent }) => {
-          // Completed Android history callbacks are not new network loads.
-          if (Platform.OS === 'android' && !nativeEvent.loading) {
-            return;
-          }
-          beginLoad(nativeEvent.url);
-        }}
-        onLoadEnd={({ nativeEvent }) => {
-          if (supersededUrlsRef.current.has(nativeEvent.url)) return;
-          pendingRef.current = false;
-          clearLoadTimeout();
-          setLoading(false);
-          setSlowLoad(false);
-          if (!('code' in nativeEvent) && nativeEvent.url !== cancelledUrlRef.current) {
-            activeLoadRef.current = nativeEvent.url;
-            currentUrlRef.current = nativeEvent.url;
-            if (!editingRef.current) setAddress(nativeEvent.url);
-          }
-        }}
-        onError={(event) => {
-          // Own the error UI: the library's default ERROR overlay otherwise
-          // hides the native view, including when a stale failure is ignored.
-          event.preventDefault();
-          const { url, code, description } = event.nativeEvent;
-          if (supersededUrlsRef.current.has(url) || url === cancelledUrlRef.current) return;
-          clearLoadTimeout();
-          setSlowLoad(false);
-          if ((Platform.OS === 'ios' && (code === -999 || code === 102)) || description?.includes('ERR_ABORTED')) {
-            pendingRef.current = false;
-            setLoading(false);
-            return;
-          }
-          setLoading(false);
-          pendingRef.current = false;
-          setFailedUrl(url);
-        }}
-        onNavigationStateChange={(state) => {
-          if (supersededUrlsRef.current.has(state.url)) return;
-          if (!pendingRef.current && (state.loading === false || state.loading === undefined)) {
-            currentUrlRef.current = state.url;
-          }
-          if (pendingRef.current) activeLoadRef.current = state.url;
-          if (!editingRef.current) setAddress(state.url);
-          setCanGoBack(state.canGoBack);
-          setCanGoForward(state.canGoForward);
-        }}
-        onOpenWindow={(event) => openWindowInThisTab(event.nativeEvent.targetUrl)}
-        // Privacy-leaning defaults consistent with the desktop ethos.
-        thirdPartyCookiesEnabled={false}
-        allowsInlineMediaPlayback
-        pullToRefreshEnabled={Platform.OS === 'ios'}
-      />
-      {failedUrl && (
-        <View style={styles.error} accessibilityRole="alert" accessibilityViewIsModal>
-          <Text style={styles.errorText}>This page did not finish loading.</Text>
-          <TouchableOpacity style={styles.retry} onPress={reload}
-            accessibilityRole="button" accessibilityLabel="Retry page">
-            <Text style={styles.errorText}>Retry</Text>
-          </TouchableOpacity>
+      <View style={styles.web}>
+        {/* Keep the native page behind a real accessibility boundary on errors. */}
+        <View style={styles.web} collapsable={false}
+          accessibilityElementsHidden={hasFailed}
+          importantForAccessibility={hasFailed ? 'no-hide-descendants' : 'auto'}
+          pointerEvents={hasFailed ? 'none' : 'auto'}>
+          <WebView
+            key={viewKey}
+            ref={webRef}
+            source={{ uri }}
+            style={styles.web}
+            // Android also emits load-start for history updates after loading ends.
+            // iOS emits start before allowing navigation, so retain its start flag.
+            onLoadStart={({ nativeEvent }) => {
+              // Completed Android history callbacks are not new network loads.
+              if (Platform.OS === 'android' && !nativeEvent.loading) {
+                return;
+              }
+              beginLoad(nativeEvent.url);
+            }}
+            onLoadEnd={({ nativeEvent }) => {
+              if (supersededUrlsRef.current.has(nativeEvent.url)) return;
+              pendingRef.current = false;
+              clearLoadTimeout();
+              setLoading(false);
+              setSlowLoad(false);
+              if (!('code' in nativeEvent) && nativeEvent.url !== cancelledUrlRef.current) {
+                activeLoadRef.current = nativeEvent.url;
+                currentUrlRef.current = nativeEvent.url;
+                if (!editingRef.current) setAddress(nativeEvent.url);
+              }
+            }}
+            onError={(event) => {
+              // Own the error UI: the library's default ERROR overlay otherwise
+              // hides the native view, including when a stale failure is ignored.
+              event.preventDefault();
+              const { url, code, description } = event.nativeEvent;
+              if (supersededUrlsRef.current.has(url) || url === cancelledUrlRef.current) return;
+              clearLoadTimeout();
+              setSlowLoad(false);
+              if ((Platform.OS === 'ios' && (code === -999 || code === 102)) || description?.includes('ERR_ABORTED')) {
+                pendingRef.current = false;
+                setLoading(false);
+                return;
+              }
+              setLoading(false);
+              pendingRef.current = false;
+              setFailedUrl(url || activeLoadRef.current);
+            }}
+            onNavigationStateChange={(state) => {
+              if (supersededUrlsRef.current.has(state.url)) return;
+              if (!pendingRef.current && (state.loading === false || state.loading === undefined)) {
+                currentUrlRef.current = state.url;
+              }
+              if (pendingRef.current) activeLoadRef.current = state.url;
+              if (!editingRef.current) setAddress(state.url);
+              setCanGoBack(state.canGoBack);
+              setCanGoForward(state.canGoForward);
+            }}
+            onOpenWindow={(event) => openWindowInThisTab(event.nativeEvent.targetUrl)}
+            // Privacy-leaning defaults consistent with the desktop ethos.
+            thirdPartyCookiesEnabled={false}
+            allowsInlineMediaPlayback
+            pullToRefreshEnabled={Platform.OS === 'ios'}
+          />
         </View>
-      )}
+        {loading && (
+          <ActivityIndicator style={styles.spinner} color={theme.accent} size="small" />
+        )}
+        {hasFailed && (
+          <View style={styles.error} accessibilityRole="alert" accessibilityViewIsModal>
+            <Text style={styles.errorText}>This page did not finish loading.</Text>
+            <TouchableOpacity style={styles.retry} onPress={reload}
+              accessibilityRole="button" accessibilityLabel="Retry page">
+              <Text style={styles.errorText}>Retry</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+      </View>
     </View>
   );
 }
@@ -319,12 +326,12 @@ const styles = StyleSheet.create({
     color: theme.text,
     backgroundColor: theme.surfaceAlt,
   },
-  spinner: { position: 'absolute', top: 56, alignSelf: 'center', zIndex: 2 },
+  spinner: { position: 'absolute', top: 8, alignSelf: 'center', zIndex: 2 },
   web: { flex: 1, backgroundColor: theme.bg },
   slowLoad: { flexDirection: 'row', alignItems: 'center', gap: 8, padding: 8, backgroundColor: theme.surface },
   slowText: { flex: 1, color: theme.text, fontSize: 14 },
   error: {
-    position: 'absolute', top: 56, bottom: 0, left: 0, right: 0,
+    position: 'absolute', top: 0, bottom: 0, left: 0, right: 0,
     alignItems: 'center', justifyContent: 'center', gap: 16,
     padding: 24, backgroundColor: theme.bg,
   },
