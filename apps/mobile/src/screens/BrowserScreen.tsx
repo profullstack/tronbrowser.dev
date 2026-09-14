@@ -53,6 +53,11 @@ export function BrowserScreen({ isActive = true }: { isActive?: boolean }) {
 
   const beginLoad = (url: string) => {
     if (pendingRef.current && activeLoadRef.current !== url) supersededUrlsRef.current.add(activeLoadRef.current);
+    // Stop ends the pending state, but its native callbacks may still arrive
+    // after the user starts another page.
+    if (cancelledUrlRef.current !== null && cancelledUrlRef.current !== url) {
+      supersededUrlsRef.current.add(cancelledUrlRef.current);
+    }
     supersededUrlsRef.current.delete(url);
     // Native events lack request IDs; retain only a bounded recent history.
     if (supersededUrlsRef.current.size > 16) {
