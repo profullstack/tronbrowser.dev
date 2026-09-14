@@ -70,3 +70,22 @@ eas submit --platform android
 **Monorepo note:** in the EAS GitHub integration
 (expo.dev → project → GitHub), set the **Base directory** to `apps/mobile` for
 both Android and iOS — that's where this Expo app lives.
+
+## Browser recovery checks
+
+The address field keeps edits during redirects. Leaving the field without
+submitting restores the current page address; submitting navigates or reloads
+without remounting the WebView. Stop cancels the current load. Network failures
+have a manual Retry action; certificate errors are never bypassed.
+Explicit recovery from a failed page recreates the WebView so an iOS provisional
+failure cannot reload the wrong document; this recovery discards native history.
+After 30 seconds, a dismissible notice flags a slow load without stopping it or
+covering usable content. Stop remains available; there is no automatic retry.
+
+Component tests drive the native WebView boundary for edit/redirect races,
+same-source submission, error recovery, cancellation and stale completion events.
+They do not run Android WebView or iOS WKWebView. Before a native release, verify
+these flows on the target engine, including two requests to the same URL: native
+events do not expose a request ID, so URL-based stale-event filtering cannot
+distinguish every same-URL overlapping navigation. No paid build is required by
+the local component test suite.

@@ -29,7 +29,7 @@ export interface MockWebViewHandle {
   mounted: boolean;
   /** Props from the most recent render. */
   props: MockWebViewProps;
-  calls: { goBack: number; goForward: number; reload: number; injected: string[] };
+  calls: { goBack: number; goForward: number; reload: number; stop: number; injected: string[] };
   emitNavigationState(state: MockNavigationState): void;
   emitOpenWindow(targetUrl: string): void;
 }
@@ -63,7 +63,7 @@ export const WebView = forwardRef<unknown, MockWebViewProps>(function WebView(pr
       id: nextId++,
       mounted: true,
       props,
-      calls: { goBack: 0, goForward: 0, reload: 0, injected: [] },
+      calls: { goBack: 0, goForward: 0, reload: 0, stop: 0, injected: [] },
       emitNavigationState(state) {
         handle.props.onNavigationStateChange?.(state);
       },
@@ -96,6 +96,9 @@ export const WebView = forwardRef<unknown, MockWebViewProps>(function WebView(pr
     },
     reload: () => {
       handleRef.current!.calls.reload += 1;
+    },
+    stopLoading: () => {
+      handleRef.current!.calls.stop += 1;
     },
   }));
 
