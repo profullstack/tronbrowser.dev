@@ -108,5 +108,6 @@ export async function switchTab(root: ReactTestInstance, label: string): Promise
 
 /** The four keep-mounted TabScene host views, in App.tsx tab order. */
 export function scenes(root: ReactTestInstance): ReactTestInstance[] {
-  return hosts(root, 'View').filter((node) => 'accessibilityElementsHidden' in node.props);
+  return hosts(root, 'View').filter((node) =>
+    'accessibilityElementsHidden' in node.props && flat(node).position === 'absolute');
 }

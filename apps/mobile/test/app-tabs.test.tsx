@@ -129,6 +129,27 @@ describe('App tab shell', () => {
     expect(backButton.props.accessibilityState).toEqual({ disabled: false });
   });
 
+  it('keeps a failed browser and its retry UI inside the inactive tab boundary', async () => {
+    const { root } = await renderScreen(<App />);
+    const webview = hostWhere(root, 'WebView', () => true, 'browser');
+    await fire(webview, 'onError', {
+      nativeEvent: { url: 'https://example.test/', code: -2, description: 'network failure' },
+      preventDefault: vi.fn(),
+    });
+    const browser = scenes(root)[0];
+    expect(hostWhere(browser, 'TouchableOpacity', n => n.props.accessibilityLabel === 'Retry page', 'retry')).toBeDefined();
+    await switchTab(root, 'Chat');
+    expect(scenes(root)).toHaveLength(4);
+    expect(browser.props.accessibilityElementsHidden).toBe(true);
+    expect(browser.props.importantForAccessibility).toBe('no-hide-descendants');
+    expect(browser.props.pointerEvents).toBe('none');
+    await switchTab(root, 'Browse');
+    expect(browser.props.accessibilityElementsHidden).toBe(false);
+    const page = hosts(browser, 'View').find(n => n.props.pointerEvents === 'none');
+    expect(page?.props.importantForAccessibility).toBe('no-hide-descendants');
+    expect(webViewRegistry()).toHaveLength(1);
+  });
+
   it('keeps chat history and the unsent draft across tab switches', async () => {
     vi.useFakeTimers();
     try {
