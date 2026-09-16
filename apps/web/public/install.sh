@@ -732,13 +732,69 @@ download_engine() { # dest_dir
   rm -rf "$tmp"; return 1
 }
 
+# Ubuntu 23.10+ (kernel.apparmor_restrict_unprivileged_userns=1) blocks the
+# unprivileged user namespaces Chromium's sandbox needs unless an AppArmor
+# profile grants them to the binary. Ubuntu ships such profiles for its own
+# browsers (/etc/apparmor.d/chrome); a third-party engine brings its own, and
+# without it the engine aborts at start with "No usable sandbox!". Chromium's
+# docs/security/apparmor-userns-restrictions.md is the reference. One sudo,
+# written once per engine path, survives upgrades. The launcher probes the
+# engine before using it, so a missing profile means a fallback, not a crash.
+ENGINE_PROFILE="${TRONBROWSER_ENGINE_PROFILE:-/etc/apparmor.d/tronbrowser-engine}"
+
+ensure_engine_sandbox() { # engine_dir
+  [ "$(uname -s)" = "Linux" ] || return 0
+  [ "$(cat /proc/sys/kernel/apparmor_restrict_unprivileged_userns 2>/dev/null)" = "1" ] || return 0
+  bin="$1/chrome"
+  if grep -qs "profile tronbrowser-engine $bin " "$ENGINE_PROFILE"; then return 0; fi
+  uid="$(id -u 2>/dev/null || echo 0)"
+  SUDO=""
+  if [ "$uid" -ne 0 ] && command -v sudo >/dev/null 2>&1 && { [ -t 1 ] || [ -t 2 ]; }; then SUDO="sudo"; fi
+  if [ "$uid" -ne 0 ] && [ -z "$SUDO" ]; then
+    warn "This distro restricts unprivileged user namespaces; TronBrowser's engine needs an AppArmor profile to sandbox itself. Re-run this in a terminal (it asks for sudo once): curl -fsSL $INSTALL_URL | sh -s -- ensure-engine"
+    return 1
+  fi
+  if ! command -v apparmor_parser >/dev/null 2>&1; then
+    warn "apparmor_parser not found; cannot install the engine's AppArmor profile."
+    return 1
+  fi
+  info "Allowing the engine to sandbox itself (AppArmor profile at $ENGINE_PROFILE, asks for sudo once)…"
+  tmpf="$(mktemp)"
+  cat > "$tmpf" <<PROFILE
+# TronBrowser's engine (ungoogled-chromium) needs unprivileged user namespaces
+# for its process sandbox; this distro restricts them to profiled binaries.
+# Written by tronbrowser.dev/install.sh. Remove with: sudo rm $ENGINE_PROFILE
+abi <abi/4.0>,
+include <tunables/global>
+
+profile tronbrowser-engine $bin flags=(unconfined) {
+  userns,
+
+  # Site-specific additions and overrides. See local/README for details.
+  include if exists <local/tronbrowser-engine>
+}
+PROFILE
+  if $SUDO install -m 0644 "$tmpf" "$ENGINE_PROFILE" && $SUDO apparmor_parser -r -T -W "$ENGINE_PROFILE"; then
+    rm -f "$tmpf"
+    info "Installed the engine's AppArmor profile."
+    rm -f "$1/.usable"   # let the launcher re-probe now that the sandbox should work
+    return 0
+  fi
+  rm -f "$tmpf"
+  warn "Couldn't install the engine's AppArmor profile; the launcher will use a system or Flatpak Ungoogled Chromium instead."
+  return 1
+}
+
 ensure_engine() {
   [ "${TB_NO_ENGINE_INSTALL:-0}" = "1" ] && return 0
   [ "$(uname -s)" = "Linux" ] || return 0
   endest="$APP_DIR/engine"
   _ldir="$(find "$APP_DIR" -maxdepth 3 -type f -name tronbrowser 2>/dev/null | head -n1)"
   [ -n "$_ldir" ] && endest="$(dirname "$_ldir")/engine"
-  if [ -x "$endest/chrome" ] && [ "$(cat "$endest/VERSION" 2>/dev/null)" = "$ENGINE_VERSION" ]; then return 0; fi
+  if [ -x "$endest/chrome" ] && [ "$(cat "$endest/VERSION" 2>/dev/null)" = "$ENGINE_VERSION" ]; then
+    ensure_engine_sandbox "$endest" || true
+    return 0
+  fi
   if ! tar --help 2>/dev/null | grep -q -- '-J\|xz'; then
     if ! command -v xz >/dev/null 2>&1; then
       warn "Couldn't install TronBrowser's engine: 'tar' here cannot read .xz and 'xz' is not installed (Debian/Ubuntu: sudo apt install xz-utils). Falling back to the system or Flatpak Ungoogled Chromium."
@@ -748,6 +804,7 @@ ensure_engine() {
   info "Setting up TronBrowser's engine (ungoogled-chromium ${ENGINE_VERSION})…"
   if download_engine "$endest"; then
     info "Installed the engine to $endest"
+    ensure_engine_sandbox "$endest" || true
     return 0
   fi
   warn "Couldn't install TronBrowser's engine; falling back to the system or Flatpak Ungoogled Chromium (https on Moshpit names may warn there). Retry with: curl -fsSL $INSTALL_URL | sh -s -- ensure-engine"

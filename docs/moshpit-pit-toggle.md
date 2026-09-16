@@ -106,7 +106,21 @@ or Flatpak Chromium (after a `--version` probe, so a machine missing a shared
 library falls back rather than failing to start). On that engine the per-name
 import above is all that is needed: no flag, no bar, no relaunch. If the pit
 is turned on while a Flatpak engine is still running, the sidebar says so and
-points at `tron upgrade`. A `--ignore-certificate-errors-spki-list` workaround
+points at `tron upgrade`.
+
+Two things the engine needs to actually start. Ubuntu 23.10+ sets
+`kernel.apparmor_restrict_unprivileged_userns=1`, which blocks the user
+namespaces Chromium's sandbox needs; without help the engine aborts in
+`ZygoteHostImpl::Init` ("No usable sandbox!", SIGTRAP), which is what bonita
+hit first. Ubuntu's answer for third-party browsers is an AppArmor profile
+granting `userns` to the binary path (Chromium's
+`docs/security/apparmor-userns-restrictions.md`), so `install.sh` writes
+`/etc/apparmor.d/tronbrowser-engine` once, with one `sudo`, and loads it.
+And the launcher never takes the engine on faith: `engine_usable` runs a
+throwaway headless start once per engine version, remembers success in
+`engine/.usable`, and on failure falls through to a system or Flatpak
+Chromium with a note saying why. A missing library or a missing profile is a
+fallback, never a crash. A `--ignore-certificate-errors-spki-list` workaround
 was tried and reverted: it works, but Chromium flags it as an unsupported switch
 at every start.
 

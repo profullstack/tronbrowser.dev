@@ -62,11 +62,38 @@ ver_gt() {
     exit 1 }'
 }
 
+# The bundled engine must be able to START here, not merely exist: a shared
+# library can be missing, and on Ubuntu 23.10+ AppArmor blocks the unprivileged
+# user namespaces Chromium's sandbox needs unless install.sh's profile is in
+# place — either way Chromium aborts in ZygoteHostImpl::Init ("No usable
+# sandbox!"), which must never be what a click on the app icon does. So probe
+# with a throwaway headless run once per engine version and remember success
+# beside the engine; a failure is re-probed on every launch (a second or so,
+# only while it is broken) and falls through to the system candidates.
+engine_usable() { # engine_dir
+  [ -x "$1/chrome" ] || return 1
+  _ev="$(cat "$1/VERSION" 2>/dev/null)"
+  if [ -n "$_ev" ] && [ "$(cat "$1/.usable" 2>/dev/null)" = "$_ev" ]; then return 0; fi
+  _pd="$(mktemp -d 2>/dev/null || echo "/tmp/tron-engine-probe.$$")"
+  if timeout 25 "$1/chrome" --headless=new --disable-gpu --no-first-run --user-data-dir="$_pd" \
+       --dump-dom about:blank >/dev/null 2>&1; then
+    rm -rf "$_pd"
+    printf '%s\n' "$_ev" > "$1/.usable" 2>/dev/null
+    return 0
+  fi
+  rm -rf "$_pd"
+  echo "TronBrowser: the bundled engine ($1/chrome) cannot start on this machine — using a system or Flatpak Ungoogled Chromium instead." >&2
+  if [ "$(cat /proc/sys/kernel/apparmor_restrict_unprivileged_userns 2>/dev/null)" = "1" ]; then
+    echo "  This distro restricts unprivileged user namespaces, which the engine's sandbox needs. Run 'tron upgrade': it installs the AppArmor profile that allows it (asks for sudo once)." >&2
+  fi
+  return 1
+}
+
 if [ -n "${TRONBROWSER_BROWSER:-}" ]; then
   BROWSER="$TRONBROWSER_BROWSER"
 elif [ -x "$DIR/chrome" ]; then
   BROWSER="$DIR/chrome"            # future: bundled native fork binary
-elif [ -x "$DIR/engine/chrome" ] && "$DIR/engine/chrome" --version >/dev/null 2>&1; then
+elif engine_usable "$DIR/engine"; then
   # TronBrowser's own engine: the portable ungoogled-chromium the installer
   # fetches next to this shim (install.sh ensure_engine), pinned per release.
   # Preferred over anything the distro or Flathub provides because it is the
@@ -74,8 +101,6 @@ elif [ -x "$DIR/engine/chrome" ] && "$DIR/engine/chrome" --version >/dev/null 2>
   # per-user NSS trust store, which the Flathub ungoogled-chromium does not
   # (a Moshpit name's certificate sat in the exact database that build opened
   # and it still refused it), so https on pit names works here with no flags.
-  # The --version probe skips it when a shared library is missing, falling
-  # through to the system candidates rather than failing to start.
   BROWSER="$DIR/engine/chrome"
 else
   # Ungoogled Chromium ONLY. Never regular Chromium/Chrome, never snap (snap
