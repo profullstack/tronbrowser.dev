@@ -18,26 +18,31 @@ Endpoints (POST/GET on 127.0.0.1):
   /status      {"running": bool, "ready": bool, "torInstalled": bool, "pit": {…}}
   /pit/start   start the Moshpit SOCKS5 resolver → {"started": true, "check": {…}}
   /pit/stop    stop it → {"stopped": true}
-  /pit/status  {"running": bool, "port": int, "doh": url}
+  /pit/status  {"running": bool, "port": int, "doh": url, "trust": {…}}
 
 Single-instance: binds a fixed loopback port; a second copy exits cleanly when
 the port is taken, so the launcher can fire-and-forget it every launch.
 """
 import base64
 import glob
+import hashlib
 import json
 import os
+import platform
 import random
 import re
 import select
 import shutil
 import signal
 import socket
+import ssl
 import struct
 import subprocess
 import sys
 import threading
 import time
+import urllib.error
+import urllib.parse
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -49,7 +54,7 @@ BUNDLED_DIR = os.environ.get("TRON_TOR_BIN_DIR", "")
 PIDFILE = os.environ.get("TRON_TOR_PIDFILE", "")
 # Bumped whenever the helper protocol/behaviour changes; the launcher kills a
 # stale helper so the current version always runs.
-HELPER_VERSION = "3.3.1"
+HELPER_VERSION = "3.4.0"
 _lock = threading.Lock()
 _proc = None              # the running tor subprocess (or None)
 _ready = False            # True once tor reported Bootstrapped 100%
@@ -327,6 +332,178 @@ def pit_resolve(name):
     return ips
 
 
+# --- HTTPS on a pit name: trust the served leaf, on the strength of its pin ----
+# No public CA issues for a name outside the ICANN root, so an origin such as
+# chovy.hacker serves a self-signed leaf for its own name and the registry
+# publishes the SHA-256 of that key (`/api/moshpit/pins?name=`, RFC 7469 pin).
+# `moshcode dns trust <name>` installs such a leaf into the SYSTEM store, with
+# root. The no-root equivalent for this browser: on the first HTTPS CONNECT for
+# a name, fetch the certificate it serves, check its key against the published
+# pins, refuse anything marked CA:TRUE, and import the leaf as a *peer* ("P,,")
+# into the user's NSS database — the store Chromium on Linux consults, and the
+# same nickname the launcher's sync_moshpit_trust uses, so neither imports the
+# other's work twice. Peer trust vouches for that one certificate and the name
+# in its SAN, nothing else. Done before the SOCKS reply, so the browser's TLS
+# handshake that follows already finds the certificate trusted.
+PIT_REGISTRY = os.environ.get("TRON_PIT_REGISTRY", "https://pit.moshcode.sh").rstrip("/")
+PIT_NSSDB = os.environ.get("TRON_PIT_NSSDB", os.path.expanduser("~/.pki/nssdb"))
+PIT_CERT_DIR = os.environ.get("TRON_PIT_CERT_DIR", os.path.expanduser("~/.tronbrowser/pit-certs"))
+_trust_lock = threading.Lock()
+_trust_seen = {}            # name -> (ok, why); retried after a failure only once the pit restarts
+
+
+def _der_tlv(buf, pos):
+    """One DER element at `pos`: (tag, value, raw_bytes, end)."""
+    tag = buf[pos]
+    length = buf[pos + 1]
+    head = 2
+    if length & 0x80:
+        n = length & 0x7F
+        length = int.from_bytes(buf[pos + 2:pos + 2 + n], "big")
+        head += n
+    end = pos + head + length
+    if end > len(buf):
+        raise ValueError("truncated DER")
+    return tag, buf[pos + head:end], buf[pos:end], end
+
+
+def _der_children(value):
+    out, pos = [], 0
+    while pos < len(value):
+        tag, val, raw, pos = _der_tlv(value, pos)
+        out.append((tag, val, raw))
+    return out
+
+
+def cert_pin_and_ca(der):
+    """(spki pin, is_ca) for an X.509 certificate in DER.
+    pin = base64(sha256(SubjectPublicKeyInfo)); is_ca from basicConstraints."""
+    _tag, cert, _raw, _end = _der_tlv(der, 0)
+    tbs = _der_children(cert)[0][1]
+    fields = _der_children(tbs)
+    if fields and fields[0][0] == 0xA0:  # explicit version
+        fields = fields[1:]
+    # serial, signature, issuer, validity, subject, subjectPublicKeyInfo, ...
+    spki_raw = fields[5][2]
+    pin = base64.b64encode(hashlib.sha256(spki_raw).digest()).decode("ascii")
+    is_ca = False
+    for tag, val, _raw in fields[6:]:
+        if tag != 0xA3:  # extensions
+            continue
+        for _t, ext, _r in _der_children(_der_children(val)[0][1]):
+            parts = _der_children(ext)
+            if parts and parts[0][1] == b"\x55\x1d\x13":  # OID 2.5.29.19 basicConstraints
+                octets = parts[-1][1]
+                bc = _der_children(_der_children(octets)[0][1]) if octets else []
+                is_ca = any(t == 0x01 and v and v[0] != 0 for t, v, _ in bc)
+    return pin, is_ca
+
+
+def served_certificate(ip, name, port=443, timeout=8.0):
+    """DER of the certificate `ip` serves for SNI `name` — fetched WITHOUT
+    verification, because deciding whether to trust it is the whole point."""
+    ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
+    with socket.create_connection((ip, port), timeout=timeout) as raw:
+        with ctx.wrap_socket(raw, server_hostname=name) as tls:
+            return tls.getpeercert(binary_form=True)
+
+
+def published_pins(name, timeout=6.0):
+    url = "%s/api/moshpit/pins?name=%s" % (PIT_REGISTRY, urllib.parse.quote(name))
+    req = urllib.request.Request(url, headers={"Accept": "application/json",
+                                               "User-Agent": "tron-pit-helper/%s" % HELPER_VERSION})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as res:
+            data = json.loads(res.read(65535).decode("utf-8", "replace"))
+    except urllib.error.HTTPError as exc:
+        if exc.code == 404:
+            return []  # the registry has no record for this name: no pin, not an outage
+        raise
+    pins = data.get("pins") if isinstance(data, dict) else None
+    return [p for p in pins if isinstance(p, str)] if isinstance(pins, list) else []
+
+
+def _safe_name(name):
+    return re.sub(r"\.{2,}", ".", re.sub(r"[^a-z0-9.-]", "", name.lower())).strip(".-")
+
+
+def trust_available():
+    """Can this machine take a per-name import at all? {available, why}."""
+    if platform.system() != "Linux":
+        return {"available": False, "why": "unsupported-platform"}
+    if not shutil.which("certutil"):
+        return {"available": False, "why": "no-certutil"}
+    return {"available": True, "why": "certutil"}
+
+
+def _certutil(*args):
+    return subprocess.run(["certutil", "-d", "sql:" + PIT_NSSDB] + list(args),
+                          stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=20)
+
+
+def ensure_leaf_trust(name, ip):
+    """Make the browser trust what `name` serves on 443, if the registry vouches
+    for it. Returns (ok, why); never raises. Runs once per name per pit run."""
+    key = _safe_name(name)
+    with _trust_lock:
+        if key in _trust_seen:
+            return _trust_seen[key]
+        result = _ensure_leaf_trust(key, ip)
+        _trust_seen[key] = result
+        return result
+
+
+def _ensure_leaf_trust(name, ip):
+    avail = trust_available()
+    if not avail["available"]:
+        log("pit: https for %s: cannot import trust here (%s)" % (name, avail["why"]))
+        return False, avail["why"]
+    if not name or "." not in name:
+        return False, "bad-name"
+    nick = "moshpit %s" % name
+    if not os.path.exists(os.path.join(PIT_NSSDB, "cert9.db")):
+        os.makedirs(PIT_NSSDB, mode=0o700, exist_ok=True)
+        if _certutil("-N", "--empty-password").returncode != 0:
+            return False, "nssdb-create-failed"
+    if _certutil("-L", "-n", nick).returncode == 0:
+        return True, "already-trusted"
+    try:
+        der = served_certificate(ip, name)
+        pin, is_ca = cert_pin_and_ca(der)
+    except (OSError, ValueError, IndexError, ssl.SSLError) as exc:
+        log("pit: https for %s: could not read the served certificate: %s" % (name, exc))
+        return False, "no-certificate"
+    try:
+        pins = published_pins(name)
+    except Exception as exc:  # noqa: BLE001 — an outage is not a failed pin check
+        log("pit: https for %s: registry unreachable for pins: %s" % (name, exc))
+        return False, "registry-unreachable"
+    if not pins:
+        log("pit: https for %s: the registry publishes no pin — nothing vouches for its certificate" % name)
+        return False, "no-pin"
+    if pin not in pins:
+        log("pit: https for %s: served key %s is not among the %d published pin(s) — refusing" % (name, pin, len(pins)))
+        return False, "pin-mismatch"
+    if is_ca:
+        log("pit: https for %s: certificate is CA:TRUE — refusing to trust a key that could vouch for any name" % name)
+        return False, "ca-true"
+    try:
+        os.makedirs(PIT_CERT_DIR, mode=0o700, exist_ok=True)
+        cert_file = os.path.join(PIT_CERT_DIR, "moshpit-%s.crt" % name)
+        with open(cert_file, "w") as f:
+            f.write(ssl.DER_cert_to_PEM_cert(der))
+    except OSError as exc:
+        return False, "write-failed: %s" % exc
+    res = _certutil("-A", "-t", "P,,", "-n", nick, "-i", cert_file)
+    if res.returncode != 0:
+        log("pit: https for %s: certutil failed: %s" % (name, res.stdout.strip()))
+        return False, "certutil-failed"
+    log("pit: https for %s: trusted its certificate (pin %s matches the registry) in %s" % (name, pin, PIT_NSSDB))
+    return True, "trusted"
+
+
 def _recv_exact(sock, n):
     buf = b""
     while len(buf) < n:
@@ -400,6 +577,11 @@ def _pit_serve(conn):
             log("pit: no address for %s" % host)
             _socks_reply(conn, 0x04)  # host unreachable
             return
+        if atyp == 3 and port == 443:
+            # Before the browser's TLS handshake, so it already finds the leaf
+            # trusted. Once per name; a refusal just leaves the browser's own
+            # warning in place.
+            ensure_leaf_trust(host, ips[0])
         rep = 0x05
         for ip in ips[:3]:
             try:
@@ -497,6 +679,8 @@ def stop_pit():
         log("pit: stopped")
     with _pit_cache_lock:
         _pit_cache.clear()
+    with _trust_lock:
+        _trust_seen.clear()
 
 
 def pit_probe():
@@ -514,7 +698,8 @@ def pit_probe():
 def pit_status():
     with _pit_lock:
         running = _pit is not None and _pit.is_alive()
-    return {"running": running, "port": PIT_SOCKS_PORT, "doh": PIT_DOH_URL, "version": HELPER_VERSION}
+    return {"running": running, "port": PIT_SOCKS_PORT, "doh": PIT_DOH_URL,
+            "trust": trust_available(), "version": HELPER_VERSION}
 
 
 class Handler(BaseHTTPRequestHandler):

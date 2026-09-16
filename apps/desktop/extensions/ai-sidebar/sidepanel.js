@@ -314,9 +314,18 @@ async function togglePit() {
   if (turningOn) showNetStatus('', 'Starting the pit resolver…');
   try {
     const res = await chrome.runtime.sendMessage({ type: 'pit-set', on: turningOn });
-    const tip =
-      'Clearnet names are untouched. <code>https://</code> on a pit name needs ' +
-      '<code>moshcode dns enable</code> once, for the certificate.';
+    // What https:// on a pit name will do here. The helper trusts each name's
+    // certificate on first use when the registry publishes a matching pin, but
+    // only where it can write the browser's trust store (Linux + certutil).
+    const trust = res && res.trust;
+    const httpsTip = !trust
+      ? ''
+      : trust.available
+        ? '<code>https://</code> on a pit name is trusted per name on first use, when the registry publishes its pin.'
+        : trust.why === 'no-certutil'
+          ? '<code>https://</code> on a pit name will warn until <code>certutil</code> is installed (Debian/Ubuntu: <code>libnss3-tools</code>, Fedora: <code>nss-tools</code>, Arch: <code>nss</code>).'
+          : '<code>https://</code> on a pit name will warn on this platform; run <code>moshcode dns enable</code> for the certificate.';
+    const tip = `Clearnet names are untouched. ${httpsTip}`;
     if (!turningOn) {
       setPitButton(false);
       hideNetStatus();
