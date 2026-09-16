@@ -1,6 +1,6 @@
 # 🤘 Pit toggle — Moshpit names for one browser session
 
-**Status:** shipped with the AI-sidebar extension + `tron-tor-helper` 3.4.0
+**Status:** shipped with the AI-sidebar extension + `tron-tor-helper` 3.4.1
 **Owner:** desktop (`apps/desktop`)
 **Scope:** resolve Moshpit names in the running browser with one click. Not a
 replacement for `moshcode dns enable`, which does it for the whole machine.
@@ -78,6 +78,14 @@ with root. The pit toggle does the no-root equivalent for this browser:
    certificate and the name in its SAN, nothing else.
 4. All of this happens before the SOCKS reply, so the browser's TLS handshake
    that follows already finds the certificate trusted.
+
+The import goes into every database the engine might read: `~/.pki/nssdb`,
+the database the launcher names for the engine it started, and any
+`~/.var/app/*chromium*/.pki/nssdb`. That last part matters: the Flathub
+ungoogled-chromium is sandboxed with `--persist=.pki`, so inside it `~/.pki`
+is `~/.var/app/io.github.ungoogled_software.ungoogled_chromium/.pki`, and an
+import into the real `~/.pki/nssdb` never reaches it (the launcher's Local CA
+sync had the same blind spot and now writes both).
 
 Linux only for now (Chromium on macOS reads the keychain, which needs an
 interactive prompt), and it needs `certutil` (Debian/Ubuntu `libnss3-tools`,

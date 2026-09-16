@@ -54,7 +54,7 @@ BUNDLED_DIR = os.environ.get("TRON_TOR_BIN_DIR", "")
 PIDFILE = os.environ.get("TRON_TOR_PIDFILE", "")
 # Bumped whenever the helper protocol/behaviour changes; the launcher kills a
 # stale helper so the current version always runs.
-HELPER_VERSION = "3.4.0"
+HELPER_VERSION = "3.4.1"
 _lock = threading.Lock()
 _proc = None              # the running tor subprocess (or None)
 _ready = False            # True once tor reported Bootstrapped 100%
@@ -347,6 +347,12 @@ def pit_resolve(name):
 # handshake that follows already finds the certificate trusted.
 PIT_REGISTRY = os.environ.get("TRON_PIT_REGISTRY", "https://pit.moshcode.sh").rstrip("/")
 PIT_NSSDB = os.environ.get("TRON_PIT_NSSDB", os.path.expanduser("~/.pki/nssdb"))
+# The launcher names the database of the engine it actually started (colon
+# separated). A Flatpak Chromium is sandboxed with `--persist=.pki`: inside it,
+# ~/.pki IS ~/.var/app/<app>/.pki, so an import into the real ~/.pki/nssdb is
+# invisible to it. Every Chromium-looking Flatpak database that exists is
+# covered as well, so the import lands wherever the browser will look.
+PIT_NSSDB_EXTRA = os.environ.get("TRON_PIT_NSSDB_EXTRA", "")
 PIT_CERT_DIR = os.environ.get("TRON_PIT_CERT_DIR", os.path.expanduser("~/.tronbrowser/pit-certs"))
 _trust_lock = threading.Lock()
 _trust_seen = {}            # name -> (ok, why); retried after a failure only once the pit restarts
@@ -435,12 +441,48 @@ def trust_available():
         return {"available": False, "why": "unsupported-platform"}
     if not shutil.which("certutil"):
         return {"available": False, "why": "no-certutil"}
-    return {"available": True, "why": "certutil"}
+    return {"available": True, "why": "certutil", "nssdbs": pit_nssdbs()}
 
 
-def _certutil(*args):
-    return subprocess.run(["certutil", "-d", "sql:" + PIT_NSSDB] + list(args),
+def pit_nssdbs():
+    """Every NSS database a Chromium on this machine might read, primary first."""
+    dbs = [PIT_NSSDB] + [d for d in PIT_NSSDB_EXTRA.split(":") if d]
+    for cand in sorted(glob.glob(os.path.expanduser("~/.var/app/*/.pki/nssdb"))):
+        app = os.path.basename(os.path.dirname(os.path.dirname(cand)))
+        if "chromium" in app.lower():
+            dbs.append(cand)
+    seen, out = set(), []
+    for d in dbs:
+        d = os.path.abspath(os.path.expanduser(d))
+        if d not in seen:
+            seen.add(d)
+            out.append(d)
+    return out
+
+
+def _certutil(db, *args):
+    return subprocess.run(["certutil", "-d", "sql:" + db] + list(args),
                           stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=20)
+
+
+def _db_ready(db):
+    """Create the database if it is missing, like the launcher does. False on failure."""
+    if os.path.exists(os.path.join(db, "cert9.db")):
+        return True
+    try:
+        os.makedirs(db, mode=0o700, exist_ok=True)
+    except OSError:
+        return False
+    return _certutil(db, "-N", "--empty-password").returncode == 0
+
+
+def _import_leaf(db, nick, cert_file):
+    """'already' | 'trusted' | 'failed' for one database."""
+    if not _db_ready(db):
+        return "failed"
+    if _certutil(db, "-L", "-n", nick).returncode == 0:
+        return "already"
+    return "trusted" if _certutil(db, "-A", "-t", "P,,", "-n", nick, "-i", cert_file).returncode == 0 else "failed"
 
 
 def ensure_leaf_trust(name, ip):
@@ -463,11 +505,9 @@ def _ensure_leaf_trust(name, ip):
     if not name or "." not in name:
         return False, "bad-name"
     nick = "moshpit %s" % name
-    if not os.path.exists(os.path.join(PIT_NSSDB, "cert9.db")):
-        os.makedirs(PIT_NSSDB, mode=0o700, exist_ok=True)
-        if _certutil("-N", "--empty-password").returncode != 0:
-            return False, "nssdb-create-failed"
-    if _certutil("-L", "-n", nick).returncode == 0:
+    dbs = pit_nssdbs()
+    missing = [db for db in dbs if not (_db_ready(db) and _certutil(db, "-L", "-n", nick).returncode == 0)]
+    if not missing:
         return True, "already-trusted"
     try:
         der = served_certificate(ip, name)
@@ -496,11 +536,15 @@ def _ensure_leaf_trust(name, ip):
             f.write(ssl.DER_cert_to_PEM_cert(der))
     except OSError as exc:
         return False, "write-failed: %s" % exc
-    res = _certutil("-A", "-t", "P,,", "-n", nick, "-i", cert_file)
-    if res.returncode != 0:
-        log("pit: https for %s: certutil failed: %s" % (name, res.stdout.strip()))
+    done, failed = [], []
+    for db in missing:
+        (done if _import_leaf(db, nick, cert_file) != "failed" else failed).append(db)
+    if failed:
+        log("pit: https for %s: certutil could not write %s" % (name, ", ".join(failed)))
+    if not done and failed:
         return False, "certutil-failed"
-    log("pit: https for %s: trusted its certificate (pin %s matches the registry) in %s" % (name, pin, PIT_NSSDB))
+    log("pit: https for %s: trusted its certificate (pin %s matches the registry) in %s"
+        % (name, pin, ", ".join(done)))
     return True, "trusted"
 
 

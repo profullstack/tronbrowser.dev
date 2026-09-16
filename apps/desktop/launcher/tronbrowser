@@ -175,7 +175,7 @@ if [ "$TOR" != "1" ]; then
     # running helper isn't this version — otherwise leave a healthy current
     # helper alone (don't drop an active Tor session). All backgrounded so the
     # kill+settle never holds up the browser launch.
-    HELPER_VERSION=3.4.0
+    HELPER_VERSION=3.4.1
     (
       _pf="$DATA/tor-helper.pid"
       _rv="$(curl -fsS --max-time 1 http://127.0.0.1:9061/status 2>/dev/null | sed -n 's/.*"version"[^"]*"\([^"]*\)".*/\1/p')"
@@ -187,7 +187,14 @@ if [ "$TOR" != "1" ]; then
           lsof -ti tcp:9061 2>/dev/null | while read -r _p; do kill "$_p" 2>/dev/null || true; done
         fi
         sleep 1   # let the control port free up before re-binding
+        # A Flatpak engine reads ~/.var/app/<app>/.pki/nssdb (its --persist=.pki),
+        # so the helper's per-name trust must land there, not in ~/.pki/nssdb.
+        _pit_db_extra=""
+        if [ "$BROWSER" = "flatpak" ] && [ -n "$FLATPAK_APP" ]; then
+          _pit_db_extra="$HOME/.var/app/$FLATPAK_APP/.pki/nssdb"
+        fi
         exec env TRON_TOR_DATA="$DATA/tor" TRON_TOR_BIN_DIR="$DIR" TRON_TOR_PIDFILE="$_pf" \
+          TRON_PIT_NSSDB_EXTRA="$_pit_db_extra" \
           python3 "$DIR/tron-tor-helper"
       fi
     ) >>"$DATA/tor-helper.log" 2>&1 &
@@ -557,7 +564,14 @@ sync_moshpit_trust() {
   if [ "$(uname -s)" != "Linux" ]; then return 0; fi
   if [ "${TRONBROWSER_NO_MOSHPIT_TRUST:-0}" = "1" ]; then return 0; fi
 
-  _nssdb="$HOME/.pki/nssdb"
+  # A Flatpak engine is sandboxed with --persist=.pki: inside it, ~/.pki is
+  # ~/.var/app/<app>/.pki, so that database is the one it actually reads and
+  # an import into the real ~/.pki/nssdb never reaches it. Write both.
+  _flatdb=""
+  if [ "$BROWSER" = "flatpak" ] && [ -n "$FLATPAK_APP" ]; then
+    _flatdb="$HOME/.var/app/$FLATPAK_APP/.pki/nssdb"
+  fi
+  for _nssdb in "$HOME/.pki/nssdb" ${_flatdb:+"$_flatdb"}; do
   _ready=0
 
   # Each word below is a literal path or a glob result, so this stays
@@ -601,8 +615,9 @@ sync_moshpit_trust() {
     fi
 
     if certutil -d "sql:$_nssdb" -A -t "$_flag" -n "$_nick" -i "$_cert" >/dev/null 2>&1; then
-      echo "TronBrowser: trusted $_nick for Moshpit HTTPS." >&2
+      echo "TronBrowser: trusted $_nick for Moshpit HTTPS ($_nssdb)." >&2
     fi
+  done
   done
   return 0
 }
