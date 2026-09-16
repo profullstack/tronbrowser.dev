@@ -79,10 +79,14 @@
 
   <h2>Name resolution</h2>
   <p class="hint">
-    Moshpit names resolve at the operating system, not in the browser — run
-    <code>moshcode dns enable</code> once on this machine and every application
-    resolves them, not just this one. The browser used to do it here, which meant
-    a hook on every navigation and names that worked in one app and not the next.
+    Two ways to reach Moshpit names (<code>.eggs</code>, <code>.moshpit</code>, …).
+    For the whole machine, run <code>moshcode dns enable</code> once and every
+    application resolves them, not just this one. For this browser session only —
+    a machine where DNS is not yours to change — click <strong>🤘 Pit</strong> in
+    the sidebar: names the system resolver has no answer for are resolved through
+    the Moshpit resolver, clearnet names are untouched, nothing on the machine
+    changes, and it is off again on the next launch. <code>https://</code> on a pit
+    name still needs the certificate that <code>moshcode dns enable</code> installs.
   </p>
 
   <h2>AI providers (bring your own keys)</h2>

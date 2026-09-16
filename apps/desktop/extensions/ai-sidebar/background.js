@@ -1,4 +1,5 @@
 import { decideInstallTarget, lookupInstalled } from './install-state.js';
+import { PIT_SOCKS_PORT, pitProxyConfig } from './pit-proxy.js';
 
 // Open the AI side panel when the toolbar action is clicked.
 chrome.sidePanel
@@ -256,6 +257,13 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg?.type === 'tor-set') {
     (async () => {
       if (msg.on) {
+        // Tor and the pit are exclusive: the pit's PAC asks the system resolver
+        // about every host, which under Tor would leak lookups outside it.
+        const { pitEnabled } = await chrome.storage.local.get('pitEnabled');
+        if (pitEnabled) {
+          await disablePit();
+          await stopPitViaHelper();
+        }
         const started = await startTorViaHelper();
         if (started.error === 'unreachable') {
           sendResponse({ enabled: false, started: { error: 'unreachable' } });
@@ -293,21 +301,110 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   }
 });
 
-// Tor defaults OFF on every fresh browser start — nobody is routed through Tor
-// unless they flip the toggle. chrome.storage.session is wiped on browser
-// restart, so it tells a fresh launch from a service-worker restart mid-session.
+// --- Pit toggle ----------------------------------------------------------
+// Resolves Moshpit names (.eggs, .moshpit, …) in THIS session only. The same
+// helper that starts Tor runs a loopback SOCKS5 resolver on demand (/pit/*);
+// the extension installs the PAC from pit-proxy.js, which sends only hosts the
+// system resolver has no answer for to it — clearnet wins, nothing on the
+// machine changes, no root. Whole-machine resolution is still
+// `moshcode dns enable`. Off again on every fresh browser start, like Tor.
+async function setPitBadge(on) {
+  try {
+    await chrome.action.setBadgeText({ text: on ? 'PIT' : '' });
+    await chrome.action.setBadgeBackgroundColor({ color: '#a6ff1a' }); // moshcode acid
+    if (chrome.action.setBadgeTextColor) await chrome.action.setBadgeTextColor({ color: '#0a1400' });
+    await chrome.action.setTitle({ title: on ? 'TronBrowser — Pit ON' : 'TronBrowser' });
+  } catch (_) { /* action API may be unavailable */ }
+}
+
+async function enablePit() {
+  await chrome.proxy.settings.set({ value: pitProxyConfig(PIT_SOCKS_PORT), scope: 'regular' });
+  await chrome.storage.local.set({ pitEnabled: true });
+  try { await chrome.storage.session.set({ pitSession: true }); } catch (_) { /* no-op */ }
+  await setPitBadge(true);
+}
+
+async function disablePit() {
+  // Only hand the proxy back to the OS when Tor is not holding it.
+  const { torEnabled } = await chrome.storage.local.get('torEnabled');
+  if (!torEnabled) {
+    try {
+      await chrome.proxy.settings.set({ value: { mode: 'system' }, scope: 'regular' });
+    } catch (_) { /* fall through to clear */ }
+    try { await chrome.proxy.settings.clear({ scope: 'regular' }); } catch (_) { /* already clear */ }
+  }
+  await chrome.storage.local.set({ pitEnabled: false });
+  try { await chrome.storage.session.remove('pitSession'); } catch (_) { /* no-op */ }
+  await setPitBadge(false);
+}
+
+async function stopPitViaHelper() {
+  try {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), 5000);
+    await fetch(`${TOR_HELPER}/pit/stop`, { method: 'POST', signal: ctrl.signal });
+    clearTimeout(t);
+  } catch (_) { /* helper not running — nothing to stop */ }
+}
+
+chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+  if (msg?.type === 'pit-set') {
+    (async () => {
+      if (msg.on) {
+        const { torEnabled } = await chrome.storage.local.get('torEnabled');
+        if (torEnabled) {
+          sendResponse({ enabled: false, error: 'tor-on' });
+          return;
+        }
+        let started;
+        try {
+          started = await helperJson('/pit/start', 'POST');
+        } catch (_) {
+          sendResponse({ enabled: false, error: 'unreachable' });
+          return;
+        }
+        if (!started || !started.started) {
+          sendResponse({ enabled: false, error: (started && started.error) || 'pit-failed' });
+          return;
+        }
+        await enablePit();
+        sendResponse({ enabled: true, check: started.check || null, port: started.port });
+      } else {
+        await disablePit();
+        await stopPitViaHelper();
+        sendResponse({ enabled: false });
+      }
+    })();
+    return true; // async sendResponse
+  }
+  if (msg?.type === 'pit-status') {
+    (async () => {
+      const { pitEnabled } = await chrome.storage.local.get('pitEnabled');
+      sendResponse({ enabled: !!pitEnabled });
+    })();
+    return true;
+  }
+});
+
+// Tor and the pit default OFF on every fresh browser start — nobody is routed
+// anywhere unless they flip a toggle. chrome.storage.session is wiped on
+// browser restart, so it tells a fresh launch from a service-worker restart
+// mid-session.
 (async () => {
   try {
-    const { torSession } = await chrome.storage.session.get('torSession');
+    const { torSession, pitSession } = await chrome.storage.session.get(['torSession', 'pitSession']);
     if (torSession) {
       // Same session, SW just restarted → keep Tor on (re-apply the proxy).
       await enableTor();
+    } else if (pitSession) {
+      await enablePit();
     } else {
-      // Fresh browser start. If local still says Tor was on (carried over from
-      // the last run), clear it + any persisted proxy. Otherwise leave the
+      // Fresh browser start. If local still says a toggle was on (carried over
+      // from the last run), clear it + any persisted proxy. Otherwise leave the
       // proxy untouched.
-      const { torEnabled } = await chrome.storage.local.get('torEnabled');
+      const { torEnabled, pitEnabled } = await chrome.storage.local.get(['torEnabled', 'pitEnabled']);
       if (torEnabled) await disableTor();
+      else if (pitEnabled) { await disablePit(); await stopPitViaHelper(); }
     }
   } catch (_) { /* best effort */ }
 })();

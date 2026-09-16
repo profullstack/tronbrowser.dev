@@ -68,8 +68,8 @@ stage() { # dest dir
   mkdir -p "$s/extensions"
   install -m 0755 "$DESKTOP/launcher/tronbrowser" "$s/tronbrowser"
   cp "$DESKTOP/launcher/tronbrowser.cmd" "$s/tronbrowser.cmd"
-  # On-demand Tor control helper for the in-browser 🧅 Tor toggle (the launcher
-  # starts it; it starts Tor only when the toggle asks).
+  # On-demand network helper for the in-browser 🧅 Tor and 🤘 Pit toggles (the
+  # launcher starts it; it starts Tor / the Moshpit resolver only when asked).
   install -m 0755 "$DESKTOP/launcher/tron-tor-helper" "$s/tron-tor-helper"
   # Repoints installed-web-app desktop icons at the launcher. The shim runs it
   # on every start (the engine rewrites those files behind us); `tron pwa` is

@@ -150,9 +150,10 @@ if [ "$TOR" = "1" ]; then
   rm -rf "$DATA"
 fi
 
-# On-demand Tor control helper for the in-browser 🧅 Tor toggle (AI sidebar).
-# Loopback-only; it makes NO network connection until the toggle asks it to
-# start Tor — so nobody connects to Tor unless they turn it on. Fire-and-forget
+# On-demand network helper for the in-browser 🧅 Tor and 🤘 Pit toggles (AI
+# sidebar). Loopback-only; it makes NO network connection until a toggle asks
+# it to start Tor or the Moshpit resolver — so nobody connects to either unless
+# they turn it on. Fire-and-forget
 # + idempotent (a second copy exits when the port is taken), so both the desktop
 # app entry and `tron` (which share this shim) get it. Best-effort: needs
 # python3, and skipped in --tor mode (that path runs its own Tor).
@@ -168,13 +169,13 @@ if [ "$TOR" != "1" ]; then
     elif [ -x "$DIR/tor-bin/tor" ]; then _torbin="$DIR/tor-bin/tor (auto-installed)";
     elif command -v tor >/dev/null 2>&1; then _torbin="$(command -v tor)";
     else _torbin="NOT FOUND — run 'tron tor' to install it"; fi
-    echo "TronBrowser: Tor toggle ready — helper control on 127.0.0.1:9061, Tor SOCKS on 127.0.0.1:$TOR_SOCKS_PORT (tor: $_torbin). Click 🧅 Tor in the AI sidebar. Log: $DATA/tor-helper.log" >&2
+    echo "TronBrowser: Tor + Pit toggles ready — helper control on 127.0.0.1:9061, Tor SOCKS on 127.0.0.1:$TOR_SOCKS_PORT (tor: $_torbin), Moshpit resolver on 127.0.0.1:9081. Click 🧅 Tor or 🤘 Pit in the AI sidebar. Log: $DATA/tor-helper.log" >&2
     # The helper persists across launches, so an OLD one (from before an upgrade)
     # would keep answering the toggle with stale code. Replace it ONLY when the
     # running helper isn't this version — otherwise leave a healthy current
     # helper alone (don't drop an active Tor session). All backgrounded so the
     # kill+settle never holds up the browser launch.
-    HELPER_VERSION=3.2.8
+    HELPER_VERSION=3.3.0
     (
       _pf="$DATA/tor-helper.pid"
       _rv="$(curl -fsS --max-time 1 http://127.0.0.1:9061/status 2>/dev/null | sed -n 's/.*"version"[^"]*"\([^"]*\)".*/\1/p')"

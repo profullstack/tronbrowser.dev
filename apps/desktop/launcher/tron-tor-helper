@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
-"""TronBrowser Tor control helper.
+"""TronBrowser network helper: the 🧅 Tor and 🤘 Pit toggles' back end.
 
 A loopback-only HTTP control endpoint the AI-sidebar 🧅 Tor toggle calls to
-start/stop a local Tor daemon ON DEMAND. The launcher starts this helper at
+start/stop a local Tor daemon ON DEMAND, and the 🤘 Pit toggle calls to
+start/stop a local SOCKS5 resolver for Moshpit names (see the Moshpit section
+below). The launcher starts this helper at
 browser launch (both the desktop app entry and `tron` go through the same
 shim), but it makes NO network connection until the toggle asks it to /start —
 so nobody connects to Tor unless they actually turn it on.
@@ -11,22 +13,32 @@ This is convenience routing, NOT Tor-Browser-grade anonymity. See
 docs/tor-onion-mode.md.
 
 Endpoints (POST/GET on 127.0.0.1):
-  /start   start tor, block until bootstrapped → {"ready": true} or error
-  /stop    stop tor → {"stopped": true}
-  /status  {"running": bool, "ready": bool, "torInstalled": bool}
+  /start       start tor, block until bootstrapped → {"ready": true} or error
+  /stop        stop tor → {"stopped": true}
+  /status      {"running": bool, "ready": bool, "torInstalled": bool, "pit": {…}}
+  /pit/start   start the Moshpit SOCKS5 resolver → {"started": true, "check": {…}}
+  /pit/stop    stop it → {"stopped": true}
+  /pit/status  {"running": bool, "port": int, "doh": url}
 
 Single-instance: binds a fixed loopback port; a second copy exits cleanly when
 the port is taken, so the launcher can fire-and-forget it every launch.
 """
+import base64
 import glob
 import json
 import os
+import random
 import re
+import select
 import shutil
 import signal
+import socket
+import struct
 import subprocess
 import sys
 import threading
+import time
+import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 HOST = "127.0.0.1"
@@ -37,7 +49,7 @@ BUNDLED_DIR = os.environ.get("TRON_TOR_BIN_DIR", "")
 PIDFILE = os.environ.get("TRON_TOR_PIDFILE", "")
 # Bumped whenever the helper protocol/behaviour changes; the launcher kills a
 # stale helper so the current version always runs.
-HELPER_VERSION = "3.2.8"
+HELPER_VERSION = "3.3.0"
 _lock = threading.Lock()
 _proc = None              # the running tor subprocess (or None)
 _ready = False            # True once tor reported Bootstrapped 100%
@@ -198,7 +210,311 @@ def status():
                 "progress": _progress,
                 "error": _error,
                 "torInstalled": tor_binary() is not None,
+                "pit": pit_status(),
                 "version": HELPER_VERSION}
+
+
+# --- Moshpit names (🤘 Pit toggle) ------------------------------------------
+# Moshpit endings (.eggs, .moshpit, .yeah, …) live outside the ICANN root, so the
+# system resolver has nowhere to look them up. `moshcode dns enable` fixes that
+# for the whole machine, but it needs root and rewrites the resolver config.
+# This is the no-root, this-browser-only alternative, built like the Tor toggle:
+# a loopback SOCKS5 proxy that resolves names through the Moshpit DNS-over-HTTPS
+# resolver and connects to whatever it answers. The extension's PAC script sends
+# only hosts the system resolver has NO answer for here (clearnet wins, the pit
+# is the fallback — the house policy), so ordinary sites never pass through it.
+# Nothing on the machine changes, and it is off again on the next launch.
+PIT_SOCKS_PORT = int(os.environ.get("TRON_PIT_SOCKS_PORT", "9081"))
+PIT_DOH_URL = os.environ.get("TRON_PIT_DOH_URL", "https://dns.moshcode.sh/dns-query")
+# A name that must resolve while the pit is up: the Pit's own front door for
+# .eggs. `mosh.<anything>` is reserved by the registry, so nobody can squat it.
+PIT_PROBE_NAME = os.environ.get("TRON_PIT_PROBE_NAME", "mosh.eggs")
+PIT_CONNECT_TIMEOUT = 15
+PIT_IDLE_TIMEOUT = 600      # seconds without a byte either way before a relay closes
+_pit = None                 # the running PitSocks server (or None)
+_pit_lock = threading.Lock()
+_pit_cache = {}             # name -> (expires_at, [ips])
+_pit_cache_lock = threading.Lock()
+
+
+def _dns_query(name, qtype=1):
+    """Wire-format DNS query for `name` (RFC 1035): (id, bytes)."""
+    qid = random.randint(0, 0xFFFF)
+    q = struct.pack(">HHHHHH", qid, 0x0100, 1, 0, 0, 0)  # RD=1, one question
+    for label in name.rstrip(".").split("."):
+        raw = label.encode("idna")
+        if not raw or len(raw) > 63:
+            raise ValueError("bad label in %r" % name)
+        q += bytes([len(raw)]) + raw
+    q += b"\x00" + struct.pack(">HH", qtype, 1)  # QTYPE, QCLASS=IN
+    return qid, q
+
+
+def _skip_name(buf, pos):
+    """Index just past the (possibly compressed) name starting at `pos`."""
+    while True:
+        if pos >= len(buf):
+            raise ValueError("truncated name")
+        length = buf[pos]
+        if length == 0:
+            return pos + 1
+        if length & 0xC0 == 0xC0:  # compression pointer: two bytes, ends the name
+            return pos + 2
+        pos += 1 + length
+
+
+def _parse_a_records(buf, qid):
+    """(rcode, [ipv4 strings], min ttl) from a DNS response — A records only."""
+    if len(buf) < 12:
+        raise ValueError("short response")
+    rid, flags, qdcount, ancount, _ns, _ar = struct.unpack(">HHHHHH", buf[:12])
+    if rid != qid:
+        raise ValueError("transaction id mismatch")
+    pos = 12
+    for _ in range(qdcount):
+        pos = _skip_name(buf, pos) + 4  # QTYPE + QCLASS
+    ips, ttl = [], None
+    for _ in range(ancount):
+        pos = _skip_name(buf, pos)
+        rtype, rclass, rttl, rdlen = struct.unpack(">HHIH", buf[pos:pos + 10])
+        pos += 10
+        rdata = buf[pos:pos + rdlen]
+        pos += rdlen
+        if rtype == 1 and rclass == 1 and rdlen == 4:
+            ips.append(socket.inet_ntoa(rdata))
+            ttl = rttl if ttl is None else min(ttl, rttl)
+    return flags & 0xF, ips, (60 if ttl is None else ttl)
+
+
+def doh_resolve(name, timeout=6.0):
+    """A records for `name` from the Moshpit DoH resolver (RFC 8484 GET).
+    Returns (ips, ttl, rcode); raises on transport or malformed answers."""
+    qid, q = _dns_query(name)
+    url = "%s?dns=%s" % (PIT_DOH_URL, base64.urlsafe_b64encode(q).rstrip(b"=").decode("ascii"))
+    req = urllib.request.Request(url, headers={
+        "Accept": "application/dns-message",
+        "User-Agent": "tron-pit-helper/%s" % HELPER_VERSION,
+    })
+    with urllib.request.urlopen(req, timeout=timeout) as res:
+        body = res.read(65535)
+    rcode, ips, ttl = _parse_a_records(body, qid)
+    return ips, ttl, rcode
+
+
+def pit_resolve(name):
+    """IPv4 addresses for a host: the cached DoH answer, else the system resolver
+    as a last resort (a clearnet name should never arrive here, but when one does
+    it must still work). [] when nobody knows the name; negatives are cached
+    briefly so a page full of broken links does not hammer the resolver."""
+    key = name.lower().rstrip(".")
+    now = time.time()
+    with _pit_cache_lock:
+        hit = _pit_cache.get(key)
+        if hit and hit[0] > now:
+            return hit[1]
+    ips, ttl = [], 60
+    try:
+        ips, ttl, _rcode = doh_resolve(key)
+    except Exception as exc:  # noqa: BLE001 — any failure means "try the OS"
+        log("pit: DoH lookup of %s failed: %s" % (key, exc))
+    if not ips:
+        try:
+            ips = sorted({ai[4][0] for ai in socket.getaddrinfo(key, None, socket.AF_INET, socket.SOCK_STREAM)})
+        except OSError:
+            ips = []
+    with _pit_cache_lock:
+        _pit_cache[key] = (now + (max(30, min(int(ttl), 3600)) if ips else 30), ips)
+    return ips
+
+
+def _recv_exact(sock, n):
+    buf = b""
+    while len(buf) < n:
+        chunk = sock.recv(n - len(buf))
+        if not chunk:
+            raise ConnectionError("client closed")
+        buf += chunk
+    return buf
+
+
+def _socks_reply(conn, rep):
+    # BND.ADDR/BND.PORT are meaningless for CONNECT through a relay; Chromium
+    # ignores them, so always answer 0.0.0.0:0.
+    try:
+        conn.sendall(b"\x05" + bytes([rep]) + b"\x00\x01" + b"\x00\x00\x00\x00" + b"\x00\x00")
+    except OSError:
+        pass
+
+
+def _pit_relay(a, b):
+    """Shuttle bytes both ways until either side closes or goes idle."""
+    pair = [a, b]
+    try:
+        while True:
+            readable, _w, broken = select.select(pair, [], pair, PIT_IDLE_TIMEOUT)
+            if broken or not readable:
+                return
+            for s in readable:
+                data = s.recv(65536)
+                if not data:
+                    return
+                (b if s is a else a).sendall(data)
+    except OSError:
+        return
+    finally:
+        for s in pair:
+            try:
+                s.close()
+            except OSError:
+                pass
+
+
+def _pit_serve(conn):
+    """One SOCKS5 client: no-auth handshake, CONNECT, resolve, relay."""
+    conn.settimeout(PIT_CONNECT_TIMEOUT)
+    upstream = None
+    try:
+        ver, nmethods = _recv_exact(conn, 2)
+        if ver != 5:
+            return
+        _recv_exact(conn, nmethods)
+        conn.sendall(b"\x05\x00")  # no authentication required
+        ver, cmd, _rsv, atyp = _recv_exact(conn, 4)
+        if ver != 5:
+            return
+        if atyp == 1:
+            host = socket.inet_ntoa(_recv_exact(conn, 4))
+        elif atyp == 3:
+            host = _recv_exact(conn, _recv_exact(conn, 1)[0]).decode("ascii", "replace")
+        elif atyp == 4:
+            host = socket.inet_ntop(socket.AF_INET6, _recv_exact(conn, 16))
+        else:
+            _socks_reply(conn, 0x08)  # address type not supported
+            return
+        port = struct.unpack(">H", _recv_exact(conn, 2))[0]
+        if cmd != 1:
+            _socks_reply(conn, 0x07)  # only CONNECT; no BIND / UDP ASSOCIATE
+            return
+        ips = pit_resolve(host) if atyp == 3 else [host]
+        if not ips:
+            log("pit: no address for %s" % host)
+            _socks_reply(conn, 0x04)  # host unreachable
+            return
+        rep = 0x05
+        for ip in ips[:3]:
+            try:
+                upstream = socket.create_connection((ip, port), timeout=PIT_CONNECT_TIMEOUT)
+                break
+            except OSError as exc:
+                rep = 0x05 if isinstance(exc, ConnectionRefusedError) else 0x04
+        if upstream is None:
+            log("pit: could not connect to %s:%d via %s" % (host, port, ", ".join(ips[:3])))
+            _socks_reply(conn, rep)
+            return
+        upstream.settimeout(None)
+        conn.settimeout(None)
+        _socks_reply(conn, 0x00)
+        _pit_relay(conn, upstream)
+    except (OSError, ConnectionError, ValueError, struct.error, IndexError):
+        pass
+    finally:
+        for s in (conn, upstream):
+            if s is not None:
+                try:
+                    s.close()
+                except OSError:
+                    pass
+
+
+class PitSocks(threading.Thread):
+    """Loopback SOCKS5 listener; one daemon thread per client."""
+
+    def __init__(self, port):
+        super().__init__(daemon=True, name="pit-socks")
+        self.port = port
+        self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self.sock.bind((HOST, port))
+        self.sock.listen(64)
+        self._stopping = threading.Event()
+
+    def run(self):
+        # A blocked accept() is not woken by close() from another thread — the
+        # port would stay bound with nobody listening. Poll the stop flag instead;
+        # accepted sockets come back blocking regardless of this timeout.
+        self.sock.settimeout(0.5)
+        while not self._stopping.is_set():
+            try:
+                conn, _addr = self.sock.accept()
+            except socket.timeout:
+                continue
+            except OSError:
+                break  # shut down by stop()
+            threading.Thread(target=_pit_serve, args=(conn,), daemon=True).start()
+        try:
+            self.sock.close()
+        except OSError:
+            pass
+
+    def stop(self):
+        """Stop listening and wait for the port to be released, so a caller that
+        gets {"stopped": true} can rely on it being closed."""
+        self._stopping.set()
+        try:
+            self.sock.shutdown(socket.SHUT_RDWR)  # wakes accept() at once on Linux
+        except OSError:
+            pass
+        self.join(timeout=3)
+        try:
+            self.sock.close()
+        except OSError:
+            pass
+
+
+def start_pit():
+    """Ensure the resolver is listening. Returns (ok, error)."""
+    global _pit
+    with _pit_lock:
+        if _pit is not None and _pit.is_alive():
+            return True, None
+        try:
+            srv = PitSocks(PIT_SOCKS_PORT)
+        except OSError as exc:
+            log("pit: cannot bind %s:%d: %s" % (HOST, PIT_SOCKS_PORT, exc))
+            return False, "pit-port-busy"
+        srv.start()
+        _pit = srv
+    log("pit: SOCKS5 resolver listening on %s:%d (DoH %s)" % (HOST, PIT_SOCKS_PORT, PIT_DOH_URL))
+    return True, None
+
+
+def stop_pit():
+    global _pit
+    with _pit_lock:
+        srv, _pit = _pit, None
+    if srv is not None:
+        srv.stop()
+        log("pit: stopped")
+    with _pit_cache_lock:
+        _pit_cache.clear()
+
+
+def pit_probe():
+    """Resolve a name that must exist so the toggle can report whether names
+    will actually resolve, not merely that a port is open."""
+    try:
+        ips, _ttl, rcode = doh_resolve(PIT_PROBE_NAME)
+        if ips:
+            return {"ok": True, "name": PIT_PROBE_NAME, "ip": ips[0]}
+        return {"ok": False, "name": PIT_PROBE_NAME, "error": "no-answer (rcode %d)" % rcode}
+    except Exception as exc:  # noqa: BLE001 — reported to the user, never raised
+        return {"ok": False, "name": PIT_PROBE_NAME, "error": str(exc)}
+
+
+def pit_status():
+    with _pit_lock:
+        running = _pit is not None and _pit.is_alive()
+    return {"running": running, "port": PIT_SOCKS_PORT, "doh": PIT_DOH_URL, "version": HELPER_VERSION}
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -228,6 +544,20 @@ class Handler(BaseHTTPRequestHandler):
             self._send(200, {"stopped": True})
         elif path in ("/status", "/"):
             self._send(200, status())
+        elif path == "/pit/start":
+            ok, err = start_pit()
+            st = pit_status()
+            st["started"] = ok
+            if err:
+                st["error"] = err
+            else:
+                st["check"] = pit_probe()
+            self._send(200 if ok else 503, st)
+        elif path == "/pit/stop":
+            stop_pit()
+            self._send(200, {"stopped": True})
+        elif path == "/pit/status":
+            self._send(200, pit_status())
         else:
             self._send(404, {"error": "not-found"})
 
@@ -243,6 +573,7 @@ class Handler(BaseHTTPRequestHandler):
 
 def _shutdown(*_):
     stop_tor()
+    stop_pit()
     _remove_pidfile()
     sys.exit(0)
 
@@ -275,11 +606,13 @@ def main():
         # launcher kills a stale helper before us, so this is rare.)
         return
     _write_pidfile()
-    log("listening on %s:%d v%s (tor: %s)" % (HOST, PORT, HELPER_VERSION, tor_binary() or "NOT FOUND"))
+    log("listening on %s:%d v%s (tor: %s; pit resolver on :%d when toggled)"
+        % (HOST, PORT, HELPER_VERSION, tor_binary() or "NOT FOUND", PIT_SOCKS_PORT))
     try:
         server.serve_forever()
     finally:
         stop_tor()
+        stop_pit()
         _remove_pidfile()
 
 
