@@ -811,6 +811,42 @@ ensure_engine() {
   return 1
 }
 
+# The Moshpit registry runs a certificate authority for the names it holds
+# (moshcode apps/pwa/docs/moshpit-ca.md). One root, installed once, and every
+# Moshpit name is trusted over https — no per-name imports, no pins to check.
+# Fetched here on install and on every upgrade, kept next to the launcher as
+# moshpit-root-ca.crt, and the launcher imports it into the browser's trust
+# store on every start (sync_moshpit_trust). Two fetches that must agree: the
+# fingerprint the registry reports for its root, and the root itself. Skip
+# with TB_NO_MOSHPIT_ROOT=1; another registry with TRONBROWSER_MOSHPIT_REGISTRY.
+MOSHPIT_REGISTRY="${TRONBROWSER_MOSHPIT_REGISTRY:-https://pit.moshcode.sh}"
+
+ensure_moshpit_root() {
+  [ "${TB_NO_MOSHPIT_ROOT:-0}" = "1" ] && return 0
+  _ldir="$(find "$APP_DIR" -maxdepth 3 -type f -name tronbrowser 2>/dev/null | head -n1)"
+  [ -n "$_ldir" ] || return 0
+  dest="$(dirname "$_ldir")/moshpit-root-ca.crt"
+  tmp="$(mktemp -d)"
+  status="$(curl -fsSL --max-time 15 "$MOSHPIT_REGISTRY/api/moshpit/ca" 2>/dev/null || true)"
+  case "$status" in
+    *'"enabled":true'*) ;;
+    *) rm -rf "$tmp"; return 0 ;;   # no CA published: nothing to ship, nothing to say
+  esac
+  want="$(printf '%s' "$status" | sed -n 's/.*"fingerprint_sha256":"\([^"]*\)".*/\1/p' | tr -d ':' | tr 'a-f' 'A-F')"
+  if ! fetch "$MOSHPIT_REGISTRY/api/moshpit/ca.crt" "$tmp/root.crt" 2>/dev/null; then rm -rf "$tmp"; return 0; fi
+  if command -v openssl >/dev/null 2>&1; then
+    got="$(openssl x509 -in "$tmp/root.crt" -noout -fingerprint -sha256 2>/dev/null | sed 's/.*=//' | tr -d ':' | tr 'a-f' 'A-F')"
+    if [ -z "$got" ] || [ -z "$want" ] || [ "$got" != "$want" ]; then
+      warn "The Moshpit root the registry served does not match the fingerprint it reports; not installing it."
+      rm -rf "$tmp"; return 1
+    fi
+    openssl x509 -in "$tmp/root.crt" -noout -ext basicConstraints 2>/dev/null | grep -q 'CA:TRUE' || { rm -rf "$tmp"; return 1; }
+  fi
+  if [ -f "$dest" ] && cmp -s "$tmp/root.crt" "$dest"; then rm -rf "$tmp"; return 0; fi
+  install -m 0644 "$tmp/root.crt" "$dest" && info "Installed the Moshpit Root CA (every Moshpit name over https) to $dest"
+  rm -rf "$tmp"
+}
+
 ensure_obscura() {
   [ "${TB_NO_OBSCURA_INSTALL:-0}" = "1" ] && return 0
   obdest="$APP_DIR/obscura-bin"
@@ -894,6 +930,10 @@ ensure_certutil() {
             "$HOME/.moshpit/ca/ca.crt"; do
     if [ -f "$_c" ]; then _have_moshpit=1; break; fi
   done
+  # Or the root TronBrowser ships itself (ensure_moshpit_root), which is the
+  # ordinary case now that the registry signs.
+  _ldir2="$(find "$APP_DIR" -maxdepth 3 -type f -name tronbrowser 2>/dev/null | head -n1)"
+  [ -n "$_ldir2" ] && [ -f "$(dirname "$_ldir2")/moshpit-root-ca.crt" ] && _have_moshpit=1
   [ "$_have_moshpit" = "1" ] || return 0
 
   info "Setting up certutil (so Moshpit names load over HTTPS)…"
@@ -971,6 +1011,7 @@ DESKTOP
   # abort an install that has already put the browser on disk.
   ensure_tor      || true  # so the in-browser 🧅 Tor toggle works out of the box
   ensure_certutil || true  # so Moshpit names load over HTTPS on first launch
+  ensure_moshpit_root || true  # the registry's root: every Moshpit name over https
   ensure_obscura  || true  # so 'tron automate' has its scraping engine
   brand_macos_icon "$(dirname "$bin")/tronbrowser.png"
 
@@ -1080,6 +1121,7 @@ do_upgrade() {
     ensure_browser            # still make sure Ungoogled Chromium is installed
     ensure_tor      || true   # and that Tor is available for the toggle
     ensure_certutil || true   # and that Moshpit trust can be written
+    ensure_moshpit_root || true  # and that the registry's root is current
     ensure_obscura  || true   # and that the scraping engine is current
     brand_macos_icon "$(find "$APP_DIR" -maxdepth 3 -name tronbrowser.png 2>/dev/null | head -n1)"  # re-apply icon (Chromium updates reset it)
     info "Re-install anyway with: TB_FORCE=1 tron upgrade"
@@ -1143,6 +1185,7 @@ case "$cmd" in
   remove|uninstall) do_remove ;;
   ensure-tor) ensure_tor ;;
   ensure-engine) ensure_engine ;;
+  ensure-moshpit-root) ensure_moshpit_root ;;
   ensure-obscura) ensure_obscura ;;
   ensure-certutil) ensure_certutil ;;
   version|--version|-v) do_version ;;

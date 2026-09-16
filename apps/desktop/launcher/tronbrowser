@@ -591,6 +591,7 @@ fi
 # it already wrote is recognised as done rather than imported a second time.
 moshpit_nickname() { # cert_file
   case "$1" in
+    */moshpit-root-ca.crt|*/.moshpit/ca/registry-root.crt) printf 'Moshpit Root CA' ;;
     */moshpit-local-ca.crt|*/.moshpit/ca/ca.crt) printf 'Moshpit Local CA' ;;
     *)
       _base="$(basename "$1" .crt)"
@@ -630,7 +631,12 @@ sync_moshpit_trust() {
   # Each word below is a literal path or a glob result, so this stays
   # whitespace-safe; an unmatched glob arrives as the pattern itself and fails
   # the -f test.
-  for _cert in /usr/local/share/ca-certificates/moshpit-*.crt \
+  # The registry's root first: the one TronBrowser ships itself (install.sh
+  # ensure_moshpit_root), which makes every Moshpit name trusted at once. The
+  # rest is whatever `moshcode dns enable` / `dns trust` installed system-wide.
+  for _cert in "$DIR/moshpit-root-ca.crt" \
+               "$HOME/.moshpit/ca/registry-root.crt" \
+               /usr/local/share/ca-certificates/moshpit-*.crt \
                /etc/ca-certificates/trust-source/anchors/moshpit-*.crt \
                /etc/pki/ca-trust/source/anchors/moshpit-*.crt \
                "$HOME/.moshpit/ca/ca.crt"; do
@@ -662,9 +668,9 @@ sync_moshpit_trust() {
         _flag="C,,"
       fi
     else
-      # No openssl: the Local CA is the only anchor Moshpit ships, and it is the
-      # one file we can identify by name alone.
-      case "$_nick" in "Moshpit Local CA") _flag="C,," ;; esac
+      # No openssl: the two CAs are the only anchors Moshpit ships, and they
+      # are the files we can identify by name alone.
+      case "$_nick" in "Moshpit Local CA"|"Moshpit Root CA") _flag="C,," ;; esac
     fi
 
     if certutil -d "sql:$_nssdb" -A -t "$_flag" -n "$_nick" -i "$_cert" >/dev/null 2>&1; then
