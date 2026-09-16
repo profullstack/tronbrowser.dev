@@ -1,6 +1,6 @@
 # 🤘 Pit toggle — Moshpit names for one browser session
 
-**Status:** shipped with the AI-sidebar extension + `tron-tor-helper` 3.3.0
+**Status:** shipped with the AI-sidebar extension + `tron-tor-helper` 3.4.0
 **Owner:** desktop (`apps/desktop`)
 **Scope:** resolve Moshpit names in the running browser with one click. Not a
 replacement for `moshcode dns enable`, which does it for the whole machine.
@@ -18,7 +18,7 @@ ways to make them work, and the settings page says so:
 | Scope | every application on the machine | this browser session |
 | Needs root | yes (rewrites the resolver config, installs a local CA) | no |
 | Survives restart | yes | no — off again on every launch, like 🧅 Tor |
-| `https://` on a pit name | works (pinned proxy + local CA) | warns, unless `moshcode dns enable` has installed the CA |
+| `https://` on a pit name | works (pinned proxy + local CA) | works on Linux: the leaf is trusted per name on first use, against the registry pin |
 | Clearnet names | forwarded to public resolvers | never touched |
 
 The toggle is for the laptop where DNS is not yours to change, or the first
@@ -57,6 +57,37 @@ no ending list to fetch, cache or age out.
 The PAC is not `mandatory`: if it ever fails to evaluate, Chromium falls back to
 `DIRECT` and ordinary browsing keeps working.
 
+## HTTPS on a pit name
+
+No public CA issues for a name outside the ICANN root, so an origin such as
+`chovy.hacker` serves a self-signed leaf for its own name and the registry
+publishes the SHA-256 of that key (`/api/moshpit/pins?name=`, the RFC 7469 pin
+format). `moshcode dns trust <name>` installs such a leaf into the system store,
+with root. The pit toggle does the no-root equivalent for this browser:
+
+1. On the first HTTPS `CONNECT` for a name, the helper fetches the certificate
+   the origin serves (without verifying it: deciding whether to trust it is the
+   point), computes the pin of its key, and fetches the registry's pins.
+2. The key must match a published pin, and the certificate must not be marked
+   `CA:TRUE` (a CA trusted directly could vouch for any name; the same refusal
+   `moshcode dns trust` makes).
+3. The leaf is written to `~/.tronbrowser/pit-certs/moshpit-<name>.crt` and
+   imported into `~/.pki/nssdb` as a **peer** (`certutil -t P,,`) under the
+   nickname `moshpit <name>`, the same nickname the launcher's trust sync uses,
+   so neither imports the other's work twice. Peer trust vouches for that one
+   certificate and the name in its SAN, nothing else.
+4. All of this happens before the SOCKS reply, so the browser's TLS handshake
+   that follows already finds the certificate trusted.
+
+Linux only for now (Chromium on macOS reads the keychain, which needs an
+interactive prompt), and it needs `certutil` (Debian/Ubuntu `libnss3-tools`,
+Fedora `nss-tools`, Arch `nss`); `install.sh` installs it on machines that have
+Moshpit certificates. The sidebar says which case applies when the pit turns on.
+A name the registry publishes no pin for is left alone and the browser's own
+warning stands. If a name was already opened and rejected in this session
+before the pit was on, Chromium may keep that verdict cached for a while;
+reopening the tab or restarting the browser clears it.
+
 ## Tor and the pit are exclusive
 
 The pit's PAC asks the **system** resolver about every host. With Tor on, that
@@ -85,14 +116,15 @@ would leak every lookup outside Tor, so:
 
 | File | Role |
 | --- | --- |
-| `apps/desktop/launcher/tron-tor-helper` | `/pit/*` routes, the SOCKS5 resolver, the DoH client |
+| `apps/desktop/launcher/tron-tor-helper` | `/pit/*` routes, the SOCKS5 resolver, the DoH client, per-name leaf trust |
 | `apps/desktop/launcher/tronbrowser` | starts the helper; `HELPER_VERSION` must match the helper's so a stale one is replaced |
 | `apps/desktop/extensions/ai-sidebar/pit-proxy.js` | the PAC + proxy config (pure, tested in `pit-proxy.test.js`) |
 | `apps/desktop/extensions/ai-sidebar/background.js` | `pit-set` / `pit-status` messages, badge, session-scoped state |
 | `apps/desktop/extensions/ai-sidebar/sidepanel.*` | the button and its status copy |
 
 Environment knobs on the helper: `TRON_PIT_SOCKS_PORT` (9081),
-`TRON_PIT_DOH_URL`, `TRON_PIT_PROBE_NAME`.
+`TRON_PIT_DOH_URL`, `TRON_PIT_PROBE_NAME`, `TRON_PIT_REGISTRY`,
+`TRON_PIT_NSSDB` (`~/.pki/nssdb`), `TRON_PIT_CERT_DIR`.
 
 ## Testing the helper by hand
 
@@ -106,10 +138,9 @@ curl -X POST http://127.0.0.1:19061/pit/stop
 
 ## Not in this version
 
-- **`https://` on pit names without the CA.** The pit page documents it: no
-  public CA issues for a namespace outside the ICANN root. `moshcode dns enable`
-  installs the Moshpit CA and the launcher mirrors it into Chromium's trust
-  store on every start, so the two features compose.
+- **`https://` on macOS and Windows.** Per-name trust writes the NSS database,
+  which only Chromium on Linux reads. `moshcode dns enable` remains the answer
+  there.
 - **"Moshpit wins."** The resolvers' `MOSHPIT_RESOLVE_MODE=moshpit` lets a
   registered name override a clearnet one. The toggle only implements the
   default `fallback` policy.

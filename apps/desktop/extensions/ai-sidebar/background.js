@@ -390,7 +390,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
           return;
         }
         await enablePit();
-        sendResponse({ enabled: true, check: started.check || null, port: started.port });
+        sendResponse({ enabled: true, check: started.check || null, trust: started.trust || null, port: started.port });
       } else {
         await disablePit();
         await stopPitViaHelper();
