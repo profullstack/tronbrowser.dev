@@ -53,7 +53,8 @@ CRX and cannot be replaced by one.
 | File | Role |
 | --- | --- |
 | `manifest.json` | MV3 manifest (side_panel, storage, tabs, management, host permissions) |
-| `background.js` | Opens the panel on action click; resolves store-install targets |
+| `background.js` | Opens the panel on action click; resolves store-install targets; the 🧅 Tor and 🤘 Pit toggles (`chrome.proxy` + the launcher's helper) |
+| `pit-proxy.js` | The Pit PAC: hosts the system resolver cannot answer go to the helper's Moshpit resolver, everything else DIRECT (`docs/moshpit-pit-toggle.md`) |
 | `install-helper.js` | The "Add to TronBrowser" button on Web Store detail pages |
 | `install-state.js` | Pure decision + `chrome.management` lookup behind that button |
 | `sidepanel.html/.css/.js` | The chat UI |

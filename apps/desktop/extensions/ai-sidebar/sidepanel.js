@@ -1,6 +1,7 @@
 import { PROVIDERS, chatStream } from './providers.js';
 import { renderMarkdown } from './markdown.js';
 import { storageGet } from './net.js';
+import { PIT_SOCKS_PORT } from './pit-proxy.js';
 
 const el = (id) => document.getElementById(id);
 
@@ -160,11 +161,11 @@ const torStatusEl = el('tor-status');
 const torProgressEl = el('tor-progress');
 const torProgressBar = el('tor-progress-bar');
 
-function showTorStatus(kind, html) {
+function showNetStatus(kind, html) {
   torStatusEl.className = 'tor-status ' + kind;
   torStatusEl.innerHTML = html;
 }
-function hideTorStatus() {
+function hideNetStatus() {
   torStatusEl.className = 'tor-status hidden';
   torStatusEl.textContent = '';
 }
@@ -181,7 +182,7 @@ function hideTorProgress() {
 chrome.runtime.onMessage.addListener((m) => {
   if (m && m.type === 'tor-progress') {
     showTorProgress(m.pct);
-    showTorStatus('', `Connecting through Tor… ${Math.round(m.pct)}%`);
+    showNetStatus('', `Connecting through Tor… ${Math.round(m.pct)}%`);
   }
 });
 function setTorButton(on) {
@@ -240,7 +241,7 @@ async function toggleTor() {
   torBtn.classList.add('busy');
   torBtn.disabled = true;
   if (turningOn) {
-    showTorStatus('', 'Connecting through Tor… (the first run can take up to a minute)');
+    showNetStatus('', 'Connecting through Tor… (the first run can take up to a minute)');
     showTorProgress(0);
   }
   try {
@@ -250,40 +251,106 @@ async function toggleTor() {
       '<a href="https://www.torproject.org/" target="_blank" rel="noreferrer">Tor Browser</a>.';
     if (!turningOn) {
       setTorButton(false);
-      hideTorStatus();
+      hideNetStatus();
     } else if (res && res.enabled && res.check && res.check.ok && res.check.isTor) {
       setTorButton(true);
-      showTorStatus('ok', `Connected via Tor · exit IP <code>${safeIp(res.check.ip)}</code>. ${torBrowserNote}`);
+      showNetStatus('ok', `Connected via Tor · exit IP <code>${safeIp(res.check.ip)}</code>. ${torBrowserNote}`);
     } else if (res && res.enabled) {
       // Tor started and we're routing through it; the exit-IP probe just didn't
       // confirm in time (a fresh circuit can be slow). Stay ON, don't alarm.
       setTorButton(true);
-      showTorStatus('ok', `Tor is on — routing this session through Tor. ${torBrowserNote}`);
+      showNetStatus('ok', `Tor is on — routing this session through Tor. ${torBrowserNote}`);
     } else {
       // Background couldn't route. Explain why, in plain language.
       setTorButton(false);
       const err = res && res.started && res.started.error;
       if (err === 'tor-starting') {
-        showTorStatus('', 'Tor is still connecting — the first run downloads the Tor network and can take a minute or two. Click 🧅 again in a few seconds; it’ll finish in the background.');
+        showNetStatus('', 'Tor is still connecting — the first run downloads the Tor network and can take a minute or two. Click 🧅 again in a few seconds; it’ll finish in the background.');
       } else if (err === 'tor-not-installed') {
-        showTorStatus('warn', 'Tor isn’t installed yet. Run <code>tron tor</code> once (it installs Tor automatically), then try again.');
+        showNetStatus('warn', 'Tor isn’t installed yet. Run <code>tron tor</code> once (it installs Tor automatically), then try again.');
       } else if (err === 'unreachable') {
-        showTorStatus('warn', 'Couldn’t reach the Tor helper. Restart TronBrowser and try again, or run <code>tron tor</code>.');
+        showNetStatus('warn', 'Couldn’t reach the Tor helper. Restart TronBrowser and try again, or run <code>tron tor</code>.');
       } else {
-        showTorStatus('warn', 'Tor couldn’t start. See <code>~/.tronbrowser/tor-helper.log</code> for the reason.');
+        showNetStatus('warn', 'Tor couldn’t start. See <code>~/.tronbrowser/tor-helper.log</code> for the reason.');
       }
     }
   } catch (e) {
     setTorButton(false);
-    showTorStatus('warn', 'Could not toggle Tor: ' + ((e && e.message) || e));
+    showNetStatus('warn', 'Could not toggle Tor: ' + ((e && e.message) || e));
   } finally {
     hideTorProgress();
     torBtn.classList.remove('busy');
     torBtn.disabled = false;
+    refreshPitState(); // turning Tor on takes the pit down
   }
 }
 
 torBtn.addEventListener('click', toggleTor);
+
+// --- Pit toggle ----------------------------------------------------------
+// Resolves Moshpit names (.eggs, .moshpit, …) in this session only — the
+// background points a PAC at the helper's local resolver for hosts the system
+// resolver has no answer for. Nothing on the machine changes and no root is
+// needed; for every app on the box, `moshcode dns enable` is still the answer.
+const pitBtn = el('pit');
+function setPitButton(on) {
+  pitBtn.setAttribute('aria-pressed', on ? 'true' : 'false');
+  pitBtn.textContent = on ? '🤘 Pit ON' : '🤘 Pit';
+}
+// The probe name comes from the helper; still strip to hostname chars before injecting.
+function safeHost(h) { return String(h || '?').replace(/[^0-9a-zA-Z.-]/g, ''); }
+
+async function refreshPitState() {
+  try {
+    const res = await chrome.runtime.sendMessage({ type: 'pit-status' });
+    setPitButton(!!(res && res.enabled));
+  } catch (_) { /* background may be asleep */ }
+}
+
+async function togglePit() {
+  const turningOn = pitBtn.getAttribute('aria-pressed') !== 'true';
+  pitBtn.classList.add('busy');
+  pitBtn.disabled = true;
+  if (turningOn) showNetStatus('', 'Starting the pit resolver…');
+  try {
+    const res = await chrome.runtime.sendMessage({ type: 'pit-set', on: turningOn });
+    const tip =
+      'Clearnet names are untouched. <code>https://</code> on a pit name needs ' +
+      '<code>moshcode dns enable</code> once, for the certificate.';
+    if (!turningOn) {
+      setPitButton(false);
+      hideNetStatus();
+    } else if (res && res.enabled && res.check && res.check.ok) {
+      setPitButton(true);
+      showNetStatus('ok', `Pit is on — Moshpit names resolve in this session (<code>${safeHost(res.check.name)}</code> → <code>${safeIp(res.check.ip)}</code>). ${tip}`);
+    } else if (res && res.enabled) {
+      // The resolver is up but the Moshpit DoH endpoint didn't answer the probe
+      // (offline, or slow). Stay ON — names resolve as soon as it is reachable.
+      setPitButton(true);
+      showNetStatus('ok', `Pit is on, but the Moshpit resolver didn’t answer yet — names resolve once <code>dns.moshcode.sh</code> is reachable. ${tip}`);
+    } else {
+      setPitButton(false);
+      const err = res && res.error;
+      if (err === 'tor-on') {
+        showNetStatus('warn', 'Turn 🧅 Tor off first — Moshpit names can’t resolve through Tor, and checking them would leak lookups outside it.');
+      } else if (err === 'unreachable') {
+        showNetStatus('warn', 'Couldn’t reach the TronBrowser helper. Restart TronBrowser and try again, or run <code>tron upgrade</code>.');
+      } else if (err === 'pit-port-busy') {
+        showNetStatus('warn', `Port ${PIT_SOCKS_PORT} on this machine is taken by another program, so the pit resolver couldn’t start.`);
+      } else {
+        showNetStatus('warn', 'The pit resolver couldn’t start. See <code>~/.tronbrowser/tor-helper.log</code> for the reason.');
+      }
+    }
+  } catch (e) {
+    setPitButton(false);
+    showNetStatus('warn', 'Could not toggle the pit: ' + ((e && e.message) || e));
+  } finally {
+    pitBtn.classList.remove('busy');
+    pitBtn.disabled = false;
+  }
+}
+
+pitBtn.addEventListener('click', togglePit);
 
 // The ? next to the Tor button opens the same explainer on demand (info mode —
 // never enables Tor, whatever button closes it).
@@ -293,4 +360,4 @@ el('tor-info').addEventListener('click', () => {
   torWarnDlg.showModal();
 });
 
-(async () => { await loadConfig(); await consumePendingQuery(); await refreshTorState(); })();
+(async () => { await loadConfig(); await consumePendingQuery(); await refreshTorState(); await refreshPitState(); })();

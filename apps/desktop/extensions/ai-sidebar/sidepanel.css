@@ -27,6 +27,8 @@ header button { background: transparent; border: 1px solid var(--line); color: v
 .tor-btn { font-size: 12px; white-space: nowrap; }
 .tor-btn[aria-pressed="true"] { background: #7d4698; border-color: #7d4698; color: #fff; font-weight: 700; }
 .tor-btn.busy { opacity: .6; cursor: progress; }
+/* The pit wears moshcode's acid green, so ON reads as "pit", not "Tor". */
+#pit[aria-pressed="true"] { background: #a6ff1a; border-color: #a6ff1a; color: #0a1400; }
 .tor-status { padding: 6px 12px; font-size: 12px; border-bottom: 1px solid var(--line);
   background: #0b1020; color: var(--muted); }
 .tor-status.ok { color: #6ee7a8; }

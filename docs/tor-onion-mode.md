@@ -35,7 +35,11 @@ always-on Tor on everyone, the launcher runs a tiny **control helper**
 (`launcher/tron-tor-helper`, loopback-only on `127.0.0.1:9061`) at every browser
 launch — both the desktop app entry and the `tron` CLI go through the same shim,
 so both get it. **The helper makes no network connection until asked:** nobody
-connects to Tor unless they flip the toggle on.
+connects to Tor unless they flip the toggle on. (The same helper backs the
+**🤘 Pit** toggle — a loopback resolver for Moshpit names, see
+[`moshpit-pit-toggle.md`](moshpit-pit-toggle.md). The two are exclusive: turning
+Tor on takes the pit down, because the pit's PAC asks the system resolver about
+every host, which under Tor would leak lookups outside it.)
 
 Flow when you click 🧅 Tor:
 

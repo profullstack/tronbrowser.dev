@@ -33,6 +33,11 @@ tron version
 > [Tor Browser](https://www.torproject.org/) — it's much safer.** Requires the
 > `tor` daemon installed. Details: [`docs/tor-onion-mode.md`](docs/tor-onion-mode.md).
 
+> **🤘 Pit** in the AI sidebar resolves Moshpit names (`.eggs`, `.moshpit`, …) for
+> the current session with one click — no root, nothing on the machine changes,
+> clearnet names untouched. For every app on the box run `moshcode dns enable`
+> instead. Details: [`docs/moshpit-pit-toggle.md`](docs/moshpit-pit-toggle.md).
+
 Also packaged for **macOS · Windows · Debian/Ubuntu (.deb) · Fedora/RHEL (.rpm) ·
 Arch (AUR) · Gentoo · NixOS · Snap · Flatpak · AppImage · FreeBSD** — and arm64
 Linux phones (Librem 5 / PinePhone / Ubuntu Touch). See
