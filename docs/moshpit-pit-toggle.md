@@ -1,6 +1,6 @@
 # 🤘 Pit toggle — Moshpit names for one browser session
 
-**Status:** shipped with the AI-sidebar extension + `tron-tor-helper` 3.4.2
+**Status:** shipped with the AI-sidebar extension + `tron-tor-helper` 3.4.3
 **Owner:** desktop (`apps/desktop`)
 **Scope:** resolve Moshpit names in the running browser with one click. Not a
 replacement for `moshcode dns enable`, which does it for the whole machine.
@@ -93,20 +93,22 @@ Flatpak ungoogled-chromium 152 read `data/pki/nssdb` while `.pki/nssdb`
 existed beside it, and Chromium's net log said "No matching issuer found"
 until that database held the leaf too.
 
-**Flatpak engines do not honour NSS user trust at all.** Found on bonita with
-the Flathub ungoogled-chromium 152: `strace` showed Chromium opening the very
+**The Flathub ungoogled-chromium does not honour NSS user trust at all.** Found
+on bonita with 152.0.7977.82-1: `strace` showed Chromium opening the very
 database that held the leaf (peer and anchor trust both tried), single-process
 and no-sandbox made no difference, and its net log still said "No matching
-issuer found". What that build does honour is
-`--ignore-certificate-errors-spki-list`, Chromium's own per-key allowance. So
-the helper also records every pin it accepts in
-`~/.tronbrowser/pit-certs/pins.txt`, and for a Flatpak engine the launcher
-passes those pins on the command line at start. Two consequences: a name first
-trusted mid-session loads over https after one relaunch (the sidebar says so),
-and Chromium shows its one-line "unsupported command-line flag" bar at start on
-a machine that has such pins. Native engines take the NSS path and get neither.
-The clean way out is a Moshpit CA on the registry side, or shipping the
-portable ungoogled-chromium as TronBrowser's own engine, which honours NSS.
+issuer found". The same 152 release as a portable build accepts the same
+database in every variant tried. So TronBrowser now ships its own engine:
+`install.sh ensure_engine` fetches the pinned portable ungoogled-chromium into
+`<launcher dir>/engine/` next to Tor and Obscura, on install and on
+`tron upgrade`, and the launcher prefers `$DIR/engine/chrome` over any system
+or Flatpak Chromium (after a `--version` probe, so a machine missing a shared
+library falls back rather than failing to start). On that engine the per-name
+import above is all that is needed: no flag, no bar, no relaunch. If the pit
+is turned on while a Flatpak engine is still running, the sidebar says so and
+points at `tron upgrade`. A `--ignore-certificate-errors-spki-list` workaround
+was tried and reverted: it works, but Chromium flags it as an unsupported switch
+at every start.
 
 Linux only for now (Chromium on macOS reads the keychain, which needs an
 interactive prompt), and it needs `certutil` (Debian/Ubuntu `libnss3-tools`,

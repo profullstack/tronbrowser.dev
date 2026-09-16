@@ -54,7 +54,7 @@ BUNDLED_DIR = os.environ.get("TRON_TOR_BIN_DIR", "")
 PIDFILE = os.environ.get("TRON_TOR_PIDFILE", "")
 # Bumped whenever the helper protocol/behaviour changes; the launcher kills a
 # stale helper so the current version always runs.
-HELPER_VERSION = "3.4.2"
+HELPER_VERSION = "3.4.3"
 _lock = threading.Lock()
 _proc = None              # the running tor subprocess (or None)
 _ready = False            # True once tor reported Bootstrapped 100%
@@ -362,13 +362,11 @@ PIT_NSSDB_EXTRA = os.environ.get("TRON_PIT_NSSDB_EXTRA", "")
 # What the launcher started: "flatpak" or "native". The Flathub ungoogled-chromium
 # ignores NSS user trust (verified on bonita: the leaf sat in the very database
 # strace showed it opening, and Chromium still said "No matching issuer found"),
-# but it honours --ignore-certificate-errors-spki-list. So every pin this helper
-# accepts is also written to PIT_PINS_FILE, and for a Flatpak engine the launcher
-# passes those pins on the command line at the next start. A name first trusted
-# mid-session therefore needs one relaunch on a Flatpak engine; the sidebar says so.
+# so on that engine the import below cannot take effect. Reported to the sidebar,
+# which points at `tron upgrade`: the installer fetches TronBrowser's own engine,
+# which honours the store.
 PIT_ENGINE = os.environ.get("TRON_PIT_ENGINE", "native")
 PIT_CERT_DIR = os.environ.get("TRON_PIT_CERT_DIR", os.path.expanduser("~/.tronbrowser/pit-certs"))
-PIT_PINS_FILE = os.environ.get("TRON_PIT_PINS_FILE", os.path.join(PIT_CERT_DIR, "pins.txt"))
 _trust_lock = threading.Lock()
 _trust_seen = {}            # name -> (ok, why); retried after a failure only once the pit restarts
 
@@ -450,31 +448,15 @@ def _safe_name(name):
     return re.sub(r"\.{2,}", ".", re.sub(r"[^a-z0-9.-]", "", name.lower())).strip(".-")
 
 
-def remember_pin(name, pin):
-    """Append `name pin` to the pins file the launcher reads (once per pair)."""
-    try:
-        os.makedirs(os.path.dirname(PIT_PINS_FILE), mode=0o700, exist_ok=True)
-        have = set()
-        if os.path.exists(PIT_PINS_FILE):
-            with open(PIT_PINS_FILE) as f:
-                have = {line.strip() for line in f}
-        line = "%s %s" % (name, pin)
-        if line not in have:
-            with open(PIT_PINS_FILE, "a") as f:
-                f.write(line + "\n")
-    except OSError as exc:
-        log("pit: could not record the pin for %s: %s" % (name, exc))
-
-
 def trust_available():
-    """Can this machine take a per-name import at all? {available, why}.
-    `relaunch` is true where the engine only honours pins given at start."""
+    """Can this machine take a per-name import at all? {available, why, engine}."""
     if platform.system() != "Linux":
         return {"available": False, "why": "unsupported-platform", "engine": PIT_ENGINE}
     if not shutil.which("certutil"):
         return {"available": False, "why": "no-certutil", "engine": PIT_ENGINE}
-    return {"available": True, "why": "certutil", "engine": PIT_ENGINE,
-            "relaunch": PIT_ENGINE == "flatpak", "nssdbs": pit_nssdbs()}
+    if PIT_ENGINE == "flatpak":
+        return {"available": False, "why": "flatpak-engine", "engine": PIT_ENGINE}
+    return {"available": True, "why": "certutil", "engine": PIT_ENGINE, "nssdbs": pit_nssdbs()}
 
 
 def _nssdb_groups():
@@ -574,7 +556,6 @@ def _ensure_leaf_trust(name, ip):
     if is_ca:
         log("pit: https for %s: certificate is CA:TRUE — refusing to trust a key that could vouch for any name" % name)
         return False, "ca-true"
-    remember_pin(name, pin)
     try:
         os.makedirs(PIT_CERT_DIR, mode=0o700, exist_ok=True)
         cert_file = os.path.join(PIT_CERT_DIR, "moshpit-%s.crt" % name)
