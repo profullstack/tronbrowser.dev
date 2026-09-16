@@ -66,6 +66,17 @@ if [ -n "${TRONBROWSER_BROWSER:-}" ]; then
   BROWSER="$TRONBROWSER_BROWSER"
 elif [ -x "$DIR/chrome" ]; then
   BROWSER="$DIR/chrome"            # future: bundled native fork binary
+elif [ -x "$DIR/engine/chrome" ] && "$DIR/engine/chrome" --version >/dev/null 2>&1; then
+  # TronBrowser's own engine: the portable ungoogled-chromium the installer
+  # fetches next to this shim (install.sh ensure_engine), pinned per release.
+  # Preferred over anything the distro or Flathub provides because it is the
+  # one build we have verified end to end — in particular it honours the
+  # per-user NSS trust store, which the Flathub ungoogled-chromium does not
+  # (a Moshpit name's certificate sat in the exact database that build opened
+  # and it still refused it), so https on pit names works here with no flags.
+  # The --version probe skips it when a shared library is missing, falling
+  # through to the system candidates rather than failing to start.
+  BROWSER="$DIR/engine/chrome"
 else
   # Ungoogled Chromium ONLY. Never regular Chromium/Chrome, never snap (snap
   # chromium is regular AND can't be isolated). No fallbacks.
@@ -116,10 +127,9 @@ fi
 if [ -z "$BROWSER" ]; then
   cat >&2 <<MSG
 TronBrowser runs Ungoogled Chromium ONLY — never regular Chrome/Chromium.
-Install Ungoogled Chromium:
+Install it:
+  Linux:  curl -fsSL https://tronbrowser.dev/install.sh | sh   (fetches TronBrowser's own engine)
   macOS:  brew install --cask ungoogled-chromium
-  Linux:  flatpak install -y flathub io.github.ungoogled_software.ungoogled_chromium
-  (or just re-run:  curl -fsSL https://tronbrowser.dev/install.sh | sh )
 Then run 'tron' again.  (Advanced override: TRONBROWSER_BROWSER=/path/to/ungoogled-chromium)
 MSG
   exit 1
@@ -175,7 +185,7 @@ if [ "$TOR" != "1" ]; then
     # running helper isn't this version — otherwise leave a healthy current
     # helper alone (don't drop an active Tor session). All backgrounded so the
     # kill+settle never holds up the browser launch.
-    HELPER_VERSION=3.4.2
+    HELPER_VERSION=3.4.3
     (
       _pf="$DATA/tor-helper.pid"
       _rv="$(curl -fsS --max-time 1 http://127.0.0.1:9061/status 2>/dev/null | sed -n 's/.*"version"[^"]*"\([^"]*\)".*/\1/p')"
@@ -683,25 +693,7 @@ esac
 # bundle one, but the kill switch is not ours to flip on their behalf.
 # (Ungoogled keeps MV2, but force it off everywhere to be safe.)
 MV2_KEEP="ExtensionManifestV2Disabled,ExtensionManifestV2Unsupported,ExtensionManifestV2DeprecationWarning,ExtensionManifestV2DeprecationUnsupported"
-# Flatpak engine only: the Flathub ungoogled-chromium ignores NSS user trust (the
-# pit helper's per-name import sat in the very database strace showed it opening,
-# and Chromium still answered "No matching issuer found"), but it honours pins
-# given on the command line. The helper records every pin it accepted — a key the
-# registry vouches for, for that name — in $HOME/.tronbrowser/pit-certs/pins.txt;
-# hand them over here. Chromium shows a one-line "unsupported command-line flag"
-# bar at start when this switch is present, so it is only passed when there is at
-# least one pin, i.e. on a machine that has used https on a pit name. Native
-# engines honour NSS and get nothing here.
-pit_spki_flag() { # pins_file -> prints the switch, or nothing
-  [ -s "$1" ] || return 0
-  _pins="$(awk 'NF >= 2 && $2 !~ /[^A-Za-z0-9+\/=]/ { print $2 }' "$1" | sort -u | paste -sd, -)"
-  [ -n "$_pins" ] && printf -- '--ignore-certificate-errors-spki-list=%s' "$_pins"
-}
-PIT_SPKI_FLAG=""
-if [ "$BROWSER" = "flatpak" ]; then
-  PIT_SPKI_FLAG="$(pit_spki_flag "$HOME/.tronbrowser/pit-certs/pins.txt")"
-fi
-FLAGS="--user-data-dir=$DATA --class=TronBrowser --no-first-run --no-default-browser-check --no-pings --disable-background-networking --disable-breakpad --disable-domain-reliability --disable-sync --disable-features=Translate,OptimizationHints,InterestFeedContentSuggestions,$MV2_KEEP$GPU_OFF_FEATURES --load-extension=$EXT${PIT_SPKI_FLAG:+ $PIT_SPKI_FLAG}"
+FLAGS="--user-data-dir=$DATA --class=TronBrowser --no-first-run --no-default-browser-check --no-pings --disable-background-networking --disable-breakpad --disable-domain-reliability --disable-sync --disable-features=Translate,OptimizationHints,InterestFeedContentSuggestions,$MV2_KEEP$GPU_OFF_FEATURES --load-extension=$EXT"
 
 # Make the tab-strip audio indicator a clickable mute/unmute control. Upstream
 # media::kEnableTabMuting is DISABLED_BY_DEFAULT and stock Chrome only turns it

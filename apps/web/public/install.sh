@@ -478,6 +478,9 @@ download_ungoogled_macos() { # launcher_dir
 # we install it as part of setup. Skip with TB_NO_BROWSER_INSTALL=1.
 ensure_browser() {
   [ "${TB_NO_BROWSER_INSTALL:-0}" = "1" ] && return 0
+  # With TronBrowser's own engine on disk there is nothing to install here.
+  _eldir="$(find "$APP_DIR" -maxdepth 3 -type f -name tronbrowser 2>/dev/null | head -n1)"
+  if [ -n "$_eldir" ] && [ -x "$(dirname "$_eldir")/engine/chrome" ]; then return 0; fi
 
   if [ "$(uname -s)" = "Darwin" ]; then
     # Where our launcher lives (holds the trust marker for the no-brew path).
@@ -690,6 +693,67 @@ download_obscura() { # dest_dir
   rm -rf "$tmp"; return 1
 }
 
+# TronBrowser's own engine: the portable ungoogled-chromium
+# (github.com/ungoogled-software/ungoogled-chromium-portablelinux), the same
+# build the Docker image runs. ~170 MB, so it is not in the release tarball;
+# the installer fetches the pinned release next to the launcher (engine/), like
+# Obscura. The launcher prefers it over any distro or Flathub Chromium: it is
+# the one build verified end to end, and unlike the Flathub ungoogled-chromium
+# it honours the per-user NSS trust store, which is what makes https on Moshpit
+# names work with no flags. Linux only (macOS keeps the Homebrew cask). Skip with
+# TB_NO_ENGINE_INSTALL=1, pin another release with TRONBROWSER_ENGINE_VERSION.
+ENGINE_VERSION="${TRONBROWSER_ENGINE_VERSION:-152.0.7977.82-1}"
+
+engine_asset() { # -> asset name for this arch, or nothing (Linux only)
+  [ "$(uname -s)" = "Linux" ] || return 1
+  case "$(uname -m)" in
+    x86_64|amd64)  echo "ungoogled-chromium-${ENGINE_VERSION}-x86_64_linux.tar.xz" ;;
+    aarch64|arm64) echo "ungoogled-chromium-${ENGINE_VERSION}-arm64_linux.tar.xz" ;;
+    *) return 1 ;;
+  esac
+}
+
+download_engine() { # dest_dir
+  dst="$1"
+  asset="$(engine_asset)" || return 1
+  url="https://github.com/ungoogled-software/ungoogled-chromium-portablelinux/releases/download/${ENGINE_VERSION}/${asset}"
+  tmp="$(mktemp -d)"
+  info "Downloading TronBrowser's engine, ungoogled-chromium ${ENGINE_VERSION} ($asset, ~170 MB)…"
+  if fetch "$url" "$tmp/engine.tar.xz" 2>/dev/null && mkdir -p "$tmp/engine" \
+     && tar -xJf "$tmp/engine.tar.xz" --strip-components=1 -C "$tmp/engine" 2>/dev/null \
+     && [ -x "$tmp/engine/chrome" ]; then
+    # Swap in whole: a half-written engine dir must never be what the launcher finds.
+    rm -rf "$dst.new"; mv "$tmp/engine" "$dst.new"
+    echo "$ENGINE_VERSION" > "$dst.new/VERSION"
+    rm -rf "$dst.old"; [ -d "$dst" ] && mv "$dst" "$dst.old"
+    mv "$dst.new" "$dst"; rm -rf "$dst.old" "$tmp"
+    [ -x "$dst/chrome" ] && return 0
+  fi
+  rm -rf "$tmp"; return 1
+}
+
+ensure_engine() {
+  [ "${TB_NO_ENGINE_INSTALL:-0}" = "1" ] && return 0
+  [ "$(uname -s)" = "Linux" ] || return 0
+  endest="$APP_DIR/engine"
+  _ldir="$(find "$APP_DIR" -maxdepth 3 -type f -name tronbrowser 2>/dev/null | head -n1)"
+  [ -n "$_ldir" ] && endest="$(dirname "$_ldir")/engine"
+  if [ -x "$endest/chrome" ] && [ "$(cat "$endest/VERSION" 2>/dev/null)" = "$ENGINE_VERSION" ]; then return 0; fi
+  if ! tar --help 2>/dev/null | grep -q -- '-J\|xz'; then
+    if ! command -v xz >/dev/null 2>&1; then
+      warn "Couldn't install TronBrowser's engine: 'tar' here cannot read .xz and 'xz' is not installed (Debian/Ubuntu: sudo apt install xz-utils). Falling back to the system or Flatpak Ungoogled Chromium."
+      return 1
+    fi
+  fi
+  info "Setting up TronBrowser's engine (ungoogled-chromium ${ENGINE_VERSION})…"
+  if download_engine "$endest"; then
+    info "Installed the engine to $endest"
+    return 0
+  fi
+  warn "Couldn't install TronBrowser's engine; falling back to the system or Flatpak Ungoogled Chromium (https on Moshpit names may warn there). Retry with: curl -fsSL $INSTALL_URL | sh -s -- ensure-engine"
+  return 1
+}
+
 ensure_obscura() {
   [ "${TB_NO_OBSCURA_INSTALL:-0}" = "1" ] && return 0
   obdest="$APP_DIR/obscura-bin"
@@ -843,6 +907,7 @@ StartupNotify=true
 DESKTOP
   command -v update-desktop-database >/dev/null 2>&1 && update-desktop-database "$apps_dir" 2>/dev/null || true
 
+  ensure_engine   || true  # TronBrowser's own engine; ensure_browser is the fallback
   ensure_browser
   # `|| true` because this script runs under `set -eu`: both of these return 1
   # when they could not install their tool, and a missing nice-to-have must not
@@ -954,6 +1019,7 @@ do_upgrade() {
   [ -n "$latest" ] || err "could not resolve the latest release of $REPO"
   if [ "$current" = "$latest" ] && [ "${TB_FORCE:-0}" != "1" ]; then
     info "TronBrowser is already up to date ($current)."
+    ensure_engine   || true   # and that TronBrowser's own engine is current
     ensure_browser            # still make sure Ungoogled Chromium is installed
     ensure_tor      || true   # and that Tor is available for the toggle
     ensure_certutil || true   # and that Moshpit trust can be written
@@ -1019,6 +1085,7 @@ case "$cmd" in
     esac ;;
   remove|uninstall) do_remove ;;
   ensure-tor) ensure_tor ;;
+  ensure-engine) ensure_engine ;;
   ensure-obscura) ensure_obscura ;;
   ensure-certutil) ensure_certutil ;;
   version|--version|-v) do_version ;;
