@@ -337,8 +337,10 @@ async function togglePit() {
         showNetStatus('warn', 'Couldn’t reach the TronBrowser helper. Restart TronBrowser and try again, or run <code>tron upgrade</code>.');
       } else if (err === 'pit-port-busy') {
         showNetStatus('warn', `Port ${PIT_SOCKS_PORT} on this machine is taken by another program, so the pit resolver couldn’t start.`);
+      } else if (err === 'helper-stale') {
+        showNetStatus('warn', 'TronBrowser’s helper is still the older version, which has no pit resolver. It is normally replaced a few seconds after launch — try 🤘 Pit again; if it keeps failing, quit TronBrowser completely and relaunch it.');
       } else {
-        showNetStatus('warn', 'The pit resolver couldn’t start. See <code>~/.tronbrowser/tor-helper.log</code> for the reason.');
+        showNetStatus('warn', `The pit resolver couldn’t start (${safeHost(err || 'pit-failed')}). See <code>~/.tronbrowser/tor-helper.log</code> for the reason.`);
       }
     }
   } catch (e) {

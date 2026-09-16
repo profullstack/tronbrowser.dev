@@ -75,7 +75,11 @@ would leak every lookup outside Tor, so:
 - If the DoH resolver did not answer the probe (offline, slow), the pit stays
   **on** and says so; names resolve as soon as it is reachable.
 - Failures the sidebar explains: the helper is not running (`tron upgrade`,
-  restart), port 9081 is taken, Tor is on.
+  restart), port 9081 is taken, Tor is on, or the helper is still an older
+  version. That last one is a launch race: the launcher replaces an out-of-date
+  helper in the background a moment after the browser starts, and a click in
+  that window reaches the old helper's 404. The background retries `/pit/start`
+  for about ten seconds before reporting it.
 
 ## Files
 
