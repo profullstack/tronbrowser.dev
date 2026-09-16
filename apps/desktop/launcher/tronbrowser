@@ -175,7 +175,7 @@ if [ "$TOR" != "1" ]; then
     # running helper isn't this version — otherwise leave a healthy current
     # helper alone (don't drop an active Tor session). All backgrounded so the
     # kill+settle never holds up the browser launch.
-    HELPER_VERSION=3.4.1
+    HELPER_VERSION=3.4.2
     (
       _pf="$DATA/tor-helper.pid"
       _rv="$(curl -fsS --max-time 1 http://127.0.0.1:9061/status 2>/dev/null | sed -n 's/.*"version"[^"]*"\([^"]*\)".*/\1/p')"
@@ -187,14 +187,18 @@ if [ "$TOR" != "1" ]; then
           lsof -ti tcp:9061 2>/dev/null | while read -r _p; do kill "$_p" 2>/dev/null || true; done
         fi
         sleep 1   # let the control port free up before re-binding
-        # A Flatpak engine reads ~/.var/app/<app>/.pki/nssdb (its --persist=.pki),
-        # so the helper's per-name trust must land there, not in ~/.pki/nssdb.
+        # A Flatpak engine reads one of ~/.var/app/<app>/.pki/nssdb (its
+        # --persist=.pki) or ~/.var/app/<app>/data/pki/nssdb (its XDG_DATA_HOME,
+        # Chromium's default since M146) — never the real ~/.pki. Name both; the
+        # helper writes whichever exist.
         _pit_db_extra=""
         if [ "$BROWSER" = "flatpak" ] && [ -n "$FLATPAK_APP" ]; then
-          _pit_db_extra="$HOME/.var/app/$FLATPAK_APP/.pki/nssdb"
+          _pit_db_extra="$HOME/.var/app/$FLATPAK_APP/.pki/nssdb:$HOME/.var/app/$FLATPAK_APP/data/pki/nssdb"
         fi
+        _pit_engine=native
+        [ "$BROWSER" = "flatpak" ] && _pit_engine=flatpak
         exec env TRON_TOR_DATA="$DATA/tor" TRON_TOR_BIN_DIR="$DIR" TRON_TOR_PIDFILE="$_pf" \
-          TRON_PIT_NSSDB_EXTRA="$_pit_db_extra" \
+          TRON_PIT_NSSDB_EXTRA="$_pit_db_extra" TRON_PIT_ENGINE="$_pit_engine" \
           python3 "$DIR/tron-tor-helper"
       fi
     ) >>"$DATA/tor-helper.log" 2>&1 &
@@ -564,14 +568,28 @@ sync_moshpit_trust() {
   if [ "$(uname -s)" != "Linux" ]; then return 0; fi
   if [ "${TRONBROWSER_NO_MOSHPIT_TRUST:-0}" = "1" ]; then return 0; fi
 
-  # A Flatpak engine is sandboxed with --persist=.pki: inside it, ~/.pki is
-  # ~/.var/app/<app>/.pki, so that database is the one it actually reads and
-  # an import into the real ~/.pki/nssdb never reaches it. Write both.
-  _flatdb=""
+  # Chromium opens ONE of two databases per home — the legacy ~/.pki/nssdb or,
+  # since M146, ${XDG_DATA_HOME:-~/.local/share}/pki/nssdb — and which one a
+  # build picks has changed between versions. A Flatpak engine is sandboxed
+  # with --persist=.pki and XDG_DATA_HOME=~/.var/app/<app>/data, so its two are
+  # ~/.var/app/<app>/.pki/nssdb and ~/.var/app/<app>/data/pki/nssdb, and the
+  # real ~/.pki is invisible to it. Write every candidate that already exists;
+  # create the legacy one only when neither does (a fresh ~/.pki/nssdb beside a
+  # populated XDG database would flip a newer Chromium onto an empty store).
+  _xdgdb="${XDG_DATA_HOME:-$HOME/.local/share}/pki/nssdb"
+  _dbs=""
+  if [ -f "$_xdgdb/cert9.db" ]; then _dbs="$_xdgdb"; fi
+  if [ -f "$HOME/.pki/nssdb/cert9.db" ] || [ -z "$_dbs" ]; then _dbs="$HOME/.pki/nssdb${_dbs:+ $_dbs}"; fi
   if [ "$BROWSER" = "flatpak" ] && [ -n "$FLATPAK_APP" ]; then
-    _flatdb="$HOME/.var/app/$FLATPAK_APP/.pki/nssdb"
+    _fa="$HOME/.var/app/$FLATPAK_APP"
+    _fdbs=""
+    if [ -f "$_fa/data/pki/nssdb/cert9.db" ]; then _fdbs="$_fa/data/pki/nssdb"; fi
+    if [ -f "$_fa/.pki/nssdb/cert9.db" ] || [ -z "$_fdbs" ]; then _fdbs="$_fa/.pki/nssdb${_fdbs:+ $_fdbs}"; fi
+    _dbs="$_dbs $_fdbs"
   fi
-  for _nssdb in "$HOME/.pki/nssdb" ${_flatdb:+"$_flatdb"}; do
+  # $_dbs is a space-separated list of paths under $HOME; a home with a space
+  # in it is not something the rest of this launcher survives either.
+  for _nssdb in $_dbs; do
   _ready=0
 
   # Each word below is a literal path or a glob result, so this stays
@@ -665,7 +683,25 @@ esac
 # bundle one, but the kill switch is not ours to flip on their behalf.
 # (Ungoogled keeps MV2, but force it off everywhere to be safe.)
 MV2_KEEP="ExtensionManifestV2Disabled,ExtensionManifestV2Unsupported,ExtensionManifestV2DeprecationWarning,ExtensionManifestV2DeprecationUnsupported"
-FLAGS="--user-data-dir=$DATA --class=TronBrowser --no-first-run --no-default-browser-check --no-pings --disable-background-networking --disable-breakpad --disable-domain-reliability --disable-sync --disable-features=Translate,OptimizationHints,InterestFeedContentSuggestions,$MV2_KEEP$GPU_OFF_FEATURES --load-extension=$EXT"
+# Flatpak engine only: the Flathub ungoogled-chromium ignores NSS user trust (the
+# pit helper's per-name import sat in the very database strace showed it opening,
+# and Chromium still answered "No matching issuer found"), but it honours pins
+# given on the command line. The helper records every pin it accepted — a key the
+# registry vouches for, for that name — in $HOME/.tronbrowser/pit-certs/pins.txt;
+# hand them over here. Chromium shows a one-line "unsupported command-line flag"
+# bar at start when this switch is present, so it is only passed when there is at
+# least one pin, i.e. on a machine that has used https on a pit name. Native
+# engines honour NSS and get nothing here.
+pit_spki_flag() { # pins_file -> prints the switch, or nothing
+  [ -s "$1" ] || return 0
+  _pins="$(awk 'NF >= 2 && $2 !~ /[^A-Za-z0-9+\/=]/ { print $2 }' "$1" | sort -u | paste -sd, -)"
+  [ -n "$_pins" ] && printf -- '--ignore-certificate-errors-spki-list=%s' "$_pins"
+}
+PIT_SPKI_FLAG=""
+if [ "$BROWSER" = "flatpak" ]; then
+  PIT_SPKI_FLAG="$(pit_spki_flag "$HOME/.tronbrowser/pit-certs/pins.txt")"
+fi
+FLAGS="--user-data-dir=$DATA --class=TronBrowser --no-first-run --no-default-browser-check --no-pings --disable-background-networking --disable-breakpad --disable-domain-reliability --disable-sync --disable-features=Translate,OptimizationHints,InterestFeedContentSuggestions,$MV2_KEEP$GPU_OFF_FEATURES --load-extension=$EXT${PIT_SPKI_FLAG:+ $PIT_SPKI_FLAG}"
 
 # Make the tab-strip audio indicator a clickable mute/unmute control. Upstream
 # media::kEnableTabMuting is DISABLED_BY_DEFAULT and stock Chrome only turns it

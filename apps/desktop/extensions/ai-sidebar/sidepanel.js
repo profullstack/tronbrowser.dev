@@ -320,8 +320,10 @@ async function togglePit() {
     const trust = res && res.trust;
     const httpsTip = !trust
       ? ''
-      : trust.available
-        ? '<code>https://</code> on a pit name is trusted per name on first use, when the registry publishes its pin.'
+      : trust.available && trust.relaunch
+        ? '<code>https://</code> on a pit name: the first visit records its key (when the registry publishes a matching pin), and it loads after the next TronBrowser restart — this engine only takes pins at start.'
+        : trust.available
+          ? '<code>https://</code> on a pit name is trusted per name on first use, when the registry publishes its pin.'
         : trust.why === 'no-certutil'
           ? '<code>https://</code> on a pit name will warn until <code>certutil</code> is installed (Debian/Ubuntu: <code>libnss3-tools</code>, Fedora: <code>nss-tools</code>, Arch: <code>nss</code>).'
           : '<code>https://</code> on a pit name will warn on this platform; run <code>moshcode dns enable</code> for the certificate.';
