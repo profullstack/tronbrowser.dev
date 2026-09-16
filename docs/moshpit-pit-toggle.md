@@ -59,6 +59,17 @@ The PAC is not `mandatory`: if it ever fails to evaluate, Chromium falls back to
 
 ## HTTPS on a pit name
 
+**Since 2026-09-16 the registry signs.** pit.moshcode.sh runs a certificate
+authority for the names it holds (moshcode `apps/pwa/docs/moshpit-ca.md`):
+one root, 30-day leaves per name issued to whoever controls the name. The
+installer fetches that root on install and on `tron upgrade`
+(`ensure_moshpit_root`, checked against the fingerprint the registry reports),
+keeps it next to the launcher as `moshpit-root-ca.crt`, and the launcher
+imports it into the browser's trust store on every start under the nickname
+`Moshpit Root CA`, the same one `moshcode dns enable` uses. Once origins serve
+registry-signed chains, that root is all a browser needs; the per-name import
+below stays for origins that still self-sign and is otherwise idle.
+
 No public CA issues for a name outside the ICANN root, so an origin such as
 `chovy.hacker` serves a self-signed leaf for its own name and the registry
 publishes the SHA-256 of that key (`/api/moshpit/pins?name=`, the RFC 7469 pin
