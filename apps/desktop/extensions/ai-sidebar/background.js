@@ -338,6 +338,34 @@ async function disablePit() {
   await setPitBadge(false);
 }
 
+// The launcher replaces an out-of-date helper in the background right after
+// launch (kill, settle, exec). A click in that window reaches the OLD helper,
+// which has no /pit/* routes and answers 404 {"error":"not-found"}, or reaches
+// nobody at all. Both are transient, so try for a few seconds before giving up,
+// and say "stale helper" rather than "couldn't start" when it never catches up.
+const PIT_START_ATTEMPTS = 5;
+const PIT_START_RETRY_MS = 2000;
+
+function pitHelperIsStale(res) {
+  return !res || res.error === 'not-found' || (!res.started && typeof res.port !== 'number');
+}
+
+async function startPitViaHelper() {
+  let last = null;
+  for (let i = 0; i < PIT_START_ATTEMPTS; i++) {
+    if (i) await new Promise((r) => setTimeout(r, PIT_START_RETRY_MS));
+    try {
+      last = await helperJson('/pit/start', 'POST');
+    } catch (_) {
+      last = { error: 'unreachable' };
+      continue;
+    }
+    if (!pitHelperIsStale(last)) return last; // a pit-capable helper answered, ok or not
+  }
+  if (last && last.error === 'unreachable') return last;
+  return { started: false, error: 'helper-stale' };
+}
+
 async function stopPitViaHelper() {
   try {
     const ctrl = new AbortController();
@@ -356,15 +384,9 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
           sendResponse({ enabled: false, error: 'tor-on' });
           return;
         }
-        let started;
-        try {
-          started = await helperJson('/pit/start', 'POST');
-        } catch (_) {
-          sendResponse({ enabled: false, error: 'unreachable' });
-          return;
-        }
-        if (!started || !started.started) {
-          sendResponse({ enabled: false, error: (started && started.error) || 'pit-failed' });
+        const started = await startPitViaHelper();
+        if (!started.started) {
+          sendResponse({ enabled: false, error: started.error || 'pit-failed' });
           return;
         }
         await enablePit();
