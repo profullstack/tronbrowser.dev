@@ -54,7 +54,7 @@ BUNDLED_DIR = os.environ.get("TRON_TOR_BIN_DIR", "")
 PIDFILE = os.environ.get("TRON_TOR_PIDFILE", "")
 # Bumped whenever the helper protocol/behaviour changes; the launcher kills a
 # stale helper so the current version always runs.
-HELPER_VERSION = "3.4.1"
+HELPER_VERSION = "3.4.2"
 _lock = threading.Lock()
 _proc = None              # the running tor subprocess (or None)
 _ready = False            # True once tor reported Bootstrapped 100%
@@ -347,13 +347,28 @@ def pit_resolve(name):
 # handshake that follows already finds the certificate trusted.
 PIT_REGISTRY = os.environ.get("TRON_PIT_REGISTRY", "https://pit.moshcode.sh").rstrip("/")
 PIT_NSSDB = os.environ.get("TRON_PIT_NSSDB", os.path.expanduser("~/.pki/nssdb"))
-# The launcher names the database of the engine it actually started (colon
-# separated). A Flatpak Chromium is sandboxed with `--persist=.pki`: inside it,
-# ~/.pki IS ~/.var/app/<app>/.pki, so an import into the real ~/.pki/nssdb is
-# invisible to it. Every Chromium-looking Flatpak database that exists is
-# covered as well, so the import lands wherever the browser will look.
+# Chromium opens ONE of two databases per home: the legacy ~/.pki/nssdb, or
+# since M146 ${XDG_DATA_HOME:-~/.local/share}/pki/nssdb — and which one a given
+# build picks has changed between versions (bonita's Flatpak 152 read the XDG
+# one while ~/.pki/nssdb existed beside it). A Flatpak Chromium adds a twist:
+# it is sandboxed with `--persist=.pki` and XDG_DATA_HOME=~/.var/app/<app>/data,
+# so its two candidates are ~/.var/app/<app>/.pki/nssdb and
+# ~/.var/app/<app>/data/pki/nssdb, and the real ~/.pki is invisible to it.
+# Rule: for each home, write every candidate that already exists; create the
+# legacy one only when neither does (creating ~/.pki/nssdb next to a populated
+# XDG database would flip a newer Chromium onto an empty store). The launcher
+# names the engine's own candidates in TRON_PIT_NSSDB_EXTRA (colon separated).
 PIT_NSSDB_EXTRA = os.environ.get("TRON_PIT_NSSDB_EXTRA", "")
+# What the launcher started: "flatpak" or "native". The Flathub ungoogled-chromium
+# ignores NSS user trust (verified on bonita: the leaf sat in the very database
+# strace showed it opening, and Chromium still said "No matching issuer found"),
+# but it honours --ignore-certificate-errors-spki-list. So every pin this helper
+# accepts is also written to PIT_PINS_FILE, and for a Flatpak engine the launcher
+# passes those pins on the command line at the next start. A name first trusted
+# mid-session therefore needs one relaunch on a Flatpak engine; the sidebar says so.
+PIT_ENGINE = os.environ.get("TRON_PIT_ENGINE", "native")
 PIT_CERT_DIR = os.environ.get("TRON_PIT_CERT_DIR", os.path.expanduser("~/.tronbrowser/pit-certs"))
+PIT_PINS_FILE = os.environ.get("TRON_PIT_PINS_FILE", os.path.join(PIT_CERT_DIR, "pins.txt"))
 _trust_lock = threading.Lock()
 _trust_seen = {}            # name -> (ok, why); retried after a failure only once the pit restarts
 
@@ -435,28 +450,58 @@ def _safe_name(name):
     return re.sub(r"\.{2,}", ".", re.sub(r"[^a-z0-9.-]", "", name.lower())).strip(".-")
 
 
+def remember_pin(name, pin):
+    """Append `name pin` to the pins file the launcher reads (once per pair)."""
+    try:
+        os.makedirs(os.path.dirname(PIT_PINS_FILE), mode=0o700, exist_ok=True)
+        have = set()
+        if os.path.exists(PIT_PINS_FILE):
+            with open(PIT_PINS_FILE) as f:
+                have = {line.strip() for line in f}
+        line = "%s %s" % (name, pin)
+        if line not in have:
+            with open(PIT_PINS_FILE, "a") as f:
+                f.write(line + "\n")
+    except OSError as exc:
+        log("pit: could not record the pin for %s: %s" % (name, exc))
+
+
 def trust_available():
-    """Can this machine take a per-name import at all? {available, why}."""
+    """Can this machine take a per-name import at all? {available, why}.
+    `relaunch` is true where the engine only honours pins given at start."""
     if platform.system() != "Linux":
-        return {"available": False, "why": "unsupported-platform"}
+        return {"available": False, "why": "unsupported-platform", "engine": PIT_ENGINE}
     if not shutil.which("certutil"):
-        return {"available": False, "why": "no-certutil"}
-    return {"available": True, "why": "certutil", "nssdbs": pit_nssdbs()}
+        return {"available": False, "why": "no-certutil", "engine": PIT_ENGINE}
+    return {"available": True, "why": "certutil", "engine": PIT_ENGINE,
+            "relaunch": PIT_ENGINE == "flatpak", "nssdbs": pit_nssdbs()}
+
+
+def _nssdb_groups():
+    """[[candidate, ...], ...] — one group per home a Chromium might use."""
+    xdg = os.environ.get("XDG_DATA_HOME") or os.path.expanduser("~/.local/share")
+    groups = [[PIT_NSSDB, os.path.join(xdg, "pki", "nssdb")]]
+    extra = [d for d in PIT_NSSDB_EXTRA.split(":") if d]
+    if extra:
+        groups.append(extra)
+    for appdir in sorted(glob.glob(os.path.expanduser("~/.var/app/*"))):
+        if "chromium" in os.path.basename(appdir).lower() and os.path.isdir(appdir):
+            groups.append([os.path.join(appdir, ".pki", "nssdb"),
+                           os.path.join(appdir, "data", "pki", "nssdb")])
+    return groups
 
 
 def pit_nssdbs():
-    """Every NSS database a Chromium on this machine might read, primary first."""
-    dbs = [PIT_NSSDB] + [d for d in PIT_NSSDB_EXTRA.split(":") if d]
-    for cand in sorted(glob.glob(os.path.expanduser("~/.var/app/*/.pki/nssdb"))):
-        app = os.path.basename(os.path.dirname(os.path.dirname(cand)))
-        if "chromium" in app.lower():
-            dbs.append(cand)
+    """Every NSS database a Chromium on this machine might read: per home, the
+    candidates that already exist, else the first one (to be created)."""
     seen, out = set(), []
-    for d in dbs:
-        d = os.path.abspath(os.path.expanduser(d))
-        if d not in seen:
-            seen.add(d)
-            out.append(d)
+    for group in _nssdb_groups():
+        paths = [os.path.abspath(os.path.expanduser(p)) for p in group]
+        existing = [p for p in paths if os.path.exists(os.path.join(p, "cert9.db"))]
+        for p in existing or paths[:1]:
+            if p not in seen:
+                seen.add(p)
+                out.append(p)
     return out
 
 
@@ -529,6 +574,7 @@ def _ensure_leaf_trust(name, ip):
     if is_ca:
         log("pit: https for %s: certificate is CA:TRUE — refusing to trust a key that could vouch for any name" % name)
         return False, "ca-true"
+    remember_pin(name, pin)
     try:
         os.makedirs(PIT_CERT_DIR, mode=0o700, exist_ok=True)
         cert_file = os.path.join(PIT_CERT_DIR, "moshpit-%s.crt" % name)

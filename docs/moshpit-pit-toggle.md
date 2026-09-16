@@ -1,6 +1,6 @@
 # 🤘 Pit toggle — Moshpit names for one browser session
 
-**Status:** shipped with the AI-sidebar extension + `tron-tor-helper` 3.4.1
+**Status:** shipped with the AI-sidebar extension + `tron-tor-helper` 3.4.2
 **Owner:** desktop (`apps/desktop`)
 **Scope:** resolve Moshpit names in the running browser with one click. Not a
 replacement for `moshcode dns enable`, which does it for the whole machine.
@@ -79,13 +79,34 @@ with root. The pit toggle does the no-root equivalent for this browser:
 4. All of this happens before the SOCKS reply, so the browser's TLS handshake
    that follows already finds the certificate trusted.
 
-The import goes into every database the engine might read: `~/.pki/nssdb`,
-the database the launcher names for the engine it started, and any
-`~/.var/app/*chromium*/.pki/nssdb`. That last part matters: the Flathub
-ungoogled-chromium is sandboxed with `--persist=.pki`, so inside it `~/.pki`
-is `~/.var/app/io.github.ungoogled_software.ungoogled_chromium/.pki`, and an
-import into the real `~/.pki/nssdb` never reaches it (the launcher's Local CA
-sync had the same blind spot and now writes both).
+Chromium opens one of two databases per home: the legacy `~/.pki/nssdb`, or
+since M146 `${XDG_DATA_HOME:-~/.local/share}/pki/nssdb`, and which one a build
+picks has changed between versions. A Flatpak engine is sandboxed with
+`--persist=.pki` and `XDG_DATA_HOME=~/.var/app/<app>/data`, so its two
+candidates are `~/.var/app/<app>/.pki/nssdb` and
+`~/.var/app/<app>/data/pki/nssdb`, and the real `~/.pki` is invisible to it.
+The helper and the launcher's Local CA sync therefore write every candidate
+that already exists for each home (the real one, the engine's, and any
+`~/.var/app/*chromium*`), and create the legacy one only when none exists,
+so a browser is never flipped onto a fresh empty store. Found on bonita:
+Flatpak ungoogled-chromium 152 read `data/pki/nssdb` while `.pki/nssdb`
+existed beside it, and Chromium's net log said "No matching issuer found"
+until that database held the leaf too.
+
+**Flatpak engines do not honour NSS user trust at all.** Found on bonita with
+the Flathub ungoogled-chromium 152: `strace` showed Chromium opening the very
+database that held the leaf (peer and anchor trust both tried), single-process
+and no-sandbox made no difference, and its net log still said "No matching
+issuer found". What that build does honour is
+`--ignore-certificate-errors-spki-list`, Chromium's own per-key allowance. So
+the helper also records every pin it accepts in
+`~/.tronbrowser/pit-certs/pins.txt`, and for a Flatpak engine the launcher
+passes those pins on the command line at start. Two consequences: a name first
+trusted mid-session loads over https after one relaunch (the sidebar says so),
+and Chromium shows its one-line "unsupported command-line flag" bar at start on
+a machine that has such pins. Native engines take the NSS path and get neither.
+The clean way out is a Moshpit CA on the registry side, or shipping the
+portable ungoogled-chromium as TronBrowser's own engine, which honours NSS.
 
 Linux only for now (Chromium on macOS reads the keychain, which needs an
 interactive prompt), and it needs `certutil` (Debian/Ubuntu `libnss3-tools`,
