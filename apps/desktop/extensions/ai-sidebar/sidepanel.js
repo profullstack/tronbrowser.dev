@@ -324,6 +324,8 @@ async function togglePit() {
         ? '<code>https://</code> on a pit name is trusted per name on first use, when the registry publishes its pin.'
         : trust.why === 'flatpak-engine'
           ? 'This TronBrowser is running the Flatpak Chromium, which ignores per-name trust, so <code>https://</code> on a pit name will warn. Run <code>tron upgrade</code> to get TronBrowser’s own engine, then relaunch.'
+        : trust.why === 'windows-root-setup'
+          ? 'On Windows, registry-signed HTTPS needs the optional <code>tronbrowser.cmd --setup-pit-https</code> setup. It asks before adding a persistent root CA for all apps in your Windows account. Per-name self-signed certificates are not automatically trusted.'
         : trust.why === 'no-certutil'
           ? '<code>https://</code> on a pit name will warn until <code>certutil</code> is installed (Debian/Ubuntu: <code>libnss3-tools</code>, Fedora: <code>nss-tools</code>, Arch: <code>nss</code>).'
           : '<code>https://</code> on a pit name will warn on this platform; run <code>moshcode dns enable</code> for the certificate.';
@@ -345,7 +347,7 @@ async function togglePit() {
       if (err === 'tor-on') {
         showNetStatus('warn', 'Turn 🧅 Tor off first — Moshpit names can’t resolve through Tor, and checking them would leak lookups outside it.');
       } else if (err === 'unreachable') {
-        showNetStatus('warn', 'Couldn’t reach the TronBrowser helper. Restart TronBrowser and try again, or run <code>tron upgrade</code>.');
+        showNetStatus('warn', 'Couldn’t reach the TronBrowser helper. Restart through the TronBrowser launcher. On Windows, use the complete ZIP and install Python 3.9+; loading only the extension cannot start the helper. On Linux/macOS, run <code>tron upgrade</code> if needed.');
       } else if (err === 'pit-port-busy') {
         showNetStatus('warn', `Port ${PIT_SOCKS_PORT} on this machine is taken by another program, so the pit resolver couldn’t start.`);
       } else if (err === 'helper-stale') {

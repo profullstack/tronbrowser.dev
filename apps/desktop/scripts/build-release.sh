@@ -71,6 +71,7 @@ stage() { # dest dir
   # On-demand network helper for the in-browser 🧅 Tor and 🤘 Pit toggles (the
   # launcher starts it; it starts Tor / the Moshpit resolver only when asked).
   install -m 0755 "$DESKTOP/launcher/tron-tor-helper" "$s/tron-tor-helper"
+  install -m 0644 "$DESKTOP/launcher/tron-windows.py" "$s/tron-windows.py"
   # Repoints installed-web-app desktop icons at the launcher. The shim runs it
   # on every start (the engine rewrites those files behind us); `tron pwa` is
   # the manual handle.

@@ -1,6 +1,6 @@
 # 🤘 Pit toggle — Moshpit names for one browser session
 
-**Status:** shipped with the AI-sidebar extension + `tron-tor-helper` 3.4.3
+**Status:** AI-sidebar extension + `tron-tor-helper` 3.4.4
 **Owner:** desktop (`apps/desktop`)
 **Scope:** resolve Moshpit names in the running browser with one click. Not a
 replacement for `moshcode dns enable`, which does it for the whole machine.
@@ -174,6 +174,8 @@ would leak every lookup outside Tor, so:
 | --- | --- |
 | `apps/desktop/launcher/tron-tor-helper` | `/pit/*` routes, the SOCKS5 resolver, the DoH client, per-name leaf trust |
 | `apps/desktop/launcher/tronbrowser` | starts the helper; `HELPER_VERSION` must match the helper's so a stale one is replaced |
+| `apps/desktop/launcher/tronbrowser.cmd` | Windows launcher, helper startup and explicit HTTPS setup/removal commands |
+| `apps/desktop/launcher/tron-windows.py` | bounded Windows readiness, pinned opt-in CA setup and offline rollback |
 | `apps/desktop/extensions/ai-sidebar/pit-proxy.js` | the PAC + proxy config (pure, tested in `pit-proxy.test.js`) |
 | `apps/desktop/extensions/ai-sidebar/background.js` | `pit-set` / `pit-status` messages, badge, session-scoped state |
 | `apps/desktop/extensions/ai-sidebar/sidepanel.*` | the button and its status copy |
@@ -183,6 +185,13 @@ Environment knobs on the helper: `TRON_PIT_SOCKS_PORT` (9081),
 `TRON_PIT_NSSDB` (`~/.pki/nssdb`), `TRON_PIT_CERT_DIR`.
 
 ## Testing the helper by hand
+
+The control API accepts only the literal `127.0.0.1:<port>` Host, not
+`localhost` or an absent Host. GET is read-only (`/`, `/status`, `/pit/status`);
+start and stop use POST. The bundled extension uses simple requests without
+custom headers. Web-page origins and preflights are rejected. These checks
+reduce web-origin access; they are not authentication against other local
+processes or installed extensions.
 
 ```sh
 TRON_TOR_HELPER_PORT=19061 TRON_PIT_SOCKS_PORT=19081 python3 apps/desktop/launcher/tron-tor-helper &
@@ -194,13 +203,91 @@ curl -X POST http://127.0.0.1:19061/pit/stop
 
 ## Not in this version
 
-- **`https://` on macOS and Windows.** Per-name trust writes the NSS database,
-  which only Chromium on Linux reads. `moshcode dns enable` remains the answer
-  there.
+- **Per-name HTTPS trust on macOS and Windows.** Per-name trust writes the NSS
+  database, which only Chromium on Linux reads. Windows can explicitly opt into
+  registry-root trust using the setup below. This does not trust self-signed
+  origins, and macOS trust setup remains unchanged.
 - **"Moshpit wins."** The resolvers' `MOSHPIT_RESOLVE_MODE=moshpit` lets a
   registered name override a clearnet one. The toggle only implements the
   default `fallback` policy.
 - **Persisting across launches.** Mirrors Tor deliberately; a setting to keep
   the pit on would be a small follow-up.
-- **Windows.** The `.cmd` shim does not start the helper, so neither toggle
-  works there yet.
+
+## Windows launcher and HTTPS
+
+Extract the **complete Windows release ZIP** and run `tronbrowser.cmd`. Loading
+only the extension into a portable browser cannot start the helper. Install
+Python 3.9+ (3.12 or newer recommended) from python.org first. The launcher checks
+`python/python.exe` beside the launcher, then `py -3`, then Python on PATH; it
+does not download an interpreter. Set `TRONBROWSER_BROWSER` to your Ungoogled
+Chromium executable if it is not in a standard install location.
+
+The launcher starts the bundled `tron-tor-helper` on loopback and waits for a
+bounded readiness check before opening the browser. It does not enable Pit or
+Tor, change DNS, or install certificates. A failed helper cannot prevent ordinary
+browsing; details are in `%USERPROFILE%\.tronbrowser\tor-helper.log` (or the
+`TRONBROWSER_DATA` directory). A compatible existing helper is reused. An unknown
+service or stale helper is never killed by PID; restart Windows after upgrading
+if a stale helper is still running. Like the Linux helper, it can outlive the
+browser, while the extension's proxy selection resets each browser session.
+
+For **registry-signed HTTPS** there is a separate opt-in command:
+
+```bat
+tronbrowser.cmd --setup-pit-https
+```
+
+This command fetches the CA over verified HTTPS, checks both registry metadata
+and the root SHA-256 pinned in the release, validates its CA constraints, key
+usage and dates with Windows, and requires typing `TRUST` before adding it to
+**Current User / Trusted Root Certification Authorities**. It never changes
+Local Machine roots or DNS and never disables TLS verification. A root rotation
+requires a reviewed code update, not just new metadata from the registry.
+Windows can also display its native Security Warning. Match the printed
+thumbprint before approving; this OS confirmation is not suppressed.
+
+**Trust boundary:** this root is unconstrained. It can vouch for arbitrary DNS
+names in **all apps that use this Windows user store**, not only Moshpit names or
+TronBrowser. The certificate remains installed when Pit is off. Do not approve
+it on a managed/company machine without administrator authorization. Cancel the
+prompt if that trust is not acceptable; HTTP Pit routing remains usable and
+HTTPS certificate warnings remain in place. Never bypass those warnings.
+
+After setup, fully restart TronBrowser and enable Pit. HTTPS still requires a
+valid certificate for the requested hostname; an arbitrary self-signed origin
+will not become trusted. To undo, run `tronbrowser.cmd --remove-pit-https` and
+type `REMOVE`. This works offline, selects only the release-pinned SHA-256 in
+CurrentUser roots, and warns that other applications using this root are affected.
+It can remove a matching root installed by another tool, so ownership is not
+assumed. Fully restart applications afterwards to clear cached trust. If device
+policy or a machine-level root keeps it trusted, ask your administrator; this
+command does not modify LocalMachine roots. Alternatively, use `certmgr.msc`
+and remove only the certificate whose exact thumbprint setup printed. Installing
+an already trusted root is a no-op.
+
+Regression tests (no CA imports or public-network calls):
+
+```sh
+python -B -m unittest discover -s apps/desktop/test -p test_windows_pit.py -v
+```
+
+Run on Windows as well as Linux: native `.cmd` and certificate-inspection tests
+are skipped on other systems.
+
+The separate `windows-browser` CI job runs official checksum-pinned Ungoogled
+Chromium 153.0.8010.52 on a disposable Windows x64 runner, in both headed and
+headless modes. It tests the actual launcher/extension/PAC, registry HTTP and
+HTTPS, native Windows CA consent, cancellation, existing-root no-op, fresh
+profiles, proxy reset, offline CA removal, and rejection of unrelated
+self-signed certificates. After removal, a new browser process must reject the
+registry certificate again. The test saves screenshots and TLS details.
+
+This acceptance harness temporarily imports the pinned root on its disposable
+runner and removes it afterwards. It refuses to run without the explicit
+GitHub-hosted Windows guard. Do not run it on a developer or company machine.
+Its UI automation confirms only the expected native warning matching the
+verified test root; production code does not automate Windows consent.
+
+Passing this pinned-build test is not a guarantee for every browser version,
+Windows architecture, or enterprise trust policy. macOS trust remains outside
+this patch's acceptance scope.

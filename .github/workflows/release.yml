@@ -112,6 +112,8 @@ jobs:
           New-Item -ItemType Directory -Force -Path "$stage/extensions" | Out-Null
           Copy-Item apps/desktop/launcher/tronbrowser "$stage/tronbrowser"
           Copy-Item apps/desktop/launcher/tronbrowser.cmd "$stage/tronbrowser.cmd"
+          Copy-Item apps/desktop/launcher/tron-tor-helper "$stage/tron-tor-helper"
+          Copy-Item apps/desktop/launcher/tron-windows.py "$stage/tron-windows.py"
           Copy-Item -Recurse apps/desktop/extensions/ai-sidebar "$stage/extensions/ai-sidebar"
           # Same wholesale-copy problem build-release.sh has: the vitest files
           # next to the extension sources ride along into the zip. Chrome never
