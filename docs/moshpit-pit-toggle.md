@@ -1,6 +1,6 @@
 # 🤘 Pit toggle — Moshpit names for one browser session
 
-**Status:** shipped with the AI-sidebar extension + `tron-tor-helper` 3.4.3
+**Status:** AI-sidebar extension + `tron-tor-helper` 3.4.4
 **Owner:** desktop (`apps/desktop`)
 **Scope:** resolve Moshpit names in the running browser with one click. Not a
 replacement for `moshcode dns enable`, which does it for the whole machine.
@@ -194,13 +194,67 @@ curl -X POST http://127.0.0.1:19061/pit/stop
 
 ## Not in this version
 
-- **`https://` on macOS and Windows.** Per-name trust writes the NSS database,
-  which only Chromium on Linux reads. `moshcode dns enable` remains the answer
-  there.
+- **Per-name HTTPS trust on macOS and Windows.** Per-name trust writes the NSS
+  database, which only Chromium on Linux reads. Windows can explicitly opt into
+  registry-root trust using the setup below. This does not trust self-signed
+  origins, and macOS trust setup remains unchanged.
 - **"Moshpit wins."** The resolvers' `MOSHPIT_RESOLVE_MODE=moshpit` lets a
   registered name override a clearnet one. The toggle only implements the
   default `fallback` policy.
 - **Persisting across launches.** Mirrors Tor deliberately; a setting to keep
   the pit on would be a small follow-up.
-- **Windows.** The `.cmd` shim does not start the helper, so neither toggle
-  works there yet.
+
+## Windows launcher and HTTPS
+
+Extract the **complete Windows release ZIP** and run `tronbrowser.cmd`. Loading
+only the extension into a portable browser cannot start the helper. Install
+Python 3.9+ (3.12 or newer recommended) from python.org first. The launcher checks
+`python/python.exe` beside the launcher, then `py -3`, then Python on PATH; it
+does not download an interpreter. Set `TRONBROWSER_BROWSER` to your Ungoogled
+Chromium executable if it is not in a standard install location.
+
+The launcher starts the bundled `tron-tor-helper` on loopback and waits for a
+bounded readiness check before opening the browser. It does not enable Pit or
+Tor, change DNS, or install certificates. A failed helper cannot prevent ordinary
+browsing; details are in `%USERPROFILE%\.tronbrowser\tor-helper.log` (or the
+`TRONBROWSER_DATA` directory). A compatible existing helper is reused. An unknown
+service or stale helper is never killed by PID; restart Windows after upgrading
+if a stale helper is still running. Like the Linux helper, it can outlive the
+browser, while the extension's proxy selection resets each browser session.
+
+For **registry-signed HTTPS** there is a separate opt-in command:
+
+```bat
+tronbrowser.cmd --setup-pit-https
+```
+
+This command fetches the CA over verified HTTPS, checks both registry metadata
+and the root SHA-256 pinned in the release, validates its CA constraints, key
+usage and dates with Windows, and requires typing `TRUST` before adding it to
+**Current User / Trusted Root Certification Authorities**. It never changes
+Local Machine roots or DNS and never disables TLS verification. A root rotation
+requires a reviewed code update, not just new metadata from the registry.
+
+**Trust boundary:** this root is unconstrained. It can vouch for arbitrary DNS
+names in **all apps that use this Windows user store**, not only Moshpit names or
+TronBrowser. The certificate remains installed when Pit is off. Do not approve
+it on a managed/company machine without administrator authorization. Cancel the
+prompt if that trust is not acceptable; HTTP Pit routing remains usable and
+HTTPS certificate warnings remain in place. Never bypass those warnings.
+
+After setup, fully restart TronBrowser and enable Pit. HTTPS still requires a
+valid certificate for the requested hostname; an arbitrary self-signed origin
+will not become trusted. To undo a newly installed root, use `certmgr.msc` and
+remove only the certificate whose exact thumbprint the setup printed. The setup
+does not change or claim ownership of a root that was already trusted.
+
+Regression tests (no CA imports or public-network calls):
+
+```sh
+python -B -m unittest discover -s apps/desktop/test -p test_windows_pit.py -v
+```
+
+Run on Windows as well as Linux: the native `.cmd` argument/path test is skipped
+on other systems. Real Ungoogled Chromium/Pit HTTPS acceptance still needs a
+Windows machine with the intended trust policy. Automated socket/TLS tests alone
+do not establish that a specific browser build honors the Windows trust store.

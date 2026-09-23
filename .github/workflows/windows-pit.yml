@@ -1,0 +1,31 @@
+name: Network helper regression tests
+
+on:
+  pull_request:
+    paths:
+      - 'apps/desktop/launcher/**'
+      - 'apps/desktop/test/test_windows_pit.py'
+      - 'apps/desktop/test/fixtures/**'
+      - 'apps/desktop/scripts/build-release.sh'
+      - '.github/workflows/release.yml'
+      - '.github/workflows/windows-pit.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  helper:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Test helper and Windows launcher (no certificate imports)
+        run: python -B -m unittest discover -s apps/desktop/test -p test_windows_pit.py -v
