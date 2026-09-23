@@ -71,7 +71,9 @@ def stop_owned_helper(pidfile, bundle):
         raise RuntimeError("Invalid owned helper PID")
     env = os.environ.copy()
     env.pop("PSModulePath", None)
-    env.update(TRON_OWNED_PID=str(pid), TRON_HELPER_SCRIPT=str(bundle / "tron-tor-helper"))
+    # Product startup resolves __file__; Windows may expand RUNNER~1 to the
+    # long user path. Compare the same canonical path, not the 8.3 spelling.
+    env.update(TRON_OWNED_PID=str(pid), TRON_HELPER_SCRIPT=str((bundle / "tron-tor-helper").resolve()))
     powershell = Path(os.environ["SystemRoot"]) / "System32/WindowsPowerShell/v1.0/powershell.exe"
     run([str(powershell), "-NoProfile", "-NonInteractive", "-Command", r'''
 $ErrorActionPreference = 'Stop'
