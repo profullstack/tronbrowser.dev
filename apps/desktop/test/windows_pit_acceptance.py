@@ -77,7 +77,8 @@ $ErrorActionPreference = 'Stop'
 $p = Get-CimInstance Win32_Process -Filter "ProcessId=$env:TRON_OWNED_PID"
 if ($null -eq $p) { exit 0 }
 if ($p.Name -notmatch '^python([0-9.]+)?\.exe$' -or $p.CommandLine.IndexOf($env:TRON_HELPER_SCRIPT, [StringComparison]::OrdinalIgnoreCase) -lt 0) { throw 'Refusing to stop a process outside our unique test bundle' }
-Stop-Process -Id $p.ProcessId -Force
+& "$env:SystemRoot\System32\taskkill.exe" /PID $p.ProcessId /T /F | Out-Null
+if ($LASTEXITCODE -ne 0) { throw 'Owned helper cleanup failed' }
 '''], env=env)
 
 
@@ -101,6 +102,8 @@ def consent_to_test_root(cmd, env, thumbprint, evidence):
     user32.SendMessageW.restype = wintypes.LPARAM
     stop = threading.Event()
     events = []
+    clicked = set()
+    observed = {}
 
     def text(hwnd):
         buffer = ctypes.create_unicode_buffer(user32.GetWindowTextLengthW(hwnd) + 1)
@@ -120,10 +123,12 @@ def consent_to_test_root(cmd, env, thumbprint, evidence):
 
         user32.EnumChildWindows(hwnd, child, 0)
         combined = " ".join(labels)
+        observed[str(hwnd)] = combined
         normalized = re.sub(r"[^0-9A-F]", "", combined.upper())
         if "Moshpit Root CA" in combined and thumbprint.upper() in normalized:
             yes = user32.GetDlgItem(hwnd, 6)  # IDYES, never an arbitrary dialog button.
-            if yes:
+            if yes and hwnd not in clicked:
+                clicked.add(hwnd)
                 events.append({"thumbprint": thumbprint, "nativeWarningAccepted": True})
                 user32.SendMessageW(yes, 0x00F5, 0, 0)  # BM_CLICK
         return True
@@ -136,10 +141,12 @@ def consent_to_test_root(cmd, env, thumbprint, evidence):
     thread.start()
     try:
         run(command_line(cmd, "--setup-pit-https"), env=env, input="TRUST\n")
+        if not events:
+            raise RuntimeError("No verified native root-consent event was recorded")
     finally:
         stop.set()
         thread.join(timeout=3)
-        (evidence / "native-consent.json").write_text(json.dumps(events), encoding="utf8")
+        (evidence / "native-consent.json").write_text(json.dumps({"accepted": events, "observedWarnings": observed}), encoding="utf8")
 
 
 def main():
@@ -191,10 +198,19 @@ def main():
             def log_message(self, *_):
                 pass
 
-        server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), QuietHandler)
         tls = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
         tls.load_cert_chain(root / "bad.crt", root / "bad.key")
-        server.socket = tls.wrap_socket(server.socket, server_side=True)
+        class BoundedTlsServer(http.server.ThreadingHTTPServer):
+            def get_request(self):
+                sock, address = super().get_request()
+                sock.settimeout(3)
+                try:
+                    return tls.wrap_socket(sock, server_side=True), address
+                except Exception:
+                    sock.close()
+                    raise
+
+        server = BoundedTlsServer(("127.0.0.1", 0), QuietHandler)
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
         try:
@@ -249,9 +265,9 @@ def main():
                 server.shutdown()
                 server.server_close()
                 thread.join(timeout=3)
-                stop_owned_helper(pidfile, bundle)
                 if helper_log.is_file():
                     shutil.copy2(helper_log, evidence / "tor-helper.log")
+                stop_owned_helper(pidfile, bundle)
 
 
 if __name__ == "__main__":

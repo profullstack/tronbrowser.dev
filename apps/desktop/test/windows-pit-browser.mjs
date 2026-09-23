@@ -96,5 +96,9 @@ try {
   throw error;
 } finally {
   fs.writeFileSync(path.join(evidence, `${phase}.json`), JSON.stringify(results, null, 2));
+  // A CDP attachment's close can only disconnect. Close the owned browser
+  // explicitly so the next phase is a new process with a fresh trust cache.
+  const session = await browser.newBrowserCDPSession().catch(() => null);
+  await session?.send('Browser.close').catch(() => {});
   await browser.close();
 }
