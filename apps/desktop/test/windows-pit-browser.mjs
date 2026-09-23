@@ -23,15 +23,21 @@ try {
     ({ type, on }) => chrome.runtime.sendMessage({ type, on }), { type, on });
   // Certificate rejection can commit chrome-error:// after goto rejects. Keep
   // that late navigation out of the tab used for subsequent routing checks.
-  const rejectUntrusted = async (url, screenshotPath) => {
+  const rejectUntrusted = async (url, { screenshotPath, timeout = 45000 } = {}) => {
     const invalid = await context.newPage();
     try {
       await assert.rejects(invalid.goto(url, {
-        waitUntil: 'domcontentloaded', timeout: 45000,
+        waitUntil: 'domcontentloaded', timeout,
       }), /ERR_CERT_AUTHORITY_INVALID/);
-      if (screenshotPath) await invalid.screenshot({ path: screenshotPath });
+      if (screenshotPath) {
+        await invalid.waitForFunction(() => Boolean(document.body?.innerText.trim()), null, { timeout: 5000 });
+        await invalid.screenshot({ path: screenshotPath });
+      }
+    } catch (error) {
+      await invalid.screenshot({ path: path.join(evidence, `${phase}-invalid-tls-failure.png`) }).catch(() => {});
+      throw error;
     } finally {
-      await invalid.close();
+      await invalid.close().catch(() => {});
     }
   };
 
@@ -64,7 +70,7 @@ try {
   check('HTTP Moshpit name resolves through the browser');
 
   if (phase === 'before-trust' || phase === 'after-removal') {
-    await rejectUntrusted('https://profullstack.agent/', path.join(evidence, `${phase}.png`));
+    await rejectUntrusted('https://profullstack.agent/', { screenshotPath: path.join(evidence, `${phase}.png`) });
     check('registry HTTPS is rejected without root trust');
   } else {
     const response = await page.goto('https://profullstack.agent/', {
@@ -80,7 +86,7 @@ try {
     check('registry HTTPS succeeds with normal browser certificate verification');
   }
 
-  await rejectUntrusted(invalidTlsUrl);
+  await rejectUntrusted(invalidTlsUrl, { timeout: 15000 });
   check('unrelated self-signed HTTPS remains rejected');
 
   assert.equal((await message('pit-set', false)).enabled, false);
