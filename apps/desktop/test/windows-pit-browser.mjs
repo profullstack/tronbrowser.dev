@@ -9,7 +9,7 @@ const { chromium } = require('playwright-core');
 const [profile, phase, evidence, invalidTlsUrl] = process.argv.slice(2);
 const [port] = fs.readFileSync(path.join(profile, 'DevToolsActivePort'), 'utf8').split('\n');
 const browser = await chromium.connectOverCDP(`http://127.0.0.1:${port}`);
-const results = { phase, browser: browser.version(), checks: [] };
+const results = { phase, mode: process.env.PIT_BROWSER_MODE, browser: browser.version(), checks: [] };
 const check = (name) => { results.checks.push(name); console.log(`PASS: ${name}`); };
 let context;
 try {

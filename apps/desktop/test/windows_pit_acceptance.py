@@ -241,8 +241,10 @@ def main():
                     env["TRONBROWSER_DATA"] = str(profile)
                 active_port = profile / "DevToolsActivePort"
                 active_port.unlink(missing_ok=True)
+                env["PIT_BROWSER_MODE"] = "headed" if phase == "after-trust-fresh" else "headless"
+                flags = "" if env["PIT_BROWSER_MODE"] == "headed" else "--headless=new "
                 with (evidence / (phase + "-launcher.log")).open("w", encoding="utf8") as log:
-                    child = subprocess.Popen(command_line(cmd, "--headless=new --remote-debugging-port=0 about:blank"),
+                    child = subprocess.Popen(command_line(cmd, flags + "--remote-debugging-port=0 about:blank"),
                                              env=env, stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT)
                     try:
                         deadline = time.monotonic() + 45
