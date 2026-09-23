@@ -182,7 +182,7 @@ class RootSetupTests(unittest.TestCase):
                 self.assertEqual(command.call_args.kwargs["TRON_CA_MODE"], "inspect")
 
     def test_removal_requires_explicit_consent_and_pinned_fingerprint(self):
-        with mock.patch.object(windows, "run_certificate_command", return_value={"count": 1}) as command, mock.patch("builtins.input", return_value="REMOVE"), contextlib.redirect_stdout(io.StringIO()) as output, mock.patch.object(windows, "read_url") as network:
+        with mock.patch.object(windows, "run_certificate_command", return_value={"count": 1, "thumbprints": ["A" * 40]}) as command, mock.patch("builtins.input", return_value="REMOVE"), contextlib.redirect_stdout(io.StringIO()) as output, mock.patch.object(windows, "read_url") as network:
             windows.remove_https()
             self.assertEqual([call.kwargs["TRON_CA_MODE"] for call in command.call_args_list], ["inspect", "remove"])
             self.assertEqual(command.call_args.kwargs["TRON_CA_SHA256"], windows.ROOT_SHA256)

@@ -211,7 +211,7 @@ try {
     })
     if ($remaining.Count -gt 0) { throw 'Root is still trusted; device policy or a machine-level root may require your administrator' }
   }
-  @{count=$matches.Count; fingerprint=$env:TRON_CA_SHA256} | ConvertTo-Json -Compress
+  @{count=$matches.Count; fingerprint=$env:TRON_CA_SHA256; thumbprints=@($matches | ForEach-Object { $_.Thumbprint })} | ConvertTo-Json -Compress
 } finally { $sha.Dispose(); $store.Close() }
 '''
 
@@ -228,6 +228,8 @@ def remove_https():
     if input("Type REMOVE to continue (anything else cancels): ").strip() != "REMOVE":
         print("Cancelled; trust was not changed.")
         return
+    print("Windows may request confirmation. Match this thumbprint before approving:")
+    print(", ".join(info["thumbprints"]), flush=True)
     run_certificate_command(ROOT_REMOVAL_COMMAND, TRON_CA_SHA256=ROOT_SHA256, TRON_CA_MODE="remove")
     print("Pinned root removed. Fully restart applications to clear cached trust.")
 

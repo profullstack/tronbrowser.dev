@@ -4,6 +4,7 @@ Exercises the real cmd launcher, extension, registry root install, and browser.
 Only the exact root absent before this test may be removed during cleanup.
 """
 import http.server
+import contextlib
 import importlib.util
 import json
 import os
@@ -82,7 +83,8 @@ if ($LASTEXITCODE -ne 0) { throw 'Owned helper cleanup failed' }
 '''], env=env)
 
 
-def consent_to_test_root(cmd, env, thumbprint, evidence):
+@contextlib.contextmanager
+def native_root_consent(thumbprint, evidence, label, required=True):
     """Click the native Windows warning ONLY for the already-verified test root.
 
     This UI automation stays inside the guarded disposable-runner harness.
@@ -112,7 +114,7 @@ def consent_to_test_root(cmd, env, thumbprint, evidence):
 
     @callback_type
     def inspect(hwnd, _):
-        if "security warning" not in text(hwnd).lower():
+        if not any(title in text(hwnd).lower() for title in ("security warning", "root certificate store", "delete certificate")):
             return True
         labels = [text(hwnd)]
 
@@ -140,13 +142,13 @@ def consent_to_test_root(cmd, env, thumbprint, evidence):
     thread = threading.Thread(target=watch, daemon=True)
     thread.start()
     try:
-        run(command_line(cmd, "--setup-pit-https"), env=env, input="TRUST\n")
-        if not events:
+        yield
+        if required and not events:
             raise RuntimeError("No verified native root-consent event was recorded")
     finally:
         stop.set()
         thread.join(timeout=3)
-        (evidence / "native-consent.json").write_text(json.dumps({"accepted": events, "observedWarnings": observed}), encoding="utf8")
+        (evidence / ("native-" + label + "-consent.json")).write_text(json.dumps({"accepted": events, "observedWarnings": observed}), encoding="utf8")
 
 
 def main():
@@ -219,7 +221,8 @@ def main():
             print("PASS: cancelling real setup leaves trust unchanged", flush=True)
             for phase in ("before-trust", "after-trust", "after-trust-fresh", "after-removal"):
                 if phase == "after-trust":
-                    consent_to_test_root(cmd, env, initial["thumbprint"], evidence)
+                    with native_root_consent(initial["thumbprint"], evidence, "install"):
+                        run(command_line(cmd, "--setup-pit-https"), env=env, input="TRUST\n")
                     assert windows.certificate_action(cert, pin, "inspect")["alreadyTrusted"]
                     print("PASS: explicit real setup imports the pinned root", flush=True)
                     already = run(command_line(cmd, "--setup-pit-https"), env=env, input="")
@@ -227,7 +230,8 @@ def main():
                 if phase == "after-removal":
                     run(command_line(cmd, "--remove-pit-https"), env=env, input="CANCEL\n")
                     assert windows.certificate_action(cert, pin, "inspect")["alreadyTrusted"]
-                    run(command_line(cmd, "--remove-pit-https"), env=env, input="REMOVE\n")
+                    with native_root_consent(initial["thumbprint"], evidence, "remove"):
+                        run(command_line(cmd, "--remove-pit-https"), env=env, input="REMOVE\n")
                     assert not windows.certificate_action(cert, pin, "inspect")["alreadyTrusted"]
                     print("PASS: supported offline removal revokes the pinned root", flush=True)
                 if phase in ("after-trust-fresh", "after-removal"):
@@ -257,7 +261,8 @@ def main():
         finally:
             # Emergency cleanup must run even if a process/PID cleanup fails.
             try:
-                remove_test_root(cert, pin)
+                with native_root_consent(initial["thumbprint"], evidence, "cleanup", required=False):
+                    remove_test_root(cert, pin)
                 assert not windows.certificate_action(cert, pin, "inspect")["alreadyTrusted"]
                 (evidence / "cleanup.json").write_text(json.dumps({"removedTestRoot": True, "sha256": pin}), encoding="utf8")
                 print("PASS: exact test root removed from disposable runner", flush=True)
