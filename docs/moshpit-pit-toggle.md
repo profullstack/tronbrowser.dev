@@ -184,6 +184,13 @@ Environment knobs on the helper: `TRON_PIT_SOCKS_PORT` (9081),
 
 ## Testing the helper by hand
 
+The control API accepts only the literal `127.0.0.1:<port>` Host, not
+`localhost` or an absent Host. GET is read-only (`/`, `/status`, `/pit/status`);
+start and stop use POST. The bundled extension uses simple requests without
+custom headers. Web-page origins and preflights are rejected. These checks
+reduce web-origin access; they are not authentication against other local
+processes or installed extensions.
+
 ```sh
 TRON_TOR_HELPER_PORT=19061 TRON_PIT_SOCKS_PORT=19081 python3 apps/desktop/launcher/tron-tor-helper &
 curl -X POST http://127.0.0.1:19061/pit/start

@@ -92,6 +92,26 @@ class StartupTests(unittest.TestCase):
             self.assertEqual(spawn.call_args.kwargs["creationflags"], 0x08000008)
             self.assertNotIn("shell", spawn.call_args.kwargs)
 
+    def test_own_startup_retries_transport_failures(self):
+        responses = [None, windows.HelperUnavailable("timeout"), windows.HelperUnavailable("reset"), state()]
+        with tempfile.TemporaryDirectory() as temp, mock.patch.object(windows, "helper_state", side_effect=responses), mock.patch.object(windows.subprocess, "Popen") as spawn:
+            spawn.return_value.poll.return_value = None
+            self.assertEqual(windows.start_helper(LAUNCHER, data=temp)["pid"], 123)
+            spawn.return_value.terminate.assert_not_called()
+
+    def test_occupied_unresponsive_port_never_spawns(self):
+        with mock.patch.object(windows, "helper_state", side_effect=windows.HelperUnavailable("timeout")), mock.patch.object(windows.subprocess, "Popen") as spawn:
+            with self.assertRaises(windows.HelperUnavailable):
+                windows.start_helper(LAUNCHER)
+            spawn.assert_not_called()
+
+    def test_bad_responder_during_own_startup_fails_closed(self):
+        with tempfile.TemporaryDirectory() as temp, mock.patch.object(windows, "helper_state", side_effect=[None, RuntimeError("Unrecognized helper")]), mock.patch.object(windows.subprocess, "Popen") as spawn:
+            spawn.return_value.poll.return_value = None
+            with self.assertRaisesRegex(RuntimeError, "Unrecognized helper"):
+                windows.start_helper(LAUNCHER, data=temp)
+            spawn.return_value.terminate.assert_called_once()
+
 
 class HttpTests(unittest.TestCase):
     def setUp(self):
@@ -130,8 +150,16 @@ class HttpTests(unittest.TestCase):
         self.assertEqual(self.request("/pit/status", headers={"Host": "attacker.invalid"})[0], 403)
 
     def test_get_cannot_start_or_stop_services(self):
-        for path in ("/start", "/stop", "/pit/start", "/pit/stop"):
+        for path in ("/start", "/stop", "/pit/start", "/pit/stop", "/future-mutation"):
             self.assertEqual(self.request(path)[0], 405)
+
+    def test_web_preflight_cannot_grant_access(self):
+        status, headers, _ = self.request("/pit/start", "OPTIONS", {
+            "Origin": "https://attacker.invalid", "Access-Control-Request-Method": "POST",
+            "Access-Control-Request-Private-Network": "true"})
+        self.assertEqual(status, 403)
+        self.assertNotIn("Access-Control-Allow-Origin", headers)
+        self.assertNotIn("Access-Control-Allow-Private-Network", headers)
 
     def test_extension_origin_and_post_still_work(self):
         origin = "chrome-extension://" + "a" * 32
@@ -146,6 +174,12 @@ class HttpTests(unittest.TestCase):
 
 
 class RootSetupTests(unittest.TestCase):
+    def test_missing_windows_environment_fails_before_powershell(self):
+        with mock.patch.object(windows.sys, "platform", "win32"), mock.patch.dict(os.environ, {}, clear=True), mock.patch.object(windows.subprocess, "run") as run:
+            with self.assertRaisesRegex(RuntimeError, "SystemRoot is missing"):
+                windows.certificate_action(Path("root.cer"), windows.ROOT_SHA256, "inspect")
+            run.assert_not_called()
+
     def test_committed_public_ca_matches_release_pin(self):
         pem = (LAUNCHER.parent / "test/fixtures/moshpit-root-ca.crt").read_text()
         der = ssl.PEM_cert_to_DER_cert(pem)

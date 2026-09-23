@@ -1,6 +1,15 @@
 name: Network helper regression tests
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - 'apps/desktop/launcher/**'
+      - 'apps/desktop/test/test_windows_pit.py'
+      - 'apps/desktop/test/fixtures/**'
+      - 'apps/desktop/scripts/build-release.sh'
+      - '.github/workflows/release.yml'
+      - '.github/workflows/windows-pit.yml'
   pull_request:
     paths:
       - 'apps/desktop/launcher/**'

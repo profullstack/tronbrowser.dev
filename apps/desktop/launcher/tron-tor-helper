@@ -804,7 +804,7 @@ class Handler(BaseHTTPRequestHandler):
             self._send(403, {"error": "invalid-origin"})
             return
         path = self.path.split("?", 1)[0].rstrip("/") or "/"
-        if path in ("/start", "/stop", "/pit/start", "/pit/stop") and self.command != "POST":
+        if path not in ("/", "/status", "/pit/status") and self.command != "POST":
             self._send(405, {"error": "post-required"})
             return
         if path == "/start":

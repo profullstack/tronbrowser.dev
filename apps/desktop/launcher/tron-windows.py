@@ -157,7 +157,11 @@ try {
   $store.Open($flags)
   $existing = $store.Certificates.Find([System.Security.Cryptography.X509Certificates.X509FindType]::FindByThumbprint, $cert.Thumbprint, $false)
   $already = $existing.Count -gt 0
-  if ($env:TRON_CA_MODE -eq 'install' -and -not $already) { $store.Add($cert) }
+  if ($env:TRON_CA_MODE -eq 'install' -and -not $already) {
+    $store.Add($cert)
+    $confirmed = $store.Certificates.Find([System.Security.Cryptography.X509Certificates.X509FindType]::FindByThumbprint, $cert.Thumbprint, $false)
+    if ($confirmed.Count -eq 0) { throw 'Certificate was not added to CurrentUser Root' }
+  }
   @{fingerprint=$fingerprint; thumbprint=$cert.Thumbprint; alreadyTrusted=$already; subject=$cert.Subject} | ConvertTo-Json -Compress
 } finally { $store.Close(); $cert.Dispose() }
 '''
@@ -168,7 +172,10 @@ def certificate_action(path, fingerprint, mode):
         raise RuntimeError("Certificate setup is Windows-only")
     if mode not in ("inspect", "install"):
         raise ValueError("Invalid certificate action")
-    powershell = Path(os.environ["SystemRoot"]) / "System32/WindowsPowerShell/v1.0/powershell.exe"
+    system_root = os.environ.get("SystemRoot")
+    if not system_root:
+        raise RuntimeError("Windows SystemRoot is missing; certificate setup cannot continue")
+    powershell = Path(system_root) / "System32/WindowsPowerShell/v1.0/powershell.exe"
     env = os.environ.copy()
     # Let Windows PowerShell construct its own module path, not inherit pwsh 7's.
     env.pop("PSModulePath", None)
@@ -176,7 +183,7 @@ def certificate_action(path, fingerprint, mode):
     result = subprocess.run([str(powershell), "-NoProfile", "-NonInteractive", "-Command", CERTIFICATE_COMMAND],
                             env=env, capture_output=True, text=True, timeout=90)
     if result.returncode != 0:
-        raise RuntimeError("Windows certificate validation/import failed: " + result.stderr.strip())
+        raise RuntimeError("Windows certificate validation/import failed (device policy may block it): " + result.stderr.strip())
     return json.loads(result.stdout)
 
 
