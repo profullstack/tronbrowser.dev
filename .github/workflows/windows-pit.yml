@@ -8,6 +8,7 @@ on:
       - 'apps/desktop/test/test_windows_pit.py'
       - 'apps/desktop/test/windows_pit_acceptance.py'
       - 'apps/desktop/test/windows-pit-browser.mjs'
+      - 'apps/desktop/test/browser-driver/**'
       - 'apps/desktop/extensions/ai-sidebar/**'
       - 'apps/desktop/test/fixtures/**'
       - 'apps/desktop/scripts/build-release.sh'
@@ -19,6 +20,7 @@ on:
       - 'apps/desktop/test/test_windows_pit.py'
       - 'apps/desktop/test/windows_pit_acceptance.py'
       - 'apps/desktop/test/windows-pit-browser.mjs'
+      - 'apps/desktop/test/browser-driver/**'
       - 'apps/desktop/extensions/ai-sidebar/**'
       - 'apps/desktop/test/fixtures/**'
       - 'apps/desktop/scripts/build-release.sh'
@@ -67,7 +69,7 @@ jobs:
           $zip = Join-Path $env:RUNNER_TEMP 'ungoogled.zip'
           $dest = Join-Path $env:RUNNER_TEMP 'ungoogled'
           Invoke-WebRequest 'https://github.com/ungoogled-software/ungoogled-chromium-windows/releases/download/153.0.8010.52-1.1/ungoogled-chromium_153.0.8010.52-1.1_windows_x64.zip' -OutFile $zip
-          if ((Get-FileHash $zip -Algorithm SHA256).Hash -ne '824857dcd68bca34ff21ffd06f55610fdea98be91b6328a826f3497e4881ea4a') { throw 'Browser checksum mismatch' }
+          if ((Get-FileHash $zip -Algorithm SHA256).Hash -cne '824857DCD68BCA34FF21FFD06F55610FDEA98BE91B6328A826F3497E4881EA4A') { throw 'Browser checksum mismatch' }
           Expand-Archive $zip $dest
           $browser = @(Get-ChildItem $dest -Filter chrome.exe -Recurse)
           if ($browser.Count -ne 1) { throw 'Unexpected browser archive layout' }
@@ -76,7 +78,10 @@ jobs:
           "PIT_EVIDENCE=$env:RUNNER_TEMP/pit-evidence" >> $env:GITHUB_ENV
       - name: Install isolated browser test driver (no browser download)
         shell: pwsh
-        run: npm install --prefix "$env:PIT_PLAYWRIGHT_DIR" --ignore-scripts --no-audit --no-fund --package-lock=false playwright-core@1.63.0
+        run: |
+          New-Item -ItemType Directory -Force $env:PIT_PLAYWRIGHT_DIR | Out-Null
+          Copy-Item apps/desktop/test/browser-driver/package*.json $env:PIT_PLAYWRIGHT_DIR
+          npm ci --prefix "$env:PIT_PLAYWRIGHT_DIR" --ignore-scripts --no-audit --no-fund
       - name: Real Windows browser and opt-in CA acceptance
         env:
           TRON_PIT_DISPOSABLE_CA_TEST: '1'

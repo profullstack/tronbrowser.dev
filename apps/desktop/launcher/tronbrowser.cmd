@@ -32,6 +32,7 @@ if not defined PYTHON (
   )
 )
 if /i "%~1"=="--setup-pit-https" goto setup_https
+if /i "%~1"=="--remove-pit-https" goto remove_https
 
 rem Load every bundled extension (each subdir with a manifest.json).
 set "EXT="
@@ -97,4 +98,12 @@ if not defined PYTHON (
   exit /b 1
 )
 "%PYTHON%" %PYTHON_ARGS% "%DIR%tron-windows.py" setup-https
+exit /b %errorlevel%
+
+:remove_https
+if not defined PYTHON (
+  echo TronBrowser: Python 3.9+ is required; alternatively use certmgr.msc to remove the exact root. >&2
+  exit /b 1
+)
+"%PYTHON%" %PYTHON_ARGS% "%DIR%tron-windows.py" remove-https
 exit /b %errorlevel%

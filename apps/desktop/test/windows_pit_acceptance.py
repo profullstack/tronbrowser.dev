@@ -7,6 +7,7 @@ import http.server
 import importlib.util
 import json
 import os
+import re
 from pathlib import Path
 import shutil
 import ssl
@@ -44,18 +45,101 @@ $store = New-Object System.Security.Cryptography.X509Certificates.X509Store('Roo
 try {
   $store.Open('ReadWrite')
   $matches = $store.Certificates.Find([System.Security.Cryptography.X509Certificates.X509FindType]::FindByThumbprint, $cert.Thumbprint, $false)
-  foreach ($match in $matches) { $store.Remove($match) }
+  foreach ($match in $matches) {
+    if ([Convert]::ToBase64String($match.RawData) -cne [Convert]::ToBase64String($cert.RawData)) { throw 'Cleanup certificate bytes mismatch' }
+    $store.Remove($match)
+  }
 } finally { $store.Close(); $cert.Dispose() }
 '''
     env = os.environ.copy()
     env.pop("PSModulePath", None)
     env.update(TRON_CA_FILE=str(cert), TRON_CA_SHA256=fingerprint)
-    powershell = Path(env["SystemRoot"]) / "System32/WindowsPowerShell/v1.0/powershell.exe"
+    powershell = Path(os.environ["SystemRoot"]) / "System32/WindowsPowerShell/v1.0/powershell.exe"
     run([str(powershell), "-NoProfile", "-NonInteractive", "-Command", command], env=env)
 
 
 def command_line(launcher, tail=""):
     return 'cmd.exe /d /s /c ""%s" %s"' % (launcher, tail)
+
+
+def stop_owned_helper(pidfile, bundle):
+    if not pidfile.is_file():
+        return
+    pid = int(pidfile.read_text())
+    if pid <= 0:
+        raise RuntimeError("Invalid owned helper PID")
+    env = os.environ.copy()
+    env.pop("PSModulePath", None)
+    env.update(TRON_OWNED_PID=str(pid), TRON_HELPER_SCRIPT=str(bundle / "tron-tor-helper"))
+    powershell = Path(os.environ["SystemRoot"]) / "System32/WindowsPowerShell/v1.0/powershell.exe"
+    run([str(powershell), "-NoProfile", "-NonInteractive", "-Command", r'''
+$ErrorActionPreference = 'Stop'
+$p = Get-CimInstance Win32_Process -Filter "ProcessId=$env:TRON_OWNED_PID"
+if ($null -eq $p) { exit 0 }
+if ($p.Name -notmatch '^python([0-9.]+)?\.exe$' -or $p.CommandLine.IndexOf($env:TRON_HELPER_SCRIPT, [StringComparison]::OrdinalIgnoreCase) -lt 0) { throw 'Refusing to stop a process outside our unique test bundle' }
+Stop-Process -Id $p.ProcessId -Force
+'''], env=env)
+
+
+def consent_to_test_root(cmd, env, thumbprint, evidence):
+    """Click the native Windows warning ONLY for the already-verified test root.
+
+    This UI automation stays inside the guarded disposable-runner harness.
+    Product code still requires both typed consent and Windows' own approval.
+    """
+    import ctypes
+    from ctypes import wintypes
+    user32 = ctypes.WinDLL("user32", use_last_error=True)
+    callback_type = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+    user32.EnumWindows.argtypes = [callback_type, wintypes.LPARAM]
+    user32.EnumChildWindows.argtypes = [wintypes.HWND, callback_type, wintypes.LPARAM]
+    user32.GetWindowTextLengthW.argtypes = [wintypes.HWND]
+    user32.GetWindowTextW.argtypes = [wintypes.HWND, wintypes.LPWSTR, ctypes.c_int]
+    user32.GetDlgItem.argtypes = [wintypes.HWND, ctypes.c_int]
+    user32.GetDlgItem.restype = wintypes.HWND
+    user32.SendMessageW.argtypes = [wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM]
+    user32.SendMessageW.restype = wintypes.LPARAM
+    stop = threading.Event()
+    events = []
+
+    def text(hwnd):
+        buffer = ctypes.create_unicode_buffer(user32.GetWindowTextLengthW(hwnd) + 1)
+        user32.GetWindowTextW(hwnd, buffer, len(buffer))
+        return buffer.value
+
+    @callback_type
+    def inspect(hwnd, _):
+        if "security warning" not in text(hwnd).lower():
+            return True
+        labels = [text(hwnd)]
+
+        @callback_type
+        def child(child_hwnd, _):
+            labels.append(text(child_hwnd))
+            return True
+
+        user32.EnumChildWindows(hwnd, child, 0)
+        combined = " ".join(labels)
+        normalized = re.sub(r"[^0-9A-F]", "", combined.upper())
+        if "Moshpit Root CA" in combined and thumbprint.upper() in normalized:
+            yes = user32.GetDlgItem(hwnd, 6)  # IDYES, never an arbitrary dialog button.
+            if yes:
+                events.append({"thumbprint": thumbprint, "nativeWarningAccepted": True})
+                user32.SendMessageW(yes, 0x00F5, 0, 0)  # BM_CLICK
+        return True
+
+    def watch():
+        while not stop.wait(0.2):
+            user32.EnumWindows(inspect, 0)
+
+    thread = threading.Thread(target=watch, daemon=True)
+    thread.start()
+    try:
+        run(command_line(cmd, "--setup-pit-https"), env=env, input="TRUST\n")
+    finally:
+        stop.set()
+        thread.join(timeout=3)
+        (evidence / "native-consent.json").write_text(json.dumps(events), encoding="utf8")
 
 
 def main():
@@ -81,6 +165,7 @@ def main():
         for test in (bundle / "extensions").rglob("*.test.js"):
             test.unlink()
         profile = root / "profile space !"
+        helper_log = profile / "tor-helper.log"
         pidfile = root / "owned-helper.pid"
         env = os.environ.copy()
         env.update(TRONBROWSER_BROWSER=str(browser), TRONBROWSER_DATA=str(profile),
@@ -116,11 +201,22 @@ def main():
             run(command_line(cmd, "--setup-pit-https"), env=env, input="CANCEL\n")
             assert not windows.certificate_action(cert, pin, "inspect")["alreadyTrusted"]
             print("PASS: cancelling real setup leaves trust unchanged", flush=True)
-            for phase in ("before-trust", "after-trust"):
+            for phase in ("before-trust", "after-trust", "after-trust-fresh", "after-removal"):
                 if phase == "after-trust":
-                    run(command_line(cmd, "--setup-pit-https"), env=env, input="TRUST\n")
+                    consent_to_test_root(cmd, env, initial["thumbprint"], evidence)
                     assert windows.certificate_action(cert, pin, "inspect")["alreadyTrusted"]
                     print("PASS: explicit real setup imports the pinned root", flush=True)
+                    already = run(command_line(cmd, "--setup-pit-https"), env=env, input="")
+                    assert "already trusted; no changes made" in already.stdout
+                if phase == "after-removal":
+                    run(command_line(cmd, "--remove-pit-https"), env=env, input="CANCEL\n")
+                    assert windows.certificate_action(cert, pin, "inspect")["alreadyTrusted"]
+                    run(command_line(cmd, "--remove-pit-https"), env=env, input="REMOVE\n")
+                    assert not windows.certificate_action(cert, pin, "inspect")["alreadyTrusted"]
+                    print("PASS: supported offline removal revokes the pinned root", flush=True)
+                if phase in ("after-trust-fresh", "after-removal"):
+                    profile = root / phase
+                    env["TRONBROWSER_DATA"] = str(profile)
                 active_port = profile / "DevToolsActivePort"
                 active_port.unlink(missing_ok=True)
                 with (evidence / (phase + "-launcher.log")).open("w", encoding="utf8") as log:
@@ -143,21 +239,19 @@ def main():
                                 child.wait(timeout=10)
             print("PASS: Windows browser acceptance complete", flush=True)
         finally:
-            server.shutdown()
-            server.server_close()
-            thread.join(timeout=3)
-            # This file was written only by the helper spawned in our isolated
-            # bundle; never take ownership of a pre-existing machine PID.
-            if pidfile.is_file():
-                pid = int(pidfile.read_text())
-                subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"], capture_output=True)
-            log = profile / "tor-helper.log"
-            if log.is_file():
-                shutil.copy2(log, evidence / "tor-helper.log")
-            remove_test_root(cert, pin)
-            assert not windows.certificate_action(cert, pin, "inspect")["alreadyTrusted"]
-            (evidence / "cleanup.json").write_text(json.dumps({"removedTestRoot": True, "sha256": pin}), encoding="utf8")
-            print("PASS: exact test root removed from disposable runner", flush=True)
+            # Emergency cleanup must run even if a process/PID cleanup fails.
+            try:
+                remove_test_root(cert, pin)
+                assert not windows.certificate_action(cert, pin, "inspect")["alreadyTrusted"]
+                (evidence / "cleanup.json").write_text(json.dumps({"removedTestRoot": True, "sha256": pin}), encoding="utf8")
+                print("PASS: exact test root removed from disposable runner", flush=True)
+            finally:
+                server.shutdown()
+                server.server_close()
+                thread.join(timeout=3)
+                stop_owned_helper(pidfile, bundle)
+                if helper_log.is_file():
+                    shutil.copy2(helper_log, evidence / "tor-helper.log")
 
 
 if __name__ == "__main__":

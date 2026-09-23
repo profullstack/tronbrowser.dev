@@ -174,6 +174,21 @@ class HttpTests(unittest.TestCase):
 
 
 class RootSetupTests(unittest.TestCase):
+    def test_removal_absent_or_cancelled_never_writes(self):
+        for count, answer in ((0, "REMOVE"), (1, "CANCEL")):
+            with self.subTest(count=count), mock.patch.object(windows, "run_certificate_command", return_value={"count": count}) as command, mock.patch("builtins.input", return_value=answer), contextlib.redirect_stdout(io.StringIO()):
+                windows.remove_https()
+                self.assertEqual(command.call_count, 1)
+                self.assertEqual(command.call_args.kwargs["TRON_CA_MODE"], "inspect")
+
+    def test_removal_requires_explicit_consent_and_pinned_fingerprint(self):
+        with mock.patch.object(windows, "run_certificate_command", return_value={"count": 1}) as command, mock.patch("builtins.input", return_value="REMOVE"), contextlib.redirect_stdout(io.StringIO()) as output, mock.patch.object(windows, "read_url") as network:
+            windows.remove_https()
+            self.assertEqual([call.kwargs["TRON_CA_MODE"] for call in command.call_args_list], ["inspect", "remove"])
+            self.assertEqual(command.call_args.kwargs["TRON_CA_SHA256"], windows.ROOT_SHA256)
+            self.assertIn("ALL apps", output.getvalue())
+            network.assert_not_called()
+
     def test_missing_windows_environment_fails_before_powershell(self):
         with mock.patch.object(windows.sys, "platform", "win32"), mock.patch.dict(os.environ, {}, clear=True), mock.patch.object(windows.subprocess, "run") as run:
             with self.assertRaisesRegex(RuntimeError, "SystemRoot is missing"):

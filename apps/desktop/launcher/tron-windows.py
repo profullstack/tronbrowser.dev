@@ -168,10 +168,15 @@ try {
 
 
 def certificate_action(path, fingerprint, mode):
-    if sys.platform != "win32":
-        raise RuntimeError("Certificate setup is Windows-only")
     if mode not in ("inspect", "install"):
         raise ValueError("Invalid certificate action")
+    return run_certificate_command(CERTIFICATE_COMMAND, TRON_CA_FILE=str(path),
+                                   TRON_CA_SHA256=fingerprint, TRON_CA_MODE=mode)
+
+
+def run_certificate_command(command, **values):
+    if sys.platform != "win32":
+        raise RuntimeError("Certificate setup is Windows-only")
     system_root = os.environ.get("SystemRoot")
     if not system_root:
         raise RuntimeError("Windows SystemRoot is missing; certificate setup cannot continue")
@@ -179,12 +184,52 @@ def certificate_action(path, fingerprint, mode):
     env = os.environ.copy()
     # Let Windows PowerShell construct its own module path, not inherit pwsh 7's.
     env.pop("PSModulePath", None)
-    env.update(TRON_CA_FILE=str(path), TRON_CA_SHA256=fingerprint, TRON_CA_MODE=mode)
-    result = subprocess.run([str(powershell), "-NoProfile", "-NonInteractive", "-Command", CERTIFICATE_COMMAND],
+    env.update(values)
+    result = subprocess.run([str(powershell), "-NoProfile", "-NonInteractive", "-Command", command],
                             env=env, capture_output=True, text=True, timeout=90)
     if result.returncode != 0:
         raise RuntimeError("Windows certificate validation/import failed (device policy may block it): " + result.stderr.strip())
     return json.loads(result.stdout)
+
+
+# Rollback works offline and selects by the release's full SHA-256, never name.
+ROOT_REMOVAL_COMMAND = r'''
+$ErrorActionPreference = 'Stop'
+$store = New-Object System.Security.Cryptography.X509Certificates.X509Store('Root', 'CurrentUser')
+$sha = [System.Security.Cryptography.SHA256]::Create()
+try {
+  $flags = [System.Security.Cryptography.X509Certificates.OpenFlags]::ReadOnly
+  if ($env:TRON_CA_MODE -eq 'remove') { $flags = [System.Security.Cryptography.X509Certificates.OpenFlags]::ReadWrite }
+  $store.Open($flags)
+  $matches = @($store.Certificates | Where-Object {
+    ([BitConverter]::ToString($sha.ComputeHash($_.RawData))).Replace('-', '') -ceq $env:TRON_CA_SHA256
+  })
+  if ($env:TRON_CA_MODE -eq 'remove') {
+    foreach ($cert in $matches) { $store.Remove($cert) }
+    $remaining = @($store.Certificates | Where-Object {
+      ([BitConverter]::ToString($sha.ComputeHash($_.RawData))).Replace('-', '') -ceq $env:TRON_CA_SHA256
+    })
+    if ($remaining.Count -gt 0) { throw 'Root is still trusted; device policy or a machine-level root may require your administrator' }
+  }
+  @{count=$matches.Count; fingerprint=$env:TRON_CA_SHA256} | ConvertTo-Json -Compress
+} finally { $sha.Dispose(); $store.Close() }
+'''
+
+
+def remove_https():
+    info = run_certificate_command(ROOT_REMOVAL_COMMAND, TRON_CA_SHA256=ROOT_SHA256, TRON_CA_MODE="inspect")
+    if info["count"] == 0:
+        print("The pinned Moshpit root is not trusted in this user store; no changes made.")
+        return
+    print("This removes the Moshpit root with SHA-256 " + ROOT_SHA256)
+    print("from Current User roots, even if it was installed by another application.")
+    print("ALL apps relying on that root may stop trusting registry-signed HTTPS.")
+    print("No machine roots, DNS, or unrelated certificates will be changed.")
+    if input("Type REMOVE to continue (anything else cancels): ").strip() != "REMOVE":
+        print("Cancelled; trust was not changed.")
+        return
+    run_certificate_command(ROOT_REMOVAL_COMMAND, TRON_CA_SHA256=ROOT_SHA256, TRON_CA_MODE="remove")
+    print("Pinned root removed. Fully restart applications to clear cached trust.")
 
 
 def download_root():
@@ -232,10 +277,12 @@ def setup_https():
         if input("Type TRUST to continue (anything else cancels): ").strip() != "TRUST":
             print("Cancelled; no certificate was installed.")
             return
+        print("Windows may show a Security Warning. Approve only if its thumbprint")
+        print("matches " + info["thumbprint"] + "; otherwise cancel.", flush=True)
         certificate_action(path, fingerprint, "install")
         print("Root CA installed. Restart TronBrowser, then turn Pit on.")
-        print("To undo: open certmgr.msc > Trusted Root Certification Authorities >")
-        print("Certificates, and remove ONLY the certificate with this thumbprint:")
+        print("To undo offline: tronbrowser.cmd --remove-pit-https (requires REMOVE).")
+        print("Or use certmgr.msc and remove ONLY the certificate with this thumbprint:")
         print(info["thumbprint"])
 
 
@@ -243,11 +290,13 @@ def main():
     try:
         if sys.argv[1:] == ["setup-https"]:
             setup_https()
+        elif sys.argv[1:] == ["remove-https"]:
+            remove_https()
         elif sys.argv[1:] == ["start"]:
             state = start_helper()
             print("TronBrowser network helper ready (PID %d). Pit stays off until enabled." % state["pid"])
         else:
-            raise ValueError("Usage: tron-windows.py start|setup-https")
+            raise ValueError("Usage: tron-windows.py start|setup-https|remove-https")
     except (OSError, ValueError, RuntimeError, subprocess.SubprocessError, EOFError) as exc:
         print("TronBrowser: %s" % exc, file=sys.stderr)
         return 1

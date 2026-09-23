@@ -251,9 +251,15 @@ HTTPS certificate warnings remain in place. Never bypass those warnings.
 
 After setup, fully restart TronBrowser and enable Pit. HTTPS still requires a
 valid certificate for the requested hostname; an arbitrary self-signed origin
-will not become trusted. To undo a newly installed root, use `certmgr.msc` and
-remove only the certificate whose exact thumbprint the setup printed. The setup
-does not change or claim ownership of a root that was already trusted.
+will not become trusted. To undo, run `tronbrowser.cmd --remove-pit-https` and
+type `REMOVE`. This works offline, selects only the release-pinned SHA-256 in
+CurrentUser roots, and warns that other applications using this root are affected.
+It can remove a matching root installed by another tool, so ownership is not
+assumed. Fully restart applications afterwards to clear cached trust. If device
+policy or a machine-level root keeps it trusted, ask your administrator; this
+command does not modify LocalMachine roots. Alternatively, use `certmgr.msc`
+and remove only the certificate whose exact thumbprint setup printed. Installing
+an already trusted root is a no-op.
 
 Regression tests (no CA imports or public-network calls):
 
