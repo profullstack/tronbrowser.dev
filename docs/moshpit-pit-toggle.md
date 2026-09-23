@@ -174,6 +174,8 @@ would leak every lookup outside Tor, so:
 | --- | --- |
 | `apps/desktop/launcher/tron-tor-helper` | `/pit/*` routes, the SOCKS5 resolver, the DoH client, per-name leaf trust |
 | `apps/desktop/launcher/tronbrowser` | starts the helper; `HELPER_VERSION` must match the helper's so a stale one is replaced |
+| `apps/desktop/launcher/tronbrowser.cmd` | Windows launcher, helper startup and explicit HTTPS setup/removal commands |
+| `apps/desktop/launcher/tron-windows.py` | bounded Windows readiness, pinned opt-in CA setup and offline rollback |
 | `apps/desktop/extensions/ai-sidebar/pit-proxy.js` | the PAC + proxy config (pure, tested in `pit-proxy.test.js`) |
 | `apps/desktop/extensions/ai-sidebar/background.js` | `pit-set` / `pit-status` messages, badge, session-scoped state |
 | `apps/desktop/extensions/ai-sidebar/sidepanel.*` | the button and its status copy |
@@ -241,6 +243,8 @@ usage and dates with Windows, and requires typing `TRUST` before adding it to
 **Current User / Trusted Root Certification Authorities**. It never changes
 Local Machine roots or DNS and never disables TLS verification. A root rotation
 requires a reviewed code update, not just new metadata from the registry.
+Windows can also display its native Security Warning. Match the printed
+thumbprint before approving; this OS confirmation is not suppressed.
 
 **Trust boundary:** this root is unconstrained. It can vouch for arbitrary DNS
 names in **all apps that use this Windows user store**, not only Moshpit names or
@@ -267,7 +271,23 @@ Regression tests (no CA imports or public-network calls):
 python -B -m unittest discover -s apps/desktop/test -p test_windows_pit.py -v
 ```
 
-Run on Windows as well as Linux: the native `.cmd` argument/path test is skipped
-on other systems. Real Ungoogled Chromium/Pit HTTPS acceptance still needs a
-Windows machine with the intended trust policy. Automated socket/TLS tests alone
-do not establish that a specific browser build honors the Windows trust store.
+Run on Windows as well as Linux: native `.cmd` and certificate-inspection tests
+are skipped on other systems.
+
+The separate `windows-browser` CI job runs official checksum-pinned Ungoogled
+Chromium 153.0.8010.52 on a disposable Windows x64 runner, in both headed and
+headless modes. It tests the actual launcher/extension/PAC, registry HTTP and
+HTTPS, native Windows CA consent, cancellation, existing-root no-op, fresh
+profiles, proxy reset, offline CA removal, and rejection of unrelated
+self-signed certificates. After removal, a new browser process must reject the
+registry certificate again. The test saves screenshots and TLS details.
+
+This acceptance harness temporarily imports the pinned root on its disposable
+runner and removes it afterwards. It refuses to run without the explicit
+GitHub-hosted Windows guard. Do not run it on a developer or company machine.
+Its UI automation confirms only the expected native warning matching the
+verified test root; production code does not automate Windows consent.
+
+Passing this pinned-build test is not a guarantee for every browser version,
+Windows architecture, or enterprise trust policy. macOS trust remains outside
+this patch's acceptance scope.
