@@ -6,6 +6,9 @@ on:
     paths:
       - 'apps/desktop/launcher/**'
       - 'apps/desktop/test/test_windows_pit.py'
+      - 'apps/desktop/test/windows_pit_acceptance.py'
+      - 'apps/desktop/test/windows-pit-browser.mjs'
+      - 'apps/desktop/extensions/ai-sidebar/**'
       - 'apps/desktop/test/fixtures/**'
       - 'apps/desktop/scripts/build-release.sh'
       - '.github/workflows/release.yml'
@@ -14,6 +17,9 @@ on:
     paths:
       - 'apps/desktop/launcher/**'
       - 'apps/desktop/test/test_windows_pit.py'
+      - 'apps/desktop/test/windows_pit_acceptance.py'
+      - 'apps/desktop/test/windows-pit-browser.mjs'
+      - 'apps/desktop/extensions/ai-sidebar/**'
       - 'apps/desktop/test/fixtures/**'
       - 'apps/desktop/scripts/build-release.sh'
       - '.github/workflows/release.yml'
@@ -38,3 +44,45 @@ jobs:
           python-version: '3.12'
       - name: Test helper and Windows launcher (no certificate imports)
         run: python -B -m unittest discover -s apps/desktop/test -p test_windows_pit.py -v
+
+  windows-browser:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+      - name: Fetch checksum-pinned portable Ungoogled Chromium
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $zip = Join-Path $env:RUNNER_TEMP 'ungoogled.zip'
+          $dest = Join-Path $env:RUNNER_TEMP 'ungoogled'
+          Invoke-WebRequest 'https://github.com/ungoogled-software/ungoogled-chromium-windows/releases/download/153.0.8010.52-1.1/ungoogled-chromium_153.0.8010.52-1.1_windows_x64.zip' -OutFile $zip
+          if ((Get-FileHash $zip -Algorithm SHA256).Hash -ne '824857dcd68bca34ff21ffd06f55610fdea98be91b6328a826f3497e4881ea4a') { throw 'Browser checksum mismatch' }
+          Expand-Archive $zip $dest
+          $browser = @(Get-ChildItem $dest -Filter chrome.exe -Recurse)
+          if ($browser.Count -ne 1) { throw 'Unexpected browser archive layout' }
+          "PIT_BROWSER=$($browser[0].FullName)" >> $env:GITHUB_ENV
+          "PIT_PLAYWRIGHT_DIR=$env:RUNNER_TEMP/pit-playwright" >> $env:GITHUB_ENV
+          "PIT_EVIDENCE=$env:RUNNER_TEMP/pit-evidence" >> $env:GITHUB_ENV
+      - name: Install isolated browser test driver (no browser download)
+        shell: pwsh
+        run: npm install --prefix "$env:PIT_PLAYWRIGHT_DIR" --ignore-scripts --no-audit --no-fund --package-lock=false playwright-core@1.63.0
+      - name: Real Windows browser and opt-in CA acceptance
+        env:
+          TRON_PIT_DISPOSABLE_CA_TEST: '1'
+        run: python -B apps/desktop/test/windows_pit_acceptance.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: windows-pit-browser-evidence
+          path: ${{ runner.temp }}/pit-evidence
+          retention-days: 7
