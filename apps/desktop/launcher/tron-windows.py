@@ -39,7 +39,8 @@ def read_url(url, *, local=False, timeout=10, limit=65536):
 
 def helper_state(port):
     try:
-        raw = read_url("http://127.0.0.1:%d/pit/status" % port, local=True, timeout=0.5)
+        # Windows can take about a second to report a refused loopback socket.
+        raw = read_url("http://127.0.0.1:%d/pit/status" % port, local=True, timeout=2)
     except urllib.error.URLError as exc:
         # Only a refused connection means it is safe to try starting a helper.
         if isinstance(exc.reason, ConnectionRefusedError):
@@ -147,6 +148,8 @@ def certificate_action(path, fingerprint, mode):
         raise ValueError("Invalid certificate action")
     powershell = Path(os.environ["SystemRoot"]) / "System32/WindowsPowerShell/v1.0/powershell.exe"
     env = os.environ.copy()
+    # Let Windows PowerShell construct its own module path, not inherit pwsh 7's.
+    env.pop("PSModulePath", None)
     env.update(TRON_CA_FILE=str(path), TRON_CA_SHA256=fingerprint, TRON_CA_MODE=mode)
     result = subprocess.run([str(powershell), "-NoProfile", "-NonInteractive", "-Command", CERTIFICATE_COMMAND],
                             env=env, capture_output=True, text=True, timeout=90)

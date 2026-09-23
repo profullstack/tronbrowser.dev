@@ -151,9 +151,13 @@ class RootSetupTests(unittest.TestCase):
         powershell = str(Path(os.environ["SystemRoot"]) / "System32/WindowsPowerShell/v1.0/powershell.exe")
 
         def snapshot():
-            return subprocess.run([powershell, "-NoProfile", "-NonInteractive", "-Command",
+            env = os.environ.copy()
+            env.pop("PSModulePath", None)
+            result = subprocess.run([powershell, "-NoProfile", "-NonInteractive", "-Command",
                                    "Get-ChildItem Cert:\\CurrentUser\\Root | Sort-Object Thumbprint | ForEach-Object { $_.Thumbprint }"],
-                                  capture_output=True, text=True, check=True, timeout=15).stdout
+                                    env=env, capture_output=True, text=True, timeout=15)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            return result.stdout
 
         before = snapshot()
         with tempfile.TemporaryDirectory() as temp:
@@ -357,8 +361,9 @@ class RuntimeTests(unittest.TestCase):
                    "TRON_TOR_HELPER_PORT": str(control), "TRON_TOR_PIDFILE": str(pidfile), "TRON_TOR_SOCKS_PORT": str(unused_port()),
                    "TEST_PYTHON": sys.executable, "TEST_RECORDER": str(recorder), "ARGV_OUT": str(output)}
             try:
-                command = '""%s" "https://example.invalid/path?a=1&b=2""' % (directory / "tronbrowser.cmd")
-                result = subprocess.run([os.environ["COMSPEC"], "/d", "/s", "/c", command], env=env, capture_output=True, text=True, timeout=20)
+                # cmd.exe does not use CRT argv quoting; pass /s /c intact.
+                command = '"%s" /d /s /c ""%s" "https://example.invalid/path?a=1&b=2""' % (os.environ["COMSPEC"], directory / "tronbrowser.cmd")
+                result = subprocess.run(command, env=env, capture_output=True, text=True, timeout=25)
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                 self.assertTrue(output.exists(), result.stdout + result.stderr)
                 args = json.loads(output.read_text())

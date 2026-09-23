@@ -37,7 +37,7 @@ rem Load every bundled extension (each subdir with a manifest.json).
 set "EXT="
 for /d %%D in ("%DIR%extensions\*") do (
   if exist "%%D\manifest.json" (
-    rem Enable delayed expansion only after capturing paths (which may contain !).
+    rem Capture paths before enabling delayed expansion to preserve punctuation.
     set "NEXT_EXT=%%D"
     setlocal EnableDelayedExpansion
     if defined EXT (set "NEXT_EXT=!EXT!,!NEXT_EXT!")
