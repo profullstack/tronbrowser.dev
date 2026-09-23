@@ -21,6 +21,25 @@ try {
   await controls.goto(`chrome-extension://${id}/options.html`);
   const message = (type, on) => controls.evaluate(
     ({ type, on }) => chrome.runtime.sendMessage({ type, on }), { type, on });
+  // Certificate rejection can commit chrome-error:// after goto rejects. Keep
+  // that late navigation out of the tab used for subsequent routing checks.
+  const rejectUntrusted = async (url, { screenshotPath, timeout = 45000 } = {}) => {
+    const invalid = await context.newPage();
+    try {
+      await assert.rejects(invalid.goto(url, {
+        waitUntil: 'domcontentloaded', timeout,
+      }), /ERR_CERT_AUTHORITY_INVALID/);
+      if (screenshotPath) {
+        await invalid.waitForFunction(() => Boolean(document.body?.innerText.trim()), null, { timeout: 5000 });
+        await invalid.screenshot({ path: screenshotPath });
+      }
+    } catch (error) {
+      await invalid.screenshot({ path: path.join(evidence, `${phase}-invalid-tls-failure.png`) }).catch(() => {});
+      throw error;
+    } finally {
+      await invalid.close().catch(() => {});
+    }
+  };
 
   const deadline = Date.now() + 5000;
   let initial, initialProxy;
@@ -51,10 +70,7 @@ try {
   check('HTTP Moshpit name resolves through the browser');
 
   if (phase === 'before-trust' || phase === 'after-removal') {
-    await assert.rejects(page.goto('https://profullstack.agent/', {
-      waitUntil: 'domcontentloaded', timeout: 45000,
-    }), /ERR_CERT_AUTHORITY_INVALID/);
-    await page.screenshot({ path: path.join(evidence, `${phase}.png`) });
+    await rejectUntrusted('https://profullstack.agent/', { screenshotPath: path.join(evidence, `${phase}.png`) });
     check('registry HTTPS is rejected without root trust');
   } else {
     const response = await page.goto('https://profullstack.agent/', {
@@ -70,9 +86,7 @@ try {
     check('registry HTTPS succeeds with normal browser certificate verification');
   }
 
-  await assert.rejects(page.goto(invalidTlsUrl, {
-    waitUntil: 'domcontentloaded', timeout: 15000,
-  }), /ERR_CERT_AUTHORITY_INVALID/);
+  await rejectUntrusted(invalidTlsUrl, { timeout: 15000 });
   check('unrelated self-signed HTTPS remains rejected');
 
   assert.equal((await message('pit-set', false)).enabled, false);
