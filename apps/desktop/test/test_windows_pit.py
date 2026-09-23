@@ -42,6 +42,11 @@ def state(**overrides):
 
 
 class StartupTests(unittest.TestCase):
+    def setUp(self):
+        probe = mock.patch.object(windows, "port_available", return_value=False)
+        probe.start()
+        self.addCleanup(probe.stop)
+
     def test_refused_port_is_only_absence_case(self):
         with mock.patch.object(windows, "read_url", side_effect=urllib.error.URLError(ConnectionRefusedError())):
             self.assertIsNone(windows.helper_state(1234))
@@ -154,7 +159,8 @@ class RootSetupTests(unittest.TestCase):
             env = os.environ.copy()
             env.pop("PSModulePath", None)
             result = subprocess.run([powershell, "-NoProfile", "-NonInteractive", "-Command",
-                                   "Get-ChildItem Cert:\\CurrentUser\\Root | Sort-Object Thumbprint | ForEach-Object { $_.Thumbprint }"],
+                                    "$s = New-Object System.Security.Cryptography.X509Certificates.X509Store('Root', 'CurrentUser'); "
+                                    "try { $s.Open('ReadOnly'); $s.Certificates | Sort-Object Thumbprint | ForEach-Object { $_.Thumbprint } } finally { $s.Close() }"],
                                     env=env, capture_output=True, text=True, timeout=15)
             self.assertEqual(result.returncode, 0, result.stderr)
             return result.stdout

@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 import re
 import runpy
+import socket
 import ssl
 import subprocess
 import sys
@@ -23,6 +24,23 @@ ROOT_SHA256 = "4A5766EC8C1F10F875C98965FBE8DC361A32C72BC3959516EA7B8161001E1557"
 class NoRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):
         raise ValueError("Redirect refused: " + req.full_url)
+
+
+class HelperUnavailable(RuntimeError):
+    pass
+
+
+def port_available(port):
+    # Some Windows stacks silently drop SYNs for closed loopback ports. Binding
+    # with exclusive ownership distinguishes that case from an occupied port.
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+        if sys.platform == "win32":
+            probe.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+        try:
+            probe.bind(("127.0.0.1", port))
+            return True
+        except OSError:
+            return False
 
 
 def read_url(url, *, local=False, timeout=10, limit=65536):
@@ -45,9 +63,9 @@ def helper_state(port):
         # Only a refused connection means it is safe to try starting a helper.
         if isinstance(exc.reason, ConnectionRefusedError):
             return None
-        raise RuntimeError("Helper port is occupied or unresponsive") from exc
+        raise HelperUnavailable("Helper port is occupied or unresponsive") from exc
     except (TimeoutError, OSError) as exc:
-        raise RuntimeError("Helper port is occupied or unresponsive") from exc
+        raise HelperUnavailable("Helper port is occupied or unresponsive") from exc
     try:
         state = json.loads(raw)
         if (not isinstance(state, dict) or state.get("helper") != "tronbrowser-network"
@@ -68,7 +86,7 @@ def start_helper(directory=HERE, data=None, timeout=6):
         raise RuntimeError("Release is missing tron-tor-helper; reinstall the complete Windows ZIP")
     config = runpy.run_path(str(helper))
     port, version = config["PORT"], config["HELPER_VERSION"]
-    existing = helper_state(port)
+    existing = None if port_available(port) else helper_state(port)
     if existing is not None:
         if existing["version"] != version:
             raise RuntimeError("Older helper is running. Restart Windows after upgrading TronBrowser")
@@ -88,7 +106,11 @@ def start_helper(directory=HERE, data=None, timeout=6):
     deadline = time.monotonic() + timeout
     try:
         while time.monotonic() < deadline:
-            state = helper_state(port)
+            try:
+                state = helper_state(port)
+            except HelperUnavailable:
+                # Only retry transport failures while our own child starts.
+                state = None
             if state is not None:
                 if state["version"] != version:
                     raise RuntimeError("A different helper version owns the port")
