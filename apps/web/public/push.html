@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Push service · TronBrowser</title>
+<meta name="description" content="TronBrowser runs its own Web Push service, because the ungoogled-chromium engine ships without one. Standard RFC 8030 protocol, end-to-end encrypted, and you can point the browser at your own." />
+<link rel="canonical" href="https://tronbrowser.dev/push" />
+<link rel="icon" href="/logo.svg" type="image/svg+xml" />
+<meta name="theme-color" content="#05070d" />
+<style>
+  :root { --bg:#05070d; --fg:#cfe8ff; --muted:#6f86b3; --cyan:#34e7ff; --line:#1b2540; }
+  body { margin:0 auto; max-width:760px; padding:48px 20px; background:var(--bg); color:var(--fg);
+    font:16px/1.7 ui-monospace,Menlo,monospace; }
+  h1 { color:#fff; } h2 { color:var(--cyan); margin-top:32px; font-size:18px; }
+  a { color:var(--cyan); } .muted { color:var(--muted); }
+  nav a { margin-right:16px; }
+  code, pre { background:#0b1020; border:1px solid var(--line); border-radius:6px; }
+  code { padding:1px 5px; } pre { padding:12px; overflow-x:auto; }
+  table { border-collapse:collapse; width:100%; } td, th { border:1px solid var(--line); padding:6px 8px; text-align:left; vertical-align:top; }
+</style>
+</head>
+<body>
+  <nav><a href="/">← Home</a></nav>
+  <h1>Push service</h1>
+
+  <p>Browser notifications travel through a push service that the <em>browser</em> picks:
+  Chrome uses Google's, Firefox uses Mozilla's, Safari uses Apple's. The ungoogled-chromium
+  engine TronBrowser runs on has none, so on a stock build every site's
+  <code>pushManager.subscribe()</code> fails with
+  <code>Registration failed - push service error</code>.</p>
+
+  <p>TronBrowser brings its own. The built-in extension supplies <code>pushManager</code> to
+  every page and registers with <code>https://tronbrowser.dev/api/1/push</code> by default.
+  Change it under <strong>Settings → Push notifications</strong>: another compatible
+  service, or off.</p>
+
+  <h2>For site owners: nothing to change</h2>
+  <p>Your site subscribes the usual way and gets an endpoint on our service. Your server sends
+  exactly what it sends to FCM or Mozilla: an <code>aes128gcm</code> body (RFC 8291) with a
+  VAPID header (RFC 8292), via <code>web-push</code>, <code>@profullstack/notifications</code>
+  or anything else that speaks the standard. We answer <code>201</code>, and <code>404</code> /
+  <code>410</code> when a subscription is gone, so your cleanup keeps working.</p>
+  <p class="muted">One difference: the notification is shown by TronBrowser from the payload's
+  <code>title</code>, <code>body</code>, <code>icon</code> and <code>url</code> (also
+  <code>notification.*</code> and <code>click_action</code>). Your service worker's
+  <code>push</code> handler does not run, so a silent push that only syncs data shows as a
+  plain notification.</p>
+
+  <h2>Privacy</h2>
+  <ul>
+    <li>No account. A browser is identified by the hash of a random secret it keeps.</li>
+    <li>Payloads arrive encrypted to a key only your browser holds; we store and relay the
+    ciphertext and cannot read it.</li>
+    <li>We keep each subscription's site origin and the sender's VAPID key, and each message
+    until your browser acknowledges it or its TTL runs out (28 days at most).</li>
+  </ul>
+
+  <h2>The protocol, for a self-hosted service</h2>
+  <table>
+    <tr><th>Request</th><th>Who</th><th>What</th></tr>
+    <tr><td><code>GET /</code></td><td>settings page</td><td><code>{"service":"tronbrowser-push","version":1}</code>, which is how the browser checks a custom URL</td></tr>
+    <tr><td><code>POST /{token}</code></td><td>site servers</td><td>RFC 8030 push. <code>TTL</code> required, body ≤ 4096 bytes, <code>Topic</code> replaces a pending message</td></tr>
+    <tr><td><code>POST /subscriptions</code></td><td>browser</td><td><code>{origin, applicationServerKey}</code> → <code>{token, endpoint}</code></td></tr>
+    <tr><td><code>DELETE /subscriptions/{token}</code></td><td>browser</td><td>unsubscribe; later pushes get <code>410</code></td></tr>
+    <tr><td><code>GET /messages</code>, <code>POST /ack</code></td><td>browser</td><td>pending messages, then <code>{ids}</code> to acknowledge</td></tr>
+    <tr><td><code>GET /connect</code></td><td>browser</td><td>WebSocket. Send <code>{"type":"hello","secret"}</code>; receive <code>{"type":"messages"}</code>; reply <code>{"type":"ack","ids"}</code></td></tr>
+  </table>
+  <p class="muted">Browser calls carry <code>Authorization: Bearer &lt;device secret&gt;</code>.
+  The source is in <a href="https://github.com/profullstack/tronbrowser.dev/tree/main/services/api/src/push">services/api/src/push</a>.</p>
+</body>
+</html>

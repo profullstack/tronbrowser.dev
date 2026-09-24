@@ -52,7 +52,7 @@
 	# (no content hashing yet — don't let stale JS strand logged-in users).
 	@images path *.svg *.png *.ico
 	header @images Cache-Control "public, max-age=86400"
-	@code path *.js *.css *.html / /privacy /login /settings /dns
+	@code path *.js *.css *.html / /privacy /login /settings /dns /push
 	header @code Cache-Control "public, max-age=60, must-revalidate"
 
 	encode gzip zstd
@@ -66,6 +66,8 @@
 	rewrite @settings /settings.html
 	@dns path /dns
 	rewrite @dns /dns.html
+	@push path /push
+	rewrite @push /push.html
 
 	file_server
 

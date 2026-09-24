@@ -89,6 +89,25 @@
     name still needs the certificate that <code>moshcode dns enable</code> installs.
   </p>
 
+  <h2>Push notifications</h2>
+  <p class="hint">
+    Sites send browser notifications through a push service the browser chooses.
+    The engine TronBrowser runs on ships without one, so TronBrowser brings its
+    own. Messages reach it encrypted to a key only this browser holds.
+  </p>
+  <label for="pushMode">Push service</label>
+  <select id="pushMode">
+    <option value="default">TronBrowser (tronbrowser.dev/api/1/push)</option>
+    <option value="custom">Another push service…</option>
+    <option value="off">Off (the engine's own behaviour)</option>
+  </select>
+  <div id="pushCustomRow" hidden>
+    <label for="pushUrl">Push service URL</label>
+    <input id="pushUrl" placeholder="https://push.example.com/api/1/push" />
+  </div>
+  <button id="savePush">Save</button><span id="savedPush" class="saved"></span>
+  <p class="hint">Changing it signs sites out of push; they subscribe again the next time they ask.</p>
+
   <h2>AI providers (bring your own keys)</h2>
   <p class="hint">Add keys for as many providers as you like, then pick a default for
   the sidebar. Keys are stored on your account (encrypted end-to-end when a vault

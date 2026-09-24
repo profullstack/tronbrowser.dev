@@ -279,6 +279,9 @@ importers:
       '@hono/node-server':
         specifier: ^1.13.7
         version: 1.19.14(hono@4.12.27)
+      '@hono/node-ws':
+        specifier: ^1.3.1
+        version: 1.3.1(@hono/node-server@1.19.14(hono@4.12.27))(hono@4.12.27)
       '@langchain/anthropic':
         specifier: ^1.5.1
         version: 1.5.1(@langchain/core@1.2.1(openai@6.45.0(ws@8.21.0)(zod@4.4.3))(ws@8.21.0))
@@ -307,6 +310,9 @@ importers:
         specifier: ^4.6.14
         version: 4.12.27
     devDependencies:
+      '@profullstack/notifications':
+        specifier: ^0.1.3
+        version: 0.1.3
       typescript:
         specifier: ^5.6.3
         version: 5.9.3
@@ -1042,6 +1048,13 @@ packages:
     peerDependencies:
       hono: ^4
 
+  '@hono/node-ws@1.3.1':
+    resolution: {integrity: sha512-vo/MwCnpJAVHBkGzWjCJ28wF45fYHAfbPZcH2rodZODHtch2GHA94KtMfusmVycTUtsLAsaNsHhtY6P8X3RQsA==}
+    engines: {node: '>=18.14.1'}
+    peerDependencies:
+      '@hono/node-server': ^1.19.11
+      hono: ^4.6.0
+
   '@humanfs/core@0.19.2':
     resolution: {integrity: sha512-UhXNm+CFMWcbChXywFwkmhqjs3PRCmcSa/hfBgLIb7oQ5HNb1wS0icWsGtSAUNgefHeI+eBrA8I1fxmbHsGdvA==}
     engines: {node: '>=18.18.0'}
@@ -1226,6 +1239,10 @@ packages:
 
   '@profullstack/emailer@1.0.1':
     resolution: {integrity: sha512-/uhHJJGH+1xSSz3mJn6X+m6aruYjMD3JOaRp/d4R/YWlzpy07H9z0/JUleIyRyBPNmaANSIwjTZ7aVjaukOEpg==}
+
+  '@profullstack/notifications@0.1.3':
+    resolution: {integrity: sha512-BtP67qx/+AQuKNtgIoxZWS2cTr1zc2hKTP7mqPhVpiEoxAgCEYHqtr+5aMRRAu+mmElXQSKjaU7ydbGKzG+WPg==}
+    engines: {node: '>=20.11'}
 
   '@profullstack/referrals@0.1.0':
     resolution: {integrity: sha512-u66SdBVpsv3kc0N+NWISPoYD5vjCERyv5wfD07iSkZwQeC2IA+ihX5jNA4e7Xr+Y4AUvxLycG+3b4VaROqzgRg==}
@@ -2494,6 +2511,7 @@ packages:
 
   libsql@0.4.7:
     resolution: {integrity: sha512-T9eIRCs6b0J1SHKYIvD8+KCJMcWZ900iZyxdnSCdqxN12Z1ijzT+jY5nrk72Jw4B0HGzms2NgpryArlJqvc3Lw==}
+    cpu: [x64, arm64, wasm32]
     os: [darwin, linux, win32]
 
   lighthouse-logger@1.4.2:
@@ -4451,6 +4469,15 @@ snapshots:
     dependencies:
       hono: 4.12.27
 
+  '@hono/node-ws@1.3.1(@hono/node-server@1.19.14(hono@4.12.27))(hono@4.12.27)':
+    dependencies:
+      '@hono/node-server': 1.19.14(hono@4.12.27)
+      hono: 4.12.27
+      ws: 8.21.0
+    transitivePeerDependencies:
+      - bufferutil
+      - utf-8-validate
+
   '@humanfs/core@0.19.2':
     dependencies:
       '@humanfs/types': 0.15.0
@@ -4646,6 +4673,8 @@ snapshots:
       fastq: 1.20.1
 
   '@profullstack/emailer@1.0.1': {}
+
+  '@profullstack/notifications@0.1.3': {}
 
   '@profullstack/referrals@0.1.0(react@19.2.7)':
     optionalDependencies:
