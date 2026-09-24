@@ -21,6 +21,8 @@ export interface SnapshotElement {
   visible: boolean;
   value?: string;
   href?: string;
+  /** `required` attribute or aria-required=true (ATS forms often mark it outside the label). */
+  required?: boolean;
 }
 
 export interface AgentSnapshot {
@@ -46,11 +48,21 @@ export function snapshotExpression(options: SnapshotOptions = {}): string {
   const includeHidden = ${includeHidden ? 'true' : 'false'};
   const INTERACTIVE = 'a[href], button, input:not([type=hidden]), select, textarea, ' +
     '[role=button], [role=link], [role=checkbox], [role=radio], [role=tab], ' +
-    '[role=menuitem], [role=switch], [role=textbox], [contenteditable=""], ' +
+    '[role=menuitem], [role=switch], [role=textbox], [role=combobox], [role=option], ' +
+    '[role=menuitemradio], [contenteditable=""], ' +
     '[contenteditable=true], summary, [tabindex]:not([tabindex="-1"])';
   const HEADING = 'h1, h2, h3, h4, h5, h6, [role=heading]';
 
-  for (const el of document.querySelectorAll('[' + ATTR + ']')) el.removeAttribute(ATTR);
+  // Refs are stable: an element keeps the ref an earlier snapshot gave it, and
+  // only new elements get new numbers. Renumbering on every snapshot shifted
+  // every ref after an opened dropdown, so an agent's next fill hit the wrong field.
+  const previous = [...document.querySelectorAll('[' + ATTR + ']')];
+  let seq = 0;
+  for (const el of previous) {
+    const m = /^e([0-9]+)$/.exec(el.getAttribute(ATTR) || '');
+    if (m) seq = Math.max(seq, Number(m[1]));
+  }
+  seq = Math.max(seq, Number(window.__tronRefSeq || 0));
 
   const isVisible = (el) => {
     if (el.hasAttribute('hidden')) return false;
@@ -76,6 +88,7 @@ export function snapshotExpression(options: SnapshotOptions = {}): string {
       if (t === 'radio') return 'radio';
       if (t === 'button' || t === 'submit' || t === 'reset') return 'button';
       if (t === 'range') return 'slider';
+      if (t === 'file') return 'file';
       return 'textbox';
     }
     return 'generic';
@@ -143,7 +156,10 @@ export function snapshotExpression(options: SnapshotOptions = {}): string {
       if (seen.has(el)) continue;
       seen.add(el);
       const visible = isVisible(el);
-      if (!visible && !includeHidden) continue;
+      // File inputs are nearly always visually hidden behind an "Attach"
+      // button, yet they are the only thing an upload can target.
+      const isFile = el.tagName === 'INPUT' && (el.getAttribute('type') || '').toLowerCase() === 'file';
+      if (!visible && !includeHidden && !isFile) continue;
       nodes.push({ el, interactive, visible });
     }
   };
@@ -158,10 +174,17 @@ export function snapshotExpression(options: SnapshotOptions = {}): string {
     return 0;
   });
 
+  // Keep a surfaced element's ref (unless a cloned node copied it); untag
+  // elements that dropped out so their old ref reads as STALE_REF.
+  const surfaced = new Set(nodes.map((n) => n.el));
+  for (const el of previous) if (!surfaced.has(el)) el.removeAttribute(ATTR);
+  const used = new Set();
   const active = document.activeElement;
   let focusedRef;
-  const elements = nodes.map((n, i) => {
-    const ref = 'e' + (i + 1);
+  const elements = nodes.map((n) => {
+    let ref = n.el.getAttribute(ATTR);
+    if (!ref || !/^e[0-9]+$/.test(ref) || used.has(ref)) ref = 'e' + (++seq);
+    used.add(ref);
     n.el.setAttribute(ATTR, ref);
     if (n.el === active) focusedRef = '@' + ref;
     const out = {
@@ -175,8 +198,11 @@ export function snapshotExpression(options: SnapshotOptions = {}): string {
     const v = valueOf(n.el);
     if (v !== undefined) out.value = v;
     if (n.el.tagName.toLowerCase() === 'a' && n.el.href) out.href = n.el.href;
+    if (n.el.required === true || n.el.getAttribute('aria-required') === 'true') out.required = true;
     return out;
   });
+
+  window.__tronRefSeq = seq;
 
   return {
     url: location.href,

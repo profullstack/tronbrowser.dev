@@ -3,6 +3,8 @@
  * browser_analyze / browser_step / browser_run_task. Mutating tools return a
  * fresh snapshot (PRD §10). All action on the managed session's current page.
  */
+import { existsSync } from 'node:fs';
+import { basename, isAbsolute } from 'node:path';
 import { formatSnapshotText, type AgentSnapshot } from '@tronbrowser/browser-core';
 import type { McpContent, McpTool } from './protocol.js';
 import type { McpBrowserSession, McpPage } from './session.js';
@@ -76,21 +78,41 @@ export function browserTools(session: McpBrowserSession): McpTool[] {
       inputSchema: obj({ key: { type: 'string' } }, ['key']),
       handler: async (a) => {
         const p = await page();
-        const key = JSON.stringify(str(a.key));
-        await p.eval(`(() => { const el = document.activeElement || document.body; for (const t of ['keydown','keyup']) el.dispatchEvent(new KeyboardEvent(t, { key: ${key}, bubbles: true, cancelable: true })); })()`);
+        await p.press(str(a.key));
         return freshSnapshot(p);
       },
     },
     {
       name: 'browser_select',
-      description: 'Select an option by value in a <select> referenced by ref.',
+      description:
+        'Choose an option by value or visible text. Works on a native <select> and on custom ' +
+        'comboboxes/listboxes (opens it, filters, clicks the matching option).',
       inputSchema: obj({ ref: { type: 'string' }, value: { type: 'string' } }, ['ref', 'value']),
       handler: async (a) => {
         const p = await page();
-        const ref = JSON.stringify(str(a.ref).replace(/^@/, ''));
-        const value = JSON.stringify(str(a.value));
-        await p.eval(`(() => { const el = document.querySelector('[data-tron-ref=' + ${JSON.stringify(ref)} + ']'); if (el) { el.value = ${value}; el.dispatchEvent(new Event('change', { bubbles: true })); } })()`);
-        return freshSnapshot(p);
+        const chosen = await p.select(str(a.ref), str(a.value));
+        return [{ type: 'text', text: `Selected ${JSON.stringify(chosen ?? str(a.value))}.` }, ...(await freshSnapshot(p))];
+      },
+    },
+    {
+      name: 'browser_upload',
+      description:
+        'Attach local files (absolute paths) to a file input by ref. Snapshots list file inputs ' +
+        '(role "file") even when a styled "Attach" button hides them.',
+      inputSchema: obj(
+        { ref: { type: 'string' }, paths: { type: 'array', items: { type: 'string' } }, path: { type: 'string' } },
+        ['ref'],
+      ),
+      handler: async (a) => {
+        const paths = Array.isArray(a.paths) ? a.paths.map((v) => str(v)) : a.path !== undefined ? [str(a.path)] : [];
+        if (!paths.length) throw new Error('browser_upload needs `paths` (or `path`)');
+        for (const f of paths) {
+          if (!isAbsolute(f)) throw new Error(`Upload path must be absolute: ${f}`);
+          if (!existsSync(f)) throw new Error(`No such file: ${f}`);
+        }
+        const p = await page();
+        await p.upload(str(a.ref), paths);
+        return [{ type: 'text', text: `Attached ${paths.map((f) => basename(f)).join(', ')}.` }, ...(await freshSnapshot(p))];
       },
     },
     {

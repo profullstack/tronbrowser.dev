@@ -11,6 +11,16 @@ beforeEach(() => {
   document.body.innerHTML = '';
 });
 
+describe('text extraction', () => {
+  it('returns visible words, not <script>/<style> source that would eat the 20k cap', () => {
+    document.body.innerHTML = `<script>${'var bundle = 1;'.repeat(3000)}</script><style>.x{color:red}</style><main><h1>Thanks for applying</h1></main>`;
+    const { text } = run<{ text: string }>(extractExpression('text'));
+    expect(text).toContain('Thanks for applying');
+    expect(text).not.toContain('var bundle');
+    expect(text).not.toContain('color:red');
+  });
+});
+
 describe('parseFieldSpec', () => {
   it('parses name=selector', () => {
     expect(parseFieldSpec('title=.t')).toEqual({ name: 'title', selector: '.t' });

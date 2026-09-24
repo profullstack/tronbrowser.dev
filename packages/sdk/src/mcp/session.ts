@@ -13,6 +13,9 @@ export interface McpPage {
   snapshot(): Promise<AgentSnapshot>;
   click(ref: string): Promise<void>;
   fill(ref: string, value: string): Promise<void>;
+  upload(ref: string, files: string[]): Promise<void>;
+  select(ref: string, value: string): Promise<string | undefined>;
+  press(key: string): Promise<void>;
   extract(target: string): Promise<unknown>;
   screenshot(): Promise<Uint8Array>;
   eval<T = unknown>(code: string): Promise<T>;

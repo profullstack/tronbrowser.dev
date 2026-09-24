@@ -30,7 +30,7 @@ function resolvePrelude(ref: string): string {
 export function clickExpression(ref: string): string {
   return `(() => {
   ${resolvePrelude(ref)}
-  el.scrollIntoView({ block: 'center', inline: 'center' });
+  el.scrollIntoView({ block: 'center', inline: 'center', behavior: 'instant' });
   el.click();
   return { ok: true, ref: ${JSON.stringify('@' + normalizeRef(ref))} };
 })()`;
@@ -41,12 +41,15 @@ export function fillExpression(ref: string, value: string): string {
   return `(() => {
   ${resolvePrelude(ref)}
   const value = ${JSON.stringify(value)};
-  el.scrollIntoView({ block: 'center', inline: 'center' });
+  el.scrollIntoView({ block: 'center', inline: 'center', behavior: 'instant' });
   if (el.isContentEditable) {
     el.focus();
     el.textContent = value;
     el.dispatchEvent(new Event('input', { bubbles: true }));
     return { ok: true, ref: ${JSON.stringify('@' + normalizeRef(ref))} };
+  }
+  if (el instanceof HTMLInputElement && el.type === 'file') {
+    return { ok: false, error: 'NOT_FILLABLE', ref: ${JSON.stringify('@' + normalizeRef(ref))}, message: 'a file input takes files: use upload (browser_upload / tron upload)' };
   }
   const proto = el instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
   const desc = Object.getOwnPropertyDescriptor(proto, 'value');
@@ -63,4 +66,5 @@ export interface ActionResult {
   ok: boolean;
   ref: string;
   error?: string;
+  message?: string;
 }

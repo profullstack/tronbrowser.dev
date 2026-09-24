@@ -17,6 +17,9 @@ function fakePage(answers: { markdown?: string; text?: string; links?: unknown; 
     snapshot: async () => SNAP,
     click: async () => {},
     fill: async () => {},
+    upload: async () => {},
+    select: async () => undefined,
+    press: async () => {},
     extract: async (m) => { calls.push('extract:' + m); return m === 'links' ? (answers.links ?? []) : { text: answers.text ?? 'chromium text ' + LONG }; },
     screenshot: async () => Buffer.from('PNG'),
     eval: (async (code: string) => {

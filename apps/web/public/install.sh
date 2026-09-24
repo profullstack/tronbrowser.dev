@@ -87,6 +87,9 @@ Usage:
   tron snapshot         Structured, ref-tagged page snapshot (--json)
   tron click <ref>      Click a snapshot ref, e.g. @e3
   tron fill <ref> <val> Fill an input by ref, e.g. tron fill @e4 "hi@x.com"
+  tron upload <ref> <f> Attach file(s) to a file input, e.g. tron upload @e7 ~/cv.pdf
+  tron select <ref> <v> Pick an option by value or label (native or custom dropdowns)
+  tron press <key>      Trusted key press on the focused element (Enter, Tab, ArrowDown…)
   tron extract <mode>   Extract text|links|forms|tables|main (JSON)
   tron screenshot <p>   Save a PNG of the current page (--full-page)
   tron headless <url>   One-shot: --snapshot | --screenshot <p> | --extract <mode>
@@ -209,7 +212,7 @@ case "${1:-}" in
     SESSION="$(session_bin)"
     [ -x "$SESSION" ] || { echo "This TronBrowser build has no managed-session support (missing tron-session). Run: tron upgrade" >&2; exit 1; }
     exec "$SESSION" browser "$@" ;;
-  snapshot|click|fill|type|extract|screenshot|pdf|trace|replay)
+  snapshot|click|fill|type|upload|select|press|extract|screenshot|pdf|trace|replay)
     # CDP automation on the managed session's current page (PRD M3.2/M3.3/M3.7).
     run_automation "$@" ;;
   analyze)

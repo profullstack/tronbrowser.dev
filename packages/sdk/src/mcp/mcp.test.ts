@@ -18,6 +18,9 @@ function fakePage() {
     snapshot: async () => SNAP,
     click: async (r) => { calls.push('click:' + r); },
     fill: async (r, v) => { calls.push('fill:' + r + '=' + v); },
+    upload: async (r, f) => { calls.push('upload:' + r + '=' + f.join(',')); },
+    select: async (r, v) => { calls.push('select:' + r + '=' + v); return 'Yes'; },
+    press: async (k) => { calls.push('press:' + k); },
     extract: async (m) => ({ mode: m }),
     screenshot: async () => Buffer.from('PNG'),
     eval: async () => { calls.push('eval'); return null as never; },
@@ -52,7 +55,7 @@ describe('MCP protocol', () => {
     const r = await server.handle({ jsonrpc: '2.0', id: 2, method: 'tools/list' });
     const names = (r!.result as { tools: Array<{ name: string }> }).tools.map((t) => t.name);
     expect(names).toEqual(expect.arrayContaining([
-      'browser_open', 'browser_snapshot', 'browser_click', 'browser_fill', 'browser_extract',
+      'browser_open', 'browser_snapshot', 'browser_click', 'browser_fill', 'browser_select', 'browser_upload', 'browser_press', 'browser_extract',
       'browser_screenshot', 'browser_tabs', 'browser_close', 'browser_analyze', 'browser_step', 'browser_run_task',
     ]));
   });
@@ -79,6 +82,25 @@ describe('MCP tools', () => {
     await call('browser_fill', { ref: '@e2', value: 'hi' });
     expect(calls).toContain('click:@e1');
     expect(calls).toContain('fill:@e2=hi');
+  });
+  it('browser_select / browser_press go through the page, not synthetic events', async () => {
+    const { call, calls } = harness();
+    const r = await call('browser_select', { ref: '@e3', value: 'yes' });
+    await call('browser_press', { key: 'Enter' });
+    expect(calls).toEqual(['select:@e3=yes', 'press:Enter']);
+    expect((r!.result as { content: Array<{ text: string }> }).content[0].text).toBe('Selected "Yes".');
+  });
+  it('browser_upload attaches existing absolute paths only', async () => {
+    const { call, calls } = harness();
+    const file = new URL(import.meta.url).pathname;
+    const ok = await call('browser_upload', { ref: '@e4', paths: [file] });
+    expect(calls).toContain('upload:@e4=' + file);
+    expect((ok!.result as { content: Array<{ text: string }> }).content[0].text).toMatch(/^Attached mcp\.test\.ts/);
+    const rel = await call('browser_upload', { ref: '@e4', path: 'resume.pdf' });
+    expect((rel!.result as { isError?: boolean }).isError).toBe(true);
+    const missing = await call('browser_upload', { ref: '@e4', path: '/nope/resume.pdf' });
+    expect((missing!.result as { isError?: boolean }).isError).toBe(true);
+    expect(calls.filter((c) => c.startsWith('upload:'))).toHaveLength(1);
   });
   it('browser_screenshot returns image content', async () => {
     const { call } = harness();

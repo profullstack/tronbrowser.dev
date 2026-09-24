@@ -14,9 +14,47 @@ function run<T>(expr: string): T {
 beforeEach(() => {
   document.head.innerHTML = '';
   document.body.innerHTML = '';
+  // A real navigation gets a fresh window; the ref sequence lives on it.
+  delete (window as unknown as { __tronRefSeq?: number }).__tronRefSeq;
   Element.prototype.getBoundingClientRect = function () {
     return { width: 120, height: 20, top: 0, left: 0, right: 120, bottom: 20, x: 0, y: 0, toJSON() {} };
   } as typeof Element.prototype.getBoundingClientRect;
+});
+
+describe('snapshotExpression refs across snapshots', () => {
+  it('keeps an element\'s ref when new elements appear before it (an opened dropdown)', () => {
+    document.body.innerHTML = `<input aria-label="Sponsorship" role="combobox" /><div id="menu"></div><input aria-label="LinkedIn" />`;
+    const first = run<AgentSnapshot>(snapshotExpression());
+    const linkedIn = first.elements.find((e) => e.name === 'LinkedIn')!.ref;
+    document.getElementById('menu')!.innerHTML = '<div role="option">Yes</div><div role="option">No</div>';
+    const second = run<AgentSnapshot>(snapshotExpression());
+    expect(second.elements.find((e) => e.name === 'LinkedIn')!.ref).toBe(linkedIn);
+    expect(second.elements.filter((e) => e.role === 'option').map((e) => e.ref)).toEqual(['@e3', '@e4']);
+  });
+  it('never hands a vanished element\'s ref to a new one', () => {
+    document.body.innerHTML = `<button>One</button><button>Two</button>`;
+    run<AgentSnapshot>(snapshotExpression());
+    document.body.innerHTML = `<button>Three</button>`;
+    const snap = run<AgentSnapshot>(snapshotExpression());
+    expect(snap.elements.map((e) => e.ref)).toEqual(['@e3']);
+    expect(run<ActionResult>(clickExpression('@e1')).error).toBe('STALE_REF');
+  });
+  it('flags required fields from the attribute or aria-required', () => {
+    document.body.innerHTML = `<input aria-label="Why us?" required /><div role="combobox" aria-label="Visa" aria-required="true" tabindex="0"></div><input aria-label="Nickname" />`;
+    const snap = run<AgentSnapshot>(snapshotExpression());
+    expect(snap.elements.map((e) => [e.name, e.required ?? false])).toEqual([['Why us?', true], ['Visa', true], ['Nickname', false]]);
+  });
+  it('refuses to fill a file input and says to upload instead', () => {
+    document.body.innerHTML = `<input type="file" aria-label="Resume" />`;
+    run<AgentSnapshot>(snapshotExpression());
+    expect(run<ActionResult>(fillExpression('@e1', 'x'))).toMatchObject({ ok: false, error: 'NOT_FILLABLE' });
+  });
+  it('lists a visually hidden file input as role "file"', () => {
+    document.body.innerHTML = `<button>Attach</button><label for="resume">Resume</label><input id="resume" type="file" style="display:none" />`;
+    const snap = run<AgentSnapshot>(snapshotExpression());
+    const file = snap.elements.find((e) => e.role === 'file');
+    expect(file).toMatchObject({ name: 'Resume', visible: false, tag: 'input' });
+  });
 });
 
 describe('snapshotExpression', () => {

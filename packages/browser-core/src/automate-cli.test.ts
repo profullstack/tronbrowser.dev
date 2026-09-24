@@ -81,6 +81,52 @@ describe('automate-cli run', () => {
     expect(out.join('\n')).toContain('filled @e2');
   });
 
+  it('uploads files to a file input by object id', async () => {
+    const sent: Array<[string, unknown]> = [];
+    const c: CdpConnection = {
+      send: (async (method: string, params: unknown) => {
+        sent.push([method, params]);
+        if (method === 'Runtime.evaluate') return { result: { objectId: 'obj-1' } };
+        if (method === 'Runtime.callFunctionOn') return { result: { value: true } };
+        return {};
+      }) as CdpConnection['send'],
+      on: vi.fn(),
+      close: vi.fn(),
+    };
+    const { deps, out } = harness({ connect: async () => c });
+    const code = await run(['upload', '@e7', '/tmp/cv.pdf'], deps);
+    expect(code).toBe(EXIT.ok);
+    expect(sent).toContainEqual(['DOM.setFileInputFiles', { objectId: 'obj-1', files: ['/tmp/cv.pdf'] }]);
+    expect(out.join('\n')).toContain('uploaded 1 file(s) to @e7');
+  });
+
+  it('presses keys with trusted input events', async () => {
+    const sent: Array<[string, unknown]> = [];
+    const c: CdpConnection = {
+      send: (async (method: string, params: unknown) => { sent.push([method, params]); return {}; }) as CdpConnection['send'],
+      on: vi.fn(),
+      close: vi.fn(),
+    };
+    const { deps } = harness({ connect: async () => c });
+    expect(await run(['press', 'Enter'], deps)).toBe(EXIT.ok);
+    const keys = sent.filter(([m]) => m === 'Input.dispatchKeyEvent').map(([, p]) => (p as { type: string; key: string }).type + ':' + (p as { key: string }).key);
+    expect(keys).toEqual(['keyDown:Enter', 'keyUp:Enter']);
+  });
+
+  it('selects a native option by label', async () => {
+    const { deps, out } = harness({ connect: async () => conn({ ok: true, chosen: 'United States' }) });
+    expect(await run(['select', '@e3', 'united states'], deps)).toBe(EXIT.ok);
+    expect(out.join('\n')).toContain('selected "United States" in @e3');
+  });
+
+  it('prints usage for upload/select/press without arguments', async () => {
+    for (const cmd of ['upload', 'select', 'press']) {
+      const { deps, err } = harness();
+      expect(await run([cmd], deps)).toBe(EXIT.usage);
+      expect(err.join('\n')).toContain(`tron ${cmd}`);
+    }
+  });
+
   it('exits staleRef when a ref no longer resolves', async () => {
     const { deps, err } = harness({
       connect: async () => conn({ ok: false, error: 'STALE_REF', ref: '@e9' }),
