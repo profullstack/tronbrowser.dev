@@ -1,0 +1,104 @@
+name: Publish to the TronBrowser Store
+
+# A reusable workflow, so every extension we own publishes the same way instead
+# of each repo growing its own half of the job.
+#
+# Why it exists: every listing was created by hand, which in practice meant none
+# were — the store had a single extension and our own MarkSyncr was not in it. An
+# extension that is not in the store is one TronBrowser cannot auto-update to,
+# which is the whole point of having our own store rather than waiting on Google.
+#
+# Call it from an extension repo's release workflow:
+#
+#   publish-to-store:
+#     needs: build
+#     uses: profullstack/tronbrowser.dev/.github/workflows/store-publish.yml@main
+#     secrets: inherit
+#     with:
+#       name: MarkSyncr
+#       manifest: apps/extension/src/manifest.chrome.json
+#       bundle_url: https://github.com/${{ github.repository }}/releases/download/v${{ needs.build.outputs.version }}/marksyncr-chrome.zip
+#
+# The artifact has to be a URL the store can fetch, which is what publishing the
+# built ZIP as a release asset is for.
+on:
+  workflow_call:
+    inputs:
+      name:
+        description: 'Listing name. Created on first publish.'
+        required: true
+        type: string
+      manifest:
+        description: 'Path to the MV3 manifest.json in the calling repo.'
+        required: true
+        type: string
+      bundle_url:
+        description: 'Public URL of the .zip bundle.'
+        required: false
+        type: string
+        default: ''
+      crx_url:
+        description: 'Public URL of a signed .crx, if the project builds one.'
+        required: false
+        type: string
+        default: ''
+      slug:
+        description: 'Look the listing up by this slug instead of by name.'
+        required: false
+        type: string
+        default: ''
+      dry_run:
+        description: 'Resolve and validate, write nothing.'
+        required: false
+        type: boolean
+        default: false
+    secrets:
+      TRONBROWSER_STORE_TOKEN:
+        description: 'A tbpub_ publisher token, minted from a signed-in session.'
+        required: true
+
+jobs:
+  publish:
+    name: Publish to the store
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the calling repo
+        uses: actions/checkout@v5
+
+      - name: Check out the publisher script
+        uses: actions/checkout@v5
+        with:
+          repository: profullstack/tronbrowser.dev
+          path: .tronbrowser-store
+          sparse-checkout: scripts/store-publish.mjs
+          sparse-checkout-cone-mode: false
+
+      - name: Wait for the release asset
+        if: ${{ inputs.bundle_url != '' || inputs.crx_url != '' }}
+        env:
+          URL: ${{ inputs.crx_url != '' && inputs.crx_url || inputs.bundle_url }}
+        run: |
+          # The store fetches the artifact itself, so it has to be reachable
+          # before we submit. A release asset can lag the tag by a few seconds.
+          for i in $(seq 1 20); do
+            if curl -fsSLI "$URL" >/dev/null 2>&1; then
+              echo "artifact is up: $URL"
+              exit 0
+            fi
+            echo "waiting for $URL ($i/20)"
+            sleep 6
+          done
+          echo "::error::artifact never became reachable: $URL"
+          exit 1
+
+      - name: Publish
+        env:
+          TRONBROWSER_STORE_TOKEN: ${{ secrets.TRONBROWSER_STORE_TOKEN }}
+        run: |
+          node .tronbrowser-store/scripts/store-publish.mjs \
+            --name "${{ inputs.name }}" \
+            --manifest "${{ inputs.manifest }}" \
+            ${{ inputs.slug != '' && format('--slug "{0}"', inputs.slug) || '' }} \
+            ${{ inputs.bundle_url != '' && format('--bundle-url "{0}"', inputs.bundle_url) || '' }} \
+            ${{ inputs.crx_url != '' && format('--crx-url "{0}"', inputs.crx_url) || '' }} \
+            ${{ inputs.dry_run && '--dry-run' || '' }}
