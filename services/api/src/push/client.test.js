@@ -1,3 +1,4 @@
+/* global chrome */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Hono } from 'hono';
 import { createClient } from '@libsql/client';
