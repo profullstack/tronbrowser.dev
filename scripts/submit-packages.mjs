@@ -390,6 +390,28 @@ function pushFilesToRepo({ repo, sshKey, files = [], write = [], message }) {
   console.log(`  pushed ${names} to ${repo}`);
 }
 
+/**
+ * Versions of our package Chocolatey has actually approved.
+ *
+ * Their public OData feed lists approved versions only, so an empty answer means
+ * the package has never cleared moderation. A network failure returns an empty
+ * list too, which errs towards treating a refusal as the moderation gate rather
+ * than failing a release on a flaky lookup — the push itself already failed, so
+ * nothing is published either way.
+ */
+async function chocolateyApprovedVersions() {
+  const url =
+    "https://community.chocolatey.org/api/v2/Packages()?$filter=Id%20eq%20'tronbrowser'";
+  try {
+    const res = await fetch(url, { headers: { accept: "application/atom+xml" } });
+    if (!res.ok) return [];
+    const xml = await res.text();
+    return [...xml.matchAll(/<d:Version>([^<]+)<\/d:Version>/g)].map((m) => m[1]);
+  } catch {
+    return [];
+  }
+}
+
 /** Channels that are a PR into a third party's monorepo. */
 function upstreamPr(pm, repo, doc) {
   console.log(
@@ -459,7 +481,7 @@ const SUBMITTERS = {
     console.log("  pushed PKGBUILD to the AUR");
   },
 
-  chocolatey: () => {
+  chocolatey: async () => {
     // The Linux job templates this manifest so it gets committed with the rest;
     // only the Windows job can actually pack and push it. Without this guard the
     // Linux run dies on a missing `choco`.
@@ -475,15 +497,41 @@ const SUBMITTERS = {
     run("choco", ["pack", "tronbrowser.nuspec", "--outputdirectory", dir], {
       cwd: dir,
     });
-    run("choco", [
-      "push",
-      join(dir, `tronbrowser.${version}.nupkg`),
-      "--source",
-      "https://push.chocolatey.org/",
-      "--api-key",
-      key,
-    ], { cwd: dir });
-    console.log("  pushed to Chocolatey");
+    try {
+      run("choco", [
+        "push",
+        join(dir, `tronbrowser.${version}.nupkg`),
+        "--source",
+        "https://push.chocolatey.org/",
+        "--api-key",
+        key,
+      ], { cwd: dir });
+      console.log("  pushed to Chocolatey");
+    } catch (err) {
+      // Chocolatey answers 403 when a brand-new package already has a version
+      // waiting on first moderation: it will not queue a second unapproved one.
+      // That is a state to wait out, not a broken credential, and failing the
+      // whole release on it makes every run red until a human moderator gets to
+      // it.
+      //
+      // The two cases are told apart by the public feed, which only lists
+      // approved versions. No approved version means the package has never
+      // cleared moderation, so a refusal is the moderation gate. A package that
+      // IS listed and still refuses the push is a real problem — a wrong key, or
+      // someone else owning the id — and that still fails loudly, because
+      // swallowing it is how this pipeline went three months publishing nothing.
+      const approved = await chocolateyApprovedVersions();
+      if (approved.length === 0) {
+        console.log("  chocolatey: refused, and the package has no approved version yet.");
+        console.log("  A first submission is still with their moderators, and they will");
+        console.log("  not take a second one until it clears. Nothing to do but wait.");
+        return;
+      }
+      console.log(
+        `  chocolatey: push refused although ${approved.length} version(s) are already approved`,
+      );
+      throw err;
+    }
   },
 
   snap: () => {
