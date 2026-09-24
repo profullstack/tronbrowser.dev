@@ -9,8 +9,14 @@ on:
         description: 'Version to release (e.g. 0.1.0)'
         required: true
 
+# A called workflow can only ever hold a subset of its caller's permissions, so
+# the distribute job's `pull-requests: write` has to be granted here too — it
+# opens the PR carrying the refreshed distribution/ manifests. Without this the
+# push succeeds and `gh pr create` is denied, which the script swallows, so the
+# branch would appear with no PR behind it.
 permissions:
   contents: write
+  pull-requests: write
 
 jobs:
   # 1) Create the GitHub Release (draft) up front so each per-platform build job
