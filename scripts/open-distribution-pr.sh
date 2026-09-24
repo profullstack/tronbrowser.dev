@@ -37,13 +37,29 @@ else
   git push origin "${BRANCH}"
 fi
 
-# `gh pr create` fails if one is already open for the branch, which is fine.
-gh pr create \
+# An already-open PR for this branch is fine and expected on a re-run. Anything
+# else — a denied token, a missing base — is a real failure and must not be
+# swallowed: a silent success here is precisely how this pipeline went three
+# months looking healthy while publishing nothing.
+set +e
+OUT="$(gh pr create \
   --base main \
   --head "${BRANCH}" \
   --title "chore(distribution): refresh manifests for v${VERSION}" \
   --body "Automated manifest refresh from the release pipeline for v${VERSION}.
 
 Version strings and sha256 checksums are rewritten from the published release
-assets by \`scripts/submit-packages.mjs\`." \
-  || echo "a PR for ${BRANCH} already exists; branch updated in place"
+assets by \`scripts/submit-packages.mjs\`." 2>&1)"
+RC=$?
+set -e
+
+echo "${OUT}"
+
+if [ "${RC}" -ne 0 ]; then
+  if echo "${OUT}" | grep -qi "already exists"; then
+    echo "a PR for ${BRANCH} already exists; branch updated in place"
+  else
+    echo "gh pr create failed for ${BRANCH}" >&2
+    exit "${RC}"
+  fi
+fi
