@@ -1,24 +1,45 @@
 name: Submit to Package Managers
 
-# Refresh + submit downstream package managers after a release. Mirrors
-# pairux.com's submit-packages workflow but stays in this monorepo. Each channel
-# is gated on its secret; without the secret it dry-runs (no-op), so this never
-# fails for missing credentials.
+# Refresh + submit downstream package managers after a release. Each channel is
+# gated on its secret; without the secret it refreshes the manifest and skips the
+# submit, so this never fails for missing credentials.
+#
+# NOT triggered by `release: [published]`. release.yml un-drafts with
+# GITHUB_TOKEN, and GitHub deliberately raises no workflow events for anything a
+# GITHUB_TOKEN does, so that trigger never fired once between 2026-06-25 and
+# 2026-09-24 and every channel silently stayed on 0.1.0. release.yml now calls
+# this workflow directly instead, which needs no PAT.
 on:
-  release:
-    types: [published]
+  workflow_call:
+    inputs:
+      version:
+        description: 'Version without v prefix (e.g. 0.1.0)'
+        required: true
+        type: string
+      dry_run:
+        description: 'Refresh manifests without submitting'
+        type: boolean
+        default: false
+      package_managers:
+        description: 'Comma-separated, or "all"'
+        type: string
+        default: all
   workflow_dispatch:
     inputs:
       version:
         description: 'Version without v prefix (e.g. 0.1.0)'
         required: true
       dry_run:
-        description: 'Generate manifests without submitting'
+        description: 'Refresh manifests without submitting'
         type: boolean
         default: true
       package_managers:
         description: 'Comma-separated, or "all"'
         default: all
+
+permissions:
+  contents: write
+  pull-requests: write
 
 jobs:
   # Everything except Chocolatey runs on Linux.
@@ -31,50 +52,74 @@ jobs:
 
       - name: Resolve version
         id: v
-        run: |
-          if [ -n "${{ github.event.inputs.version }}" ]; then V="${{ github.event.inputs.version }}"; else V="${{ github.event.release.tag_name }}"; fi
-          echo "version=${V#v}" >> "$GITHUB_OUTPUT"
+        env:
+          V_IN: ${{ inputs.version }}
+        run: echo "version=${V_IN#v}" >> "$GITHUB_OUTPUT"
 
       - name: Resolve package managers
         id: pms
+        env:
+          PMS_IN: ${{ inputs.package_managers }}
         run: |
-          PMS="${{ github.event.inputs.package_managers }}"
+          PMS="$PMS_IN"
           [ -z "$PMS" ] && PMS="all"
           if [ "$PMS" = "all" ]; then PMS="homebrew,scoop,winget,aur,apt,rpm,gentoo,nix,snap,flatpak,appimage,freebsd"; fi
           echo "list=$(echo "$PMS" | sed 's/chocolatey,*//g')" >> "$GITHUB_OUTPUT"
 
       - name: Refresh + submit manifests
         env:
-          DRY_RUN: ${{ github.event.inputs.dry_run }}
+          # A release calls this with dry_run=false. This previously read
+          # github.event.inputs.dry_run, which is empty on anything but a
+          # workflow_dispatch, so the "!= false" test below appended --dry-run on
+          # every release run: the submit path could never have executed even if
+          # the trigger had worked.
+          DRY_RUN: ${{ inputs.dry_run }}
           GH_TOKEN: ${{ github.token }}
           AUR_SSH_KEY: ${{ secrets.AUR_SSH_KEY }}
           GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          SCOOP_BUCKET_TOKEN: ${{ secrets.SCOOP_BUCKET_TOKEN }}
+          SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.SNAPCRAFT_STORE_CREDENTIALS }}
         run: |
           ARGS="-v ${{ steps.v.outputs.version }}"
           for PM in $(echo "${{ steps.pms.outputs.list }}" | tr ',' ' '); do ARGS="$ARGS -p $PM"; done
-          # Default to dry-run unless explicitly disabled AND submit secrets exist.
           if [ "$DRY_RUN" != "false" ]; then ARGS="$ARGS --dry-run"; fi
           node scripts/submit-packages.mjs $ARGS
+
+      # The refreshed manifests are the input to every future submission, so they
+      # have to outlive the runner. Without this they were rewritten and thrown
+      # away, which is why distribution/ still said 0.1.0 at release 3.15.0.
+      - name: Open a PR with the refreshed manifests
+        if: ${{ inputs.dry_run != true }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.v.outputs.version }}
+        run: bash scripts/open-distribution-pr.sh
 
   # Chocolatey publishes from Windows.
   submit-chocolatey:
     runs-on: windows-latest
     name: Submit (Chocolatey)
     if: >-
-      github.event.inputs.package_managers == 'all' ||
-      github.event.inputs.package_managers == '' ||
-      github.event_name == 'release' ||
-      contains(github.event.inputs.package_managers, 'chocolatey')
+      inputs.package_managers == 'all' ||
+      inputs.package_managers == '' ||
+      contains(inputs.package_managers, 'chocolatey')
     steps:
       - uses: actions/checkout@v5
       - name: Resolve version
         id: v
         shell: bash
-        run: |
-          if [ -n "${{ github.event.inputs.version }}" ]; then V="${{ github.event.inputs.version }}"; else V="${{ github.event.release.tag_name }}"; fi
-          echo "version=${V#v}" >> "$GITHUB_OUTPUT"
-      - name: Refresh chocolatey manifest
+        env:
+          V_IN: ${{ inputs.version }}
+        run: echo "version=${V_IN#v}" >> "$GITHUB_OUTPUT"
+      - name: Refresh + submit chocolatey manifest
         shell: bash
         env:
+          # Was hardcoded --dry-run, so chocolatey could never publish regardless
+          # of trigger or credentials.
+          DRY_RUN: ${{ inputs.dry_run }}
           CHOCOLATEY_API_KEY: ${{ secrets.CHOCOLATEY_API_KEY }}
-        run: node scripts/submit-packages.mjs -v ${{ steps.v.outputs.version }} -p chocolatey --dry-run
+        run: |
+          ARGS="-v ${{ steps.v.outputs.version }} -p chocolatey"
+          if [ "$DRY_RUN" != "false" ]; then ARGS="$ARGS --dry-run"; fi
+          node scripts/submit-packages.mjs $ARGS
