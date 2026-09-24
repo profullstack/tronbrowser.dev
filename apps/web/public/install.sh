@@ -257,6 +257,128 @@ case "${1:-}" in
     command -v node >/dev/null 2>&1 || { echo "tron run needs Node.js (>=24) on PATH." >&2; exit 1; }
     [ -f "$RUNNER" ] || { echo "This TronBrowser build lacks the SDK runtime. Run: tron upgrade" >&2; exit 1; }
     exec env TRON_SESSION_BIN="$(session_bin)" node "$RUNNER" "$@" ;;
+  store)
+    # Publish an extension to the TronBrowser store, from a terminal or from CI.
+    #
+    # The store already auto-updates anything listed in it, and the launcher now
+    # pulls those updates, so getting an extension listed is the whole job. Doing
+    # that by hand is why the store had one listing while we shipped five
+    # extensions.
+    #
+    # Deliberately plain sh + curl: publishing must work on a box with no Node,
+    # and in a CI image that has nothing but this script.
+    shift
+    _sub="${1:-help}"; [ "$#" -gt 0 ] && shift
+    _store="${TRONBROWSER_STORE:-https://tronbrowser.dev}"
+    _tokfile="${XDG_CONFIG_HOME:-$HOME/.config}/tronbrowser/store-token"
+
+    _tok() {
+      # CI passes the token in the environment; a person logs in once.
+      if [ -n "${TRONBROWSER_STORE_TOKEN:-}" ]; then printf '%s' "$TRONBROWSER_STORE_TOKEN"; return 0; fi
+      [ -f "$_tokfile" ] && cat "$_tokfile" && return 0
+      return 1
+    }
+
+    _need_tok() {
+      _t="$(_tok)" || {
+        echo "Not signed in to the store. Run: tron store login" >&2
+        echo "In CI, set TRONBROWSER_STORE_TOKEN instead." >&2
+        exit 1
+      }
+      printf '%s' "$_t"
+    }
+
+    case "$_sub" in
+      login)
+        # The API refuses to mint a publisher token from a token -- deliberately,
+        # so a leaked CI token cannot mint more. That makes this a paste, not a
+        # flow we can complete headlessly.
+        echo "Open this, sign in, and create a publisher token:"
+        echo "  $_store/store/publisher"
+        command -v xdg-open >/dev/null 2>&1 && xdg-open "$_store/store/publisher" >/dev/null 2>&1 || true
+        printf 'Paste the token (tbpub_...): '
+        read -r _paste
+        case "$_paste" in
+          tbpub_*) ;;
+          *) echo "That does not look like a publisher token." >&2; exit 2 ;;
+        esac
+        mkdir -p "$(dirname "$_tokfile")"
+        printf '%s' "$_paste" > "$_tokfile"
+        chmod 600 "$_tokfile"
+        echo "Saved to $_tokfile"
+        ;;
+
+      whoami)
+        _t="$(_need_tok)"
+        curl -fsS -H "authorization: Bearer $_t" "$_store/api/store/publisher" 2>/dev/null \
+          || { echo "Could not reach the store, or the token is not valid." >&2; exit 1; }
+        echo ;;
+
+      list)
+        curl -fsS "$_store/api/store/extensions" 2>/dev/null \
+          | tr ',' '\n' | sed -n 's/.*"slug"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' \
+          || { echo "Could not reach the store." >&2; exit 1; }
+        ;;
+
+      publish)
+        # tron store publish --name <name> --manifest <path> --bundle-url <url>
+        _name=""; _manifest=""; _bundle=""; _crx=""; _slug=""
+        while [ "$#" -gt 0 ]; do
+          case "$1" in
+            --name) _name="${2:-}"; shift 2 ;;
+            --manifest) _manifest="${2:-}"; shift 2 ;;
+            --bundle-url) _bundle="${2:-}"; shift 2 ;;
+            --crx-url) _crx="${2:-}"; shift 2 ;;
+            --slug) _slug="${2:-}"; shift 2 ;;
+            *) echo "unknown flag: $1" >&2; exit 2 ;;
+          esac
+        done
+        [ -n "$_name" ] || { echo "usage: tron store publish --name <name> --manifest <manifest.json> --bundle-url <url>" >&2; exit 2; }
+        [ -f "$_manifest" ] || { echo "no manifest at: $_manifest" >&2; exit 2; }
+        [ -n "$_bundle" ] || [ -n "$_crx" ] || { echo "--bundle-url or --crx-url is required (the store fetches the artifact itself)" >&2; exit 2; }
+        _t="$(_need_tok)"
+
+        # Slug as the server derives it, so an existing listing is found rather
+        # than a second one created beside it.
+        [ -n "$_slug" ] || _slug="$(printf '%s' "$_name" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]\{1,\}/-/g; s/^-//; s/-$//')"
+
+        _id="$(curl -fsS "$_store/api/store/extensions/$_slug" 2>/dev/null \
+               | sed -n 's/.*"id"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n1)"
+        if [ -z "$_id" ]; then
+          echo "Creating listing \"$_name\"..."
+          _id="$(curl -fsS -X POST -H "authorization: Bearer $_t" -H 'content-type: application/json' \
+                 -d "{\"name\":\"$_name\"}" "$_store/api/store/extensions" 2>/dev/null \
+                 | sed -n 's/.*"id"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n1)"
+          [ -n "$_id" ] || { echo "Could not create the listing." >&2; exit 1; }
+        fi
+
+        # The manifest goes up as-is; the store validates it as MV3.
+        _payload="$(printf '{"manifest":%s' "$(cat "$_manifest")")"
+        [ -n "$_bundle" ] && _payload="$_payload,\"bundleUrl\":\"$_bundle\""
+        [ -n "$_crx" ] && _payload="$_payload,\"crxUrl\":\"$_crx\""
+        _payload="$_payload}"
+
+        _out="$(printf '%s' "$_payload" | curl -fsS -X POST -H "authorization: Bearer $_t" \
+                -H 'content-type: application/json' --data-binary @- \
+                "$_store/api/store/extensions/$_id/versions" 2>&1)" || {
+          # A version that is already up is not a failure; re-running a tag is safe.
+          case "$_out" in
+            *already*) echo "Already published."; exit 0 ;;
+            *) echo "Publish failed: $_out" >&2; exit 1 ;;
+          esac
+        }
+        echo "Published to $_store/store/"
+        ;;
+
+      *)
+        echo "usage: tron store <login|whoami|list|publish>"
+        echo "  login     save a publisher token for this machine"
+        echo "  whoami    show the publisher this machine is signed in as"
+        echo "  list      slugs currently in the store"
+        echo "  publish   --name <name> --manifest <path> --bundle-url <url>"
+        ;;
+    esac
+    ;;
   restart)
     # Force-quit any running TronBrowser, then launch fresh. Chromium forwards a
     # new launch to an already-running instance (which keeps the OLD extension
