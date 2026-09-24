@@ -88,6 +88,7 @@ jobs:
           # from that repo.
           HOMEBREW_TAP_SSH_KEY: ${{ secrets.HOMEBREW_TAP_SSH_KEY }}
           SCOOP_BUCKET_SSH_KEY: ${{ secrets.SCOOP_BUCKET_SSH_KEY }}
+          GENTOO_OVERLAY_SSH_KEY: ${{ secrets.GENTOO_OVERLAY_SSH_KEY }}
           SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.SNAPCRAFT_STORE_CREDENTIALS }}
         run: |
           ARGS="-v ${{ steps.v.outputs.version }}"
