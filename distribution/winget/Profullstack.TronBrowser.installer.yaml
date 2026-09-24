@@ -2,12 +2,12 @@
 # manifests/p/Profullstack/TronBrowser/<version>/. Needs a Windows installer
 # (.exe/.msi) or a portable zip artifact — pending the Windows build.
 PackageIdentifier: Profullstack.TronBrowser
-PackageVersion: 0.1.0
+PackageVersion: 3.15.0
 InstallerType: zip
 Installers:
   - Architecture: x64
-    InstallerUrl: https://github.com/profullstack/tronbrowser.dev/releases/download/v0.1.0/tronbrowser-win-x64.zip
-    InstallerSha256: TODO-NEEDS-WINDOWS-BUILD
+    InstallerUrl: https://github.com/profullstack/tronbrowser.dev/releases/download/v3.15.0/tronbrowser-win-x64.zip
+    InstallerSha256: EBB5B0C7675255ACCC9975E0AC31A542CB9C9EB1BB700EAC18FCE8CCA681F82C
     NestedInstallerType: portable
     NestedInstallerFiles:
       - RelativeFilePath: tronbrowser\tronbrowser.exe

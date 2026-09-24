@@ -143,3 +143,19 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh release edit "${{ needs.create-release.outputs.tag }}" --draft=false --repo "${{ github.repository }}"
+
+  # 4) Push the release out to the downstream package managers.
+  #
+  # This is a direct call, NOT submit-packages.yml's own `release: [published]`
+  # trigger. The un-draft above uses GITHUB_TOKEN, and GitHub raises no workflow
+  # events for what a GITHUB_TOKEN does, so that trigger never fired once in the
+  # three months it was wired up and no channel was ever updated past 0.1.0.
+  # Calling the workflow keeps that guarantee without needing a PAT.
+  distribute:
+    needs: [create-release, publish]
+    uses: ./.github/workflows/submit-packages.yml
+    secrets: inherit
+    with:
+      version: ${{ needs.create-release.outputs.version }}
+      dry_run: false
+      package_managers: all

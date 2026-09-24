@@ -10,10 +10,20 @@
 // the checked-in manifests under distribution/. Actual submission (push to a tap
 // repo / scoop bucket / AUR / winget-pkgs PR / choco push) is gated on the
 // relevant secret being present and is intentionally a no-op without it.
-import { readFileSync, writeFileSync, existsSync } from "node:fs";
+//
+// 2026-09-24: "submission is gated on the secret" described an intention, not
+// code. There was no submit path at all — no push, no PR, no upload — so every
+// run only rewrote files under distribution/ and exited. Channels that we own
+// outright (a tap, a bucket, AUR, Chocolatey, Snap) now really do publish; the
+// ones that are a pull request into somebody else's monorepo (winget, flathub,
+// nixpkgs, gentoo, freebsd) still cannot be automated end to end and say so
+// rather than reporting success.
+import { readFileSync, writeFileSync, existsSync, mkdtempSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createHash } from "node:crypto";
+import { execFileSync } from "node:child_process";
+import { tmpdir } from "node:os";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const REPO = process.env.TRONBROWSER_REPO || "profullstack/tronbrowser.dev";
@@ -219,4 +229,238 @@ for (const pm of targets) {
   }
 }
 
-console.log(`\nDone (${dryRun ? "dry run" : "manifests updated"}).`);
+// ---------------------------------------------------------------------------
+// Submission.
+//
+// Everything above only rewrites files. What follows actually ships them.
+// Each channel is gated on its own secret: absent, it prints why it skipped and
+// returns cleanly, so a repo with no credentials still gets a green run and a
+// refreshed manifest. A channel that has its secret and then fails is a real
+// failure and is allowed to break the build — a silent success here is what let
+// TronBrowser go three months believing it was published.
+
+const TAP_REPO = process.env.HOMEBREW_TAP_REPO || "profullstack/homebrew-tap";
+const SCOOP_REPO = process.env.SCOOP_BUCKET_REPO || "profullstack/scoop-bucket";
+
+function run(cmd, args, opts = {}) {
+  return execFileSync(cmd, args, {
+    encoding: "utf8",
+    stdio: opts.capture ? "pipe" : "inherit",
+    cwd: opts.cwd || ROOT,
+    env: { ...process.env, ...(opts.env || {}) },
+  });
+}
+
+function tmp(prefix) {
+  return mkdtempSync(join(tmpdir(), `tron-${prefix}-`));
+}
+
+/** Clone a repo we own, drop one file in, and push it back. */
+function pushFileToRepo({ repo, token, file, dest, message }) {
+  const dir = tmp(dest.replace(/[^a-z0-9]+/gi, "-"));
+  const url = `https://x-access-token:${token}@github.com/${repo}.git`;
+  run("git", ["clone", "--depth", "1", url, dir], { cwd: ROOT });
+  run("cp", [join(ROOT, file), join(dir, dest)], { cwd: ROOT });
+  run("git", ["config", "user.name", "github-actions[bot]"], { cwd: dir });
+  run("git", [
+    "config",
+    "user.email",
+    "41898282+github-actions[bot]@users.noreply.github.com",
+  ], { cwd: dir });
+  const changed = run("git", ["status", "--porcelain"], {
+    cwd: dir,
+    capture: true,
+  }).trim();
+  if (!changed) {
+    console.log(`  ${repo} already current, nothing to push`);
+    return;
+  }
+  run("git", ["add", dest], { cwd: dir });
+  run("git", ["commit", "-m", message], { cwd: dir });
+  run("git", ["push"], { cwd: dir });
+  console.log(`  pushed ${dest} to ${repo}`);
+}
+
+/** Channels that are a PR into a third party's monorepo. */
+function upstreamPr(pm, repo, doc) {
+  console.log(
+    `  ${pm}: needs a pull request into ${repo}, which is a human review queue.`,
+  );
+  console.log(`  manifest refreshed; open the PR by hand: ${doc}`);
+}
+
+const SUBMITTERS = {
+  homebrew: () => {
+    const token = process.env.HOMEBREW_TAP_TOKEN;
+    if (!token) return skip("homebrew", "HOMEBREW_TAP_TOKEN");
+    pushFileToRepo({
+      repo: TAP_REPO,
+      token,
+      file: "distribution/homebrew/tronbrowser.rb",
+      dest: "Formula/tronbrowser.rb",
+      message: `tronbrowser ${version}`,
+    });
+  },
+
+  scoop: () => {
+    const token = process.env.SCOOP_BUCKET_TOKEN;
+    if (!token) return skip("scoop", "SCOOP_BUCKET_TOKEN");
+    pushFileToRepo({
+      repo: SCOOP_REPO,
+      token,
+      file: "distribution/scoop/tronbrowser.json",
+      dest: "bucket/tronbrowser.json",
+      message: `tronbrowser ${version}`,
+    });
+  },
+
+  aur: () => {
+    const key = process.env.AUR_SSH_KEY;
+    if (!key) return skip("aur", "AUR_SSH_KEY");
+    const dir = tmp("aur");
+    const keyfile = join(dir, "aur_key");
+    writeFileSync(keyfile, key.endsWith("\n") ? key : `${key}\n`, {
+      mode: 0o600,
+    });
+    // AUR only speaks ssh, and the runner has never seen the host before.
+    const ssh = `ssh -i ${keyfile} -o StrictHostKeyChecking=accept-new`;
+    const repoDir = join(dir, "tronbrowser-bin");
+    run("git", ["clone", "ssh://aur@aur.archlinux.org/tronbrowser-bin.git", repoDir], {
+      cwd: ROOT,
+      env: { GIT_SSH_COMMAND: ssh },
+    });
+    run("cp", [join(ROOT, "distribution/aur/PKGBUILD"), join(repoDir, "PKGBUILD")]);
+    // .SRCINFO is generated, and the AUR rejects a push whose .SRCINFO disagrees
+    // with the PKGBUILD. makepkg is not on a GitHub runner, so write it from the
+    // PKGBUILD we already have rather than shelling out to a tool that is absent.
+    writeSrcinfo(repoDir);
+    run("git", ["config", "user.name", "TronBrowser CI"], { cwd: repoDir });
+    run("git", ["config", "user.email", "bot@tronbrowser.dev"], { cwd: repoDir });
+    const changed = run("git", ["status", "--porcelain"], {
+      cwd: repoDir,
+      capture: true,
+    }).trim();
+    if (!changed) return console.log("  AUR already current, nothing to push");
+    run("git", ["add", "PKGBUILD", ".SRCINFO"], { cwd: repoDir });
+    run("git", ["commit", "-m", `tronbrowser-bin ${version}`], { cwd: repoDir });
+    run("git", ["push"], { cwd: repoDir, env: { GIT_SSH_COMMAND: ssh } });
+    console.log("  pushed PKGBUILD to the AUR");
+  },
+
+  chocolatey: () => {
+    const key = process.env.CHOCOLATEY_API_KEY;
+    if (!key) return skip("chocolatey", "CHOCOLATEY_API_KEY");
+    const dir = join(ROOT, "distribution/chocolatey");
+    run("choco", ["pack", "tronbrowser.nuspec", "--outputdirectory", dir], {
+      cwd: dir,
+    });
+    run("choco", [
+      "push",
+      join(dir, `tronbrowser.${version}.nupkg`),
+      "--source",
+      "https://push.chocolatey.org/",
+      "--api-key",
+      key,
+    ], { cwd: dir });
+    console.log("  pushed to Chocolatey");
+  },
+
+  snap: () => {
+    const creds = process.env.SNAPCRAFT_STORE_CREDENTIALS;
+    if (!creds) return skip("snap", "SNAPCRAFT_STORE_CREDENTIALS");
+    // snapcraft reads the credentials straight out of the environment; building
+    // the snap itself needs LXD and happens in the release job, not here.
+    const snap = process.env.SNAP_FILE;
+    if (!snap || !existsSync(snap)) {
+      console.log(
+        "  snap: SNAPCRAFT_STORE_CREDENTIALS is set but no built .snap was passed",
+      );
+      console.log("  set SNAP_FILE to the artifact built by the release job");
+      return;
+    }
+    run("snapcraft", ["upload", "--release", "stable", snap]);
+    console.log("  uploaded to the Snap Store");
+  },
+
+  winget: () =>
+    upstreamPr(
+      "winget",
+      "microsoft/winget-pkgs",
+      "https://github.com/microsoft/winget-pkgs/blob/master/CONTRIBUTING.md",
+    ),
+  flatpak: () =>
+    upstreamPr(
+      "flatpak",
+      "flathub/flathub",
+      "https://docs.flathub.org/docs/for-app-authors/submission",
+    ),
+  nix: () =>
+    upstreamPr(
+      "nix",
+      "NixOS/nixpkgs",
+      "https://github.com/NixOS/nixpkgs/blob/master/CONTRIBUTING.md",
+    ),
+  gentoo: () =>
+    upstreamPr(
+      "gentoo",
+      "an ebuild overlay",
+      "https://wiki.gentoo.org/wiki/Ebuild_repository",
+    ),
+  freebsd: () =>
+    upstreamPr(
+      "freebsd",
+      "freebsd/freebsd-ports",
+      "https://docs.freebsd.org/en/books/porters-handbook/",
+    ),
+
+  // Built and attached to the GitHub release itself; there is no downstream.
+  apt: () => console.log("  apt: attached to the GitHub release, nothing to submit"),
+  rpm: () => console.log("  rpm: attached to the GitHub release, nothing to submit"),
+  appimage: () =>
+    console.log("  appimage: attached to the GitHub release, nothing to submit"),
+};
+
+function skip(pm, secret) {
+  console.log(`  ${pm}: ${secret} not set, manifest refreshed but not submitted`);
+}
+
+/**
+ * Write .SRCINFO from the PKGBUILD.
+ *
+ * Only the handful of fields our PKGBUILD actually sets — enough for the AUR to
+ * accept the push and for a helper to resolve the package. If PKGBUILD grows
+ * fields beyond these, this needs to grow with it.
+ */
+function writeSrcinfo(repoDir) {
+  const pkgbuild = readFileSync(join(repoDir, "PKGBUILD"), "utf8");
+  const field = (name) => {
+    const m = pkgbuild.match(new RegExp(`^${name}=(.+)$`, "m"));
+    return m ? m[1].replace(/^['"(]+|['")]+$/g, "") : "";
+  };
+  const lines = [
+    `pkgbase = ${field("pkgname")}`,
+    `\tpkgdesc = ${field("pkgdesc")}`,
+    `\tpkgver = ${field("pkgver")}`,
+    `\tpkgrel = ${field("pkgrel")}`,
+    `\turl = ${field("url")}`,
+    `\tarch = ${field("arch")}`,
+    `\tlicense = ${field("license")}`,
+    `\tsource = ${field("source")}`,
+    `\tsha256sums = ${field("sha256sums")}`,
+    "",
+    `pkgname = ${field("pkgname")}`,
+    "",
+  ];
+  writeFileSync(join(repoDir, ".SRCINFO"), lines.join("\n"));
+}
+
+if (!dryRun) {
+  for (const pm of targets) {
+    const submit = SUBMITTERS[pm];
+    if (!submit) continue;
+    console.log(`\n== submit ${pm} ==`);
+    submit();
+  }
+}
+
+console.log(`\nDone (${dryRun ? "dry run" : "manifests updated and submitted"}).`);
