@@ -255,11 +255,31 @@ function tmp(prefix) {
   return mkdtempSync(join(tmpdir(), `tron-${prefix}-`));
 }
 
-/** Clone a repo we own, drop one file in, and push it back. */
-function pushFileToRepo({ repo, token, file, dest, message }) {
+/**
+ * Write one file into a repo we own and push it.
+ *
+ * Authenticated with a per-repo ssh deploy key rather than a PAT. A PAT carries
+ * the whole account: any token able to push to the tap could also push here, and
+ * GitHub has no API to mint one, so it would have to be pasted in by hand and
+ * rotated by hand. A deploy key is scoped to exactly one repository, can be
+ * created through the API, and is revoked by deleting it from that repo.
+ */
+function pushFileToRepo({ repo, sshKey, file, dest, message }) {
   const dir = tmp(dest.replace(/[^a-z0-9]+/gi, "-"));
-  const url = `https://x-access-token:${token}@github.com/${repo}.git`;
-  run("git", ["clone", "--depth", "1", url, dir], { cwd: ROOT });
+  const keyfile = join(dir, "..", `key-${repo.replace(/\W+/g, "-")}`);
+  writeFileSync(keyfile, sshKey.endsWith("\n") ? sshKey : `${sshKey}\n`, {
+    mode: 0o600,
+  });
+  const env = {
+    GIT_SSH_COMMAND: `ssh -i ${keyfile} -o StrictHostKeyChecking=accept-new -o IdentitiesOnly=yes`,
+  };
+  run("git", ["clone", "--depth", "1", `ssh://git@github.com/${repo}.git`, dir], {
+    cwd: ROOT,
+    env,
+  });
+  // The tap holds Casks/ and Formula/ side by side and the bucket holds bucket/;
+  // a first push into a directory that does not exist yet has to create it.
+  run("mkdir", ["-p", dirname(join(dir, dest))]);
   run("cp", [join(ROOT, file), join(dir, dest)], { cwd: ROOT });
   run("git", ["config", "user.name", "github-actions[bot]"], { cwd: dir });
   run("git", [
@@ -277,7 +297,7 @@ function pushFileToRepo({ repo, token, file, dest, message }) {
   }
   run("git", ["add", dest], { cwd: dir });
   run("git", ["commit", "-m", message], { cwd: dir });
-  run("git", ["push"], { cwd: dir });
+  run("git", ["push"], { cwd: dir, env });
   console.log(`  pushed ${dest} to ${repo}`);
 }
 
@@ -291,11 +311,14 @@ function upstreamPr(pm, repo, doc) {
 
 const SUBMITTERS = {
   homebrew: () => {
-    const token = process.env.HOMEBREW_TAP_TOKEN;
-    if (!token) return skip("homebrew", "HOMEBREW_TAP_TOKEN");
+    const sshKey = process.env.HOMEBREW_TAP_SSH_KEY;
+    if (!sshKey) return skip("homebrew", "HOMEBREW_TAP_SSH_KEY");
+    // distribution/homebrew/tronbrowser.rb is a Formula, not a Cask, so it goes
+    // in Formula/ — the tap's existing Casks/nightcell7.rb is a separate thing
+    // and a tap carries both directories quite happily.
     pushFileToRepo({
       repo: TAP_REPO,
-      token,
+      sshKey,
       file: "distribution/homebrew/tronbrowser.rb",
       dest: "Formula/tronbrowser.rb",
       message: `tronbrowser ${version}`,
@@ -303,11 +326,11 @@ const SUBMITTERS = {
   },
 
   scoop: () => {
-    const token = process.env.SCOOP_BUCKET_TOKEN;
-    if (!token) return skip("scoop", "SCOOP_BUCKET_TOKEN");
+    const sshKey = process.env.SCOOP_BUCKET_SSH_KEY;
+    if (!sshKey) return skip("scoop", "SCOOP_BUCKET_SSH_KEY");
     pushFileToRepo({
       repo: SCOOP_REPO,
-      token,
+      sshKey,
       file: "distribution/scoop/tronbrowser.json",
       dest: "bucket/tronbrowser.json",
       message: `tronbrowser ${version}`,
