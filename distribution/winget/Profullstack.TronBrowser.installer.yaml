@@ -1,6 +1,18 @@
 # winget manifest (installer). Submit to microsoft/winget-pkgs as
-# manifests/p/Profullstack/TronBrowser/<version>/. Needs a Windows installer
-# (.exe/.msi) or a portable zip artifact — pending the Windows build.
+# manifests/p/Profullstack/TronBrowser/<version>/.
+#
+# NOT SUBMITTABLE YET, and the blocker is the artifact rather than the manifest.
+# tronbrowser-win-x64.zip contains no tronbrowser.exe: the Windows entry point is
+# tronbrowser.cmd, a shim that searches for Python 3.9+ and then drives a copy of
+# Ungoogled Chromium the user has to install separately. A winget portable
+# package shimming that would install for someone and then fail to start, so it
+# would be rejected on review or, worse, accepted and broken.
+#
+# RelativeFilePath below named tronbrowser.exe, which has never existed in the
+# zip; corrected to the file that does. Submitting still needs a real Windows
+# build — a self-contained .exe/.msi, or a zip whose entry point runs without
+# the user installing an interpreter and a browser first. PairUX ships a nullsoft
+# .exe and is in winget-pkgs today, which is the shape to copy.
 PackageIdentifier: Profullstack.TronBrowser
 PackageVersion: 3.15.1
 InstallerType: zip
@@ -10,7 +22,7 @@ Installers:
     InstallerSha256: 2AA36BB55E6E45EB1ACE91435B1B696CB6BFAD929B876B85702F3AD51F51ADDE
     NestedInstallerType: portable
     NestedInstallerFiles:
-      - RelativeFilePath: tronbrowser\tronbrowser.exe
+      - RelativeFilePath: tronbrowser\tronbrowser.cmd
         PortableCommandAlias: tron
 ManifestType: installer
 ManifestVersion: 1.6.0

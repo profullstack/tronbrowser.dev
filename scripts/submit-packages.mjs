@@ -18,7 +18,14 @@
 // ones that are a pull request into somebody else's monorepo (winget, flathub,
 // nixpkgs, gentoo, freebsd) still cannot be automated end to end and say so
 // rather than reporting success.
-import { readFileSync, writeFileSync, existsSync, mkdtempSync } from "node:fs";
+import {
+  readFileSync,
+  writeFileSync,
+  existsSync,
+  mkdtempSync,
+  readdirSync,
+  rmSync,
+} from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createHash } from "node:crypto";
@@ -70,6 +77,24 @@ async function sha256(asset) {
   if (!res.ok) return null;
   const buf = Buffer.from(await res.arrayBuffer());
   return createHash("sha256").update(buf).digest("hex");
+}
+
+/**
+ * Size plus the digests a Gentoo Manifest names.
+ *
+ * Portage wants BLAKE2B and SHA512 alongside the byte count, not the sha256
+ * everything else uses. Node's blake2b512 is byte-identical to b2sum.
+ */
+async function gentooDigests(asset) {
+  const url = `https://github.com/${REPO}/releases/download/v${version}/${asset}`;
+  const res = await fetch(url);
+  if (!res.ok) return null;
+  const buf = Buffer.from(await res.arrayBuffer());
+  return {
+    size: buf.length,
+    blake2b: createHash("blake2b512").update(buf).digest("hex"),
+    sha512: createHash("sha512").update(buf).digest("hex"),
+  };
 }
 
 function patch(file, replacers) {
@@ -135,11 +160,36 @@ for (const pm of targets) {
           : []),
       ]);
       break;
-    case "gentoo":
-      console.log(
-        `  rename distribution/gentoo/tronbrowser-bin-${version}.ebuild and bump SRC_URI (uses \${PV})`,
+    case "gentoo": {
+      // The ebuild is entirely ${PV}/${P}, so a release needs no edits to it —
+      // only the filename carries the version. Keep exactly one ebuild in the
+      // tree, renamed to this release, instead of printing a note and leaving
+      // the 0.1.1 file there forever.
+      const existing = readdirSync(join(ROOT, "distribution/gentoo")).filter((f) =>
+        f.endsWith(".ebuild"),
       );
+      const want = `tronbrowser-bin-${version}.ebuild`;
+      if (existing.includes(want) && existing.length === 1) {
+        console.log(`  distribution/gentoo/${want} already current`);
+        break;
+      }
+      const source = existing[0];
+      if (!source) {
+        console.log("  skip (missing): no ebuild in distribution/gentoo");
+        break;
+      }
+      if (dryRun) {
+        console.log(`  [dry-run] would rename ${source} -> ${want}`);
+        break;
+      }
+      const body = readFileSync(join(ROOT, "distribution/gentoo", source), "utf8");
+      writeFileSync(join(ROOT, "distribution/gentoo", want), body);
+      for (const f of existing) {
+        if (f !== want) rmSync(join(ROOT, "distribution/gentoo", f));
+      }
+      console.log(`  renamed ${source} -> ${want}`);
       break;
+    }
     case "scoop":
       patch("distribution/scoop/tronbrowser.json", [
         [/"version": "[^"]+"/, `"version": "${version}"`],
@@ -241,6 +291,8 @@ for (const pm of targets) {
 
 const TAP_REPO = process.env.HOMEBREW_TAP_REPO || "profullstack/homebrew-tap";
 const SCOOP_REPO = process.env.SCOOP_BUCKET_REPO || "profullstack/scoop-bucket";
+const GENTOO_REPO =
+  process.env.GENTOO_OVERLAY_REPO || "profullstack/gentoo-tronbrowser";
 
 function run(cmd, args, opts = {}) {
   return execFileSync(cmd, args, {
@@ -280,7 +332,22 @@ function hasCommand(cmd) {
  * created through the API, and is revoked by deleting it from that repo.
  */
 function pushFileToRepo({ repo, sshKey, file, dest, message }) {
-  const dir = tmp(dest.replace(/[^a-z0-9]+/gi, "-"));
+  return pushFilesToRepo({
+    repo,
+    sshKey,
+    message,
+    files: [{ from: file, dest }],
+  });
+}
+
+/**
+ * Write several files into a repo we own and push once.
+ *
+ * `files` are copied from the working tree, `write` are generated in place (the
+ * Gentoo Manifest has no on-disk source).
+ */
+function pushFilesToRepo({ repo, sshKey, files = [], write = [], message }) {
+  const dir = tmp(repo.replace(/[^a-z0-9]+/gi, "-"));
   const keyfile = join(dir, "..", `key-${repo.replace(/\W+/g, "-")}`);
   writeFileSync(keyfile, sshKey.endsWith("\n") ? sshKey : `${sshKey}\n`, {
     mode: 0o600,
@@ -294,8 +361,14 @@ function pushFileToRepo({ repo, sshKey, file, dest, message }) {
   });
   // The tap holds Casks/ and Formula/ side by side and the bucket holds bucket/;
   // a first push into a directory that does not exist yet has to create it.
-  run("mkdir", ["-p", dirname(join(dir, dest))]);
-  run("cp", [join(ROOT, file), join(dir, dest)], { cwd: ROOT });
+  for (const f of files) {
+    run("mkdir", ["-p", dirname(join(dir, f.dest))]);
+    run("cp", [join(ROOT, f.from), join(dir, f.dest)], { cwd: ROOT });
+  }
+  for (const w of write) {
+    run("mkdir", ["-p", dirname(join(dir, w.dest))]);
+    writeFileSync(join(dir, w.dest), w.content);
+  }
   run("git", ["config", "user.name", "github-actions[bot]"], { cwd: dir });
   run("git", [
     "config",
@@ -310,10 +383,11 @@ function pushFileToRepo({ repo, sshKey, file, dest, message }) {
     console.log(`  ${repo} already current, nothing to push`);
     return;
   }
-  run("git", ["add", dest], { cwd: dir });
+  run("git", ["add", "-A"], { cwd: dir });
   run("git", ["commit", "-m", message], { cwd: dir });
   run("git", ["push"], { cwd: dir, env });
-  console.log(`  pushed ${dest} to ${repo}`);
+  const names = [...files, ...write].map((f) => f.dest).join(", ");
+  console.log(`  pushed ${names} to ${repo}`);
 }
 
 /** Channels that are a PR into a third party's monorepo. */
@@ -429,12 +503,18 @@ const SUBMITTERS = {
     console.log("  uploaded to the Snap Store");
   },
 
-  winget: () =>
-    upstreamPr(
-      "winget",
-      "microsoft/winget-pkgs",
-      "https://github.com/microsoft/winget-pkgs/blob/master/CONTRIBUTING.md",
-    ),
+  // Blocked on the artifact, not on credentials or review: the Windows zip has
+  // no exe, only a .cmd that needs the user to already have Python and Ungoogled
+  // Chromium. A portable package around that installs and then fails to start.
+  winget: () => {
+    console.log(
+      "  winget: the Windows zip has no self-contained executable, so a portable",
+    );
+    console.log(
+      "  package would install and fail to start. Needs a real .exe/.msi build",
+    );
+    console.log("  before submitting to microsoft/winget-pkgs.");
+  },
   flatpak: () =>
     upstreamPr(
       "flatpak",
@@ -447,12 +527,39 @@ const SUBMITTERS = {
       "NixOS/nixpkgs",
       "https://github.com/NixOS/nixpkgs/blob/master/CONTRIBUTING.md",
     ),
-  gentoo: () =>
-    upstreamPr(
-      "gentoo",
-      "an ebuild overlay",
-      "https://wiki.gentoo.org/wiki/Ebuild_repository",
-    ),
+  // Gentoo has no central submission: an overlay is just a git repo laid out the
+  // way portage expects, and ours is profullstack/gentoo-tronbrowser. So unlike
+  // winget or flathub this one is entirely ours to push.
+  gentoo: async () => {
+    const sshKey = process.env.GENTOO_OVERLAY_SSH_KEY;
+    if (!sshKey) return skip("gentoo", "GENTOO_OVERLAY_SSH_KEY");
+    const src = `distribution/gentoo/tronbrowser-bin-${version}.ebuild`;
+    if (!existsSync(join(ROOT, src))) {
+      console.log(`  gentoo: ${src} is missing, nothing to push`);
+      return;
+    }
+    const d = await gentooDigests(ASSET.linux);
+    if (!d) {
+      console.log("  gentoo: could not read the release tarball, skipping");
+      return;
+    }
+    // SRC_URI renames the tarball to ${P}.tar.gz, and the Manifest must name it
+    // by that renamed filename, not the release asset's.
+    const manifest =
+      `DIST tronbrowser-bin-${version}.tar.gz ${d.size}` +
+      ` BLAKE2B ${d.blake2b} SHA512 ${d.sha512}\n`;
+    pushFilesToRepo({
+      repo: GENTOO_REPO,
+      sshKey,
+      message: `net-misc/tronbrowser-bin: ${version}`,
+      files: [
+        { from: src, dest: `net-misc/tronbrowser-bin/tronbrowser-bin-${version}.ebuild` },
+      ],
+      write: [
+        { dest: "net-misc/tronbrowser-bin/Manifest", content: manifest },
+      ],
+    });
+  },
   freebsd: () =>
     upstreamPr(
       "freebsd",
@@ -506,7 +613,9 @@ if (!dryRun) {
     const submit = SUBMITTERS[pm];
     if (!submit) continue;
     console.log(`\n== submit ${pm} ==`);
-    submit();
+    // gentoo fetches the tarball to build its Manifest, so submitters may be
+    // async; awaiting a sync one is harmless.
+    await submit();
   }
 }
 
