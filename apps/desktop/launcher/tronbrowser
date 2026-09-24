@@ -240,11 +240,131 @@ if [ "$TOR" != "1" ]; then
   fi
 fi
 
-# Load every bundled extension (each subdir with a manifest.json).
+# ── Bundled extensions, and keeping them current ────────────────────────────
+#
+# Extensions load with --load-extension, and Chromium never auto-updates an
+# extension loaded that way. Until now that meant a bundled extension could only
+# change when the whole browser was re-released: MarkSyncr shipped a vault import
+# bug in v3.15.0 that had already been fixed upstream, and nobody could do
+# anything about it but wait for the next TronBrowser build.
+#
+# So the launcher does the updating itself, against our own store
+# (tronbrowser.dev/store), which has no review queue in front of it.
+#
+# The bundled copy is never written to -- it lives in the install tree, which may
+# be read-only and is replaced wholesale on upgrade. Newer versions land in an
+# overlay under the data dir, and an extension is loaded from the overlay when it
+# is present and newer.
+#
+# The check runs in the BACKGROUND and applies on the NEXT launch. Blocking
+# startup on the network to save one launch's staleness would be a bad trade, and
+# swapping an extension's files under a running Chromium is worse.
+EXT_OVERLAY="$DATA/extensions-updated"
+STORE_URL="${TRONBROWSER_STORE:-https://tronbrowser.dev}"
+
+# "1.2.10" is newer than "1.2.9": compare numerically, field by field.
+_ver_gt() {
+  [ "$1" = "$2" ] && return 1
+  _a="$1"; _b="$2"
+  while [ -n "$_a" ] || [ -n "$_b" ]; do
+    _x="${_a%%.*}"; _y="${_b%%.*}"
+    [ -z "$_x" ] && _x=0
+    [ -z "$_y" ] && _y=0
+    # Non-numeric fields (betas) sort as 0 rather than erroring the whole check.
+    case "$_x" in *[!0-9]*) _x=0 ;; esac
+    case "$_y" in *[!0-9]*) _y=0 ;; esac
+    [ "$_x" -gt "$_y" ] 2>/dev/null && return 0
+    [ "$_x" -lt "$_y" ] 2>/dev/null && return 1
+    case "$_a" in *.*) _a="${_a#*.}" ;; *) _a="" ;; esac
+    case "$_b" in *.*) _b="${_b#*.}" ;; *) _b="" ;; esac
+  done
+  return 1
+}
+
+# Always succeeds, printing nothing when there is no manifest. This script runs
+# under `set -eu`, so a helper that returns non-zero inside a command
+# substitution takes the whole browser down rather than skipping one extension.
+_manifest_version() {
+  [ -f "$1" ] || return 0
+  sed -n 's/.*"version"[^"]*"\([^"]*\)".*/\1/p' "$1" | head -n1
+  return 0
+}
+
+# Fetch newer copies into the overlay. Runs detached; every failure is silent
+# and leaves the bundled copy in place, because a browser that will not start
+# because a store was unreachable would be a far worse bug than a stale
+# extension.
+_refresh_extensions() {
+  command -v curl >/dev/null 2>&1 || return 0
+  command -v unzip >/dev/null 2>&1 || return 0
+  mkdir -p "$EXT_OVERLAY" 2>/dev/null || return 0
+
+  for _d in "$EXTBASE"/*/; do
+    [ -f "${_d}manifest.json" ] || continue
+    _name="$(basename "${_d%/}")"
+    _slug="$_name"
+
+    _local="$(_manifest_version "$EXT_OVERLAY/$_name/manifest.json")"
+    [ -n "$_local" ] || _local="$(_manifest_version "${_d}manifest.json")"
+    [ -n "$_local" ] || continue
+
+    _json="$(curl -fsS --max-time 8 "$STORE_URL/api/store/extensions/$_slug" 2>/dev/null)" || continue
+    _remote="$(printf '%s' "$_json" | sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([0-9][^"]*\)".*/\1/p' | head -n1)"
+    [ -n "$_remote" ] || continue
+    _ver_gt "$_remote" "$_local" || continue
+
+    # crxUrl when the store signed one, bundleUrl otherwise. A .crx is a header
+    # in front of a zip, so unzip reads either (and warns on the crx header,
+    # which is why its exit code is not trusted).
+    _url="$(printf '%s' "$_json" | sed -n 's/.*"crxUrl"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n1)"
+    [ -n "$_url" ] || _url="$(printf '%s' "$_json" | sed -n 's/.*"bundleUrl"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n1)"
+    [ -n "$_url" ] || continue
+
+    _tmpz="$(mktemp 2>/dev/null)" || continue
+    _tmpd="$(mktemp -d 2>/dev/null)" || { rm -f "$_tmpz"; continue; }
+    if curl -fsSL --max-time 60 "$_url" -o "$_tmpz" 2>/dev/null; then
+      unzip -q -o "$_tmpz" -d "$_tmpd" 2>/dev/null || true
+      # Only accept it if what arrived really is the extension we asked for.
+      _got="$(_manifest_version "$_tmpd/manifest.json")"
+      if [ -n "$_got" ] && _ver_gt "$_got" "$_local"; then
+        rm -rf "$EXT_OVERLAY/$_name.new"
+        mv "$_tmpd" "$EXT_OVERLAY/$_name.new" 2>/dev/null && {
+          rm -rf "$EXT_OVERLAY/$_name.old"
+          [ -d "$EXT_OVERLAY/$_name" ] && mv "$EXT_OVERLAY/$_name" "$EXT_OVERLAY/$_name.old"
+          mv "$EXT_OVERLAY/$_name.new" "$EXT_OVERLAY/$_name" 2>/dev/null
+          rm -rf "$EXT_OVERLAY/$_name.old"
+          echo "TronBrowser: $_name $_got staged from the store (active next launch)" >&2
+        }
+        _tmpd=""
+      fi
+    fi
+    rm -f "$_tmpz"
+    [ -n "$_tmpd" ] && rm -rf "$_tmpd"
+  done
+}
+
+# Load every bundled extension (each subdir with a manifest.json), preferring a
+# newer copy the store already gave us.
 EXT=""
 for d in "$EXTBASE"/*/; do
-  [ -f "${d}manifest.json" ] && EXT="${EXT:+$EXT,}${d%/}"
+  [ -f "${d}manifest.json" ] || continue
+  _n="$(basename "${d%/}")"
+  _o="$EXT_OVERLAY/$_n"
+  _ov="$(_manifest_version "$_o/manifest.json")"
+  _bv="$(_manifest_version "${d}manifest.json")"
+  if [ -n "$_ov" ] && [ -n "$_bv" ] && _ver_gt "$_ov" "$_bv"; then
+    EXT="${EXT:+$EXT,}$_o"
+  else
+    # The bundle caught up (a browser upgrade), so the overlay is dead weight.
+    [ -n "$_ov" ] && rm -rf "$_o"
+    EXT="${EXT:+$EXT,}${d%/}"
+  fi
 done
+
+# Detached, so a slow or unreachable store never delays the browser.
+if [ "${TRONBROWSER_NO_EXT_UPDATE:-0}" != "1" ]; then
+  ( _refresh_extensions >>"$DATA/extension-update.log" 2>&1 & ) >/dev/null 2>&1
+fi
 # Surface the AI-sidebar version + path so it's clear which extension loads.
 if [ -f "$EXTBASE/ai-sidebar/manifest.json" ]; then
   _extver="$(sed -n 's/.*"version"[^"]*"\([^"]*\)".*/\1/p' "$EXTBASE/ai-sidebar/manifest.json" | head -n1)"
