@@ -1242,6 +1242,14 @@ do_upgrade() {
   [ -n "$latest" ] || err "could not resolve the latest release of $REPO"
   if [ "$current" = "$latest" ] && [ "${TB_FORCE:-0}" != "1" ]; then
     info "TronBrowser is already up to date ($current)."
+    # The CLI does NOT come from the release — it is written from a heredoc in
+    # this script, which deploys from main on merge. Gating it on the release
+    # version meant a CLI-only change could never reach anyone: `tron store` was
+    # added, deployed, and `tron upgrade` still said "already up to date" and
+    # left the old CLI in place, so the new command simply did not exist. We are
+    # already running the freshly fetched install.sh here, so rewriting it is
+    # free and always current.
+    write_cli
     ensure_engine   || true   # and that TronBrowser's own engine is current
     ensure_browser            # still make sure Ungoogled Chromium is installed
     ensure_tor      || true   # and that Tor is available for the toggle
