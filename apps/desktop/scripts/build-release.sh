@@ -14,20 +14,56 @@ DESKTOP="$REPO_ROOT/apps/desktop"
 OUT="$REPO_ROOT/dist"
 mkdir -p "$OUT"
 
-# Fetch MarkSyncr ONCE from the Chrome Web Store (latest published CRX). Open
-# source (github.com/profullstack/marksyncr.com), MV3 bookmark sync. Non-fatal.
+# Fetch MarkSyncr ONCE. Open source (github.com/profullstack/marksyncr.com),
+# MV3 bookmark sync. Non-fatal.
+#
+# Their GitHub release first, the Chrome Web Store second.
+#
+# The store was the only source, which tied this bundle to Google's review queue:
+# a MarkSyncr fix does not reach the published CRX until a reviewer approves it,
+# so v3.15.0 shipped a vault import that had already been fixed upstream. Worse,
+# it is silent -- the build succeeds and nobody learns the bundled copy is months
+# behind until a user hits the old bug.
+#
+# The release ZIP is the same artifact, published by us the moment a version is
+# tagged. The store fallback stays because it is what worked before, and losing
+# the bundled extension entirely would be worse than bundling an older one.
 MKS_ID="hjcjjcpialiakkalcgadnfnoomdaegjg"
 MKS_SRC=""
-fetch_marksyncr() {
-  local url="https://clients2.google.com/service/update2/crx?response=redirect&acceptformat=crx2,crx3&prodversion=120.0.0.0&x=id%3D${MKS_ID}%26installsource%3Dondemand%26uc"
-  local z d m; z="$(mktemp)"; d="$(mktemp -d)"
-  if curl -fsSL -A "Mozilla/5.0 Chrome/120.0.0.0" "$url" -o "$z" 2>/dev/null; then
-    # CRX files have a header before the zip → unzip prints a warning and exits
-    # 1 even though it extracts fine; don't gate on its exit code.
-    unzip -q -o "$z" -d "$d" 2>/dev/null || true
-    m="$(find "$d" -maxdepth 2 -name manifest.json | head -1)"
-    if [ -n "$m" ]; then MKS_SRC="$(dirname "$m")"; echo "  + fetched MarkSyncr (CWS $MKS_ID)"; fi
+
+# Unpack a MarkSyncr archive into MKS_SRC if it holds a manifest.
+_try_marksyncr_archive() {
+  local archive="$1" label="$2" d
+  d="$(mktemp -d)"
+  # A CRX has a header before the zip, so unzip warns and exits 1 while still
+  # extracting correctly; don't gate on its exit code. A plain zip is fine too.
+  unzip -q -o "$archive" -d "$d" 2>/dev/null || true
+  local m; m="$(find "$d" -maxdepth 2 -name manifest.json | head -1)"
+  if [ -n "$m" ]; then
+    MKS_SRC="$(dirname "$m")"
+    local v; v="$(grep -o '"version"[[:space:]]*:[[:space:]]*"[^"]*"' "$m" | head -1 | sed 's/.*"\([^"]*\)"$/\1/')"
+    echo "  + fetched MarkSyncr ${v:-?} ($label)"
+    return 0
   fi
+  return 1
+}
+
+fetch_marksyncr() {
+  local z; z="$(mktemp)"
+
+  # 1) Our own release: current the moment MarkSyncr is tagged.
+  local rel="https://github.com/profullstack/marksyncr.com/releases/latest/download/marksyncr-chrome.zip"
+  if curl -fsSL "$rel" -o "$z" 2>/dev/null && _try_marksyncr_archive "$z" "GitHub release"; then
+    rm -f "$z"
+    return
+  fi
+
+  # 2) The Chrome Web Store, which lags by however long review takes.
+  local cws="https://clients2.google.com/service/update2/crx?response=redirect&acceptformat=crx2,crx3&prodversion=120.0.0.0&x=id%3D${MKS_ID}%26installsource%3Dondemand%26uc"
+  if curl -fsSL -A "Mozilla/5.0 Chrome/120.0.0.0" "$cws" -o "$z" 2>/dev/null; then
+    _try_marksyncr_archive "$z" "CWS $MKS_ID, may lag behind the release" || true
+  fi
+
   rm -f "$z"
   [ -n "$MKS_SRC" ] || echo "  ! MarkSyncr fetch skipped (non-fatal)"
 }
