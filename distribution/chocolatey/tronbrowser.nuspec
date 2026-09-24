@@ -2,7 +2,7 @@
 <package xmlns="http://schemas.microsoft.com/packaging/2015/06/nuspec.xsd">
   <metadata>
     <id>tronbrowser</id>
-    <version>3.16.0</version>
+    <version>3.16.1</version>
     <title>TronBrowser</title>
     <authors>Profullstack, Inc.</authors>
     <projectUrl>https://tronbrowser.dev</projectUrl>
