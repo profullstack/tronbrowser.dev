@@ -56,6 +56,12 @@ jobs:
           V_IN: ${{ inputs.version }}
         run: echo "version=${V_IN#v}" >> "$GITHUB_OUTPUT"
 
+      # Chocolatey is NOT stripped here. It used to be, which meant
+      # distribution/chocolatey/* was templated only on the Windows job, which
+      # has no commit step — so those two files were the one pair that never got
+      # refreshed in git. This job templates every channel (and commits them);
+      # the chocolatey *submit* is what belongs to Windows, and the submitter
+      # skips itself when choco is not on PATH.
       - name: Resolve package managers
         id: pms
         env:
@@ -63,8 +69,8 @@ jobs:
         run: |
           PMS="$PMS_IN"
           [ -z "$PMS" ] && PMS="all"
-          if [ "$PMS" = "all" ]; then PMS="homebrew,scoop,winget,aur,apt,rpm,gentoo,nix,snap,flatpak,appimage,freebsd"; fi
-          echo "list=$(echo "$PMS" | sed 's/chocolatey,*//g')" >> "$GITHUB_OUTPUT"
+          if [ "$PMS" = "all" ]; then PMS="homebrew,scoop,winget,aur,apt,rpm,gentoo,nix,chocolatey,snap,flatpak,appimage,freebsd"; fi
+          echo "list=$PMS" >> "$GITHUB_OUTPUT"
 
       - name: Refresh + submit manifests
         env:

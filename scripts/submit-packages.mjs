@@ -256,6 +256,21 @@ function tmp(prefix) {
 }
 
 /**
+ * Is a command available on this runner?
+ *
+ * Runs the command itself rather than `which`/`where`, which differ between the
+ * Linux runner and the Windows one's git-bash.
+ */
+function hasCommand(cmd) {
+  try {
+    execFileSync(cmd, ["--version"], { stdio: "pipe" });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Write one file into a repo we own and push it.
  *
  * Authenticated with a per-repo ssh deploy key rather than a PAT. A PAT carries
@@ -371,6 +386,15 @@ const SUBMITTERS = {
   },
 
   chocolatey: () => {
+    // The Linux job templates this manifest so it gets committed with the rest;
+    // only the Windows job can actually pack and push it. Without this guard the
+    // Linux run dies on a missing `choco`.
+    if (!hasCommand("choco")) {
+      console.log(
+        "  chocolatey: no choco on this runner, manifest refreshed — the Windows job pushes it",
+      );
+      return;
+    }
     const key = process.env.CHOCOLATEY_API_KEY;
     if (!key) return skip("chocolatey", "CHOCOLATEY_API_KEY");
     const dir = join(ROOT, "distribution/chocolatey");

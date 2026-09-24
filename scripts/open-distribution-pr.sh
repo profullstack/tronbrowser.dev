@@ -24,12 +24,22 @@ git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 BRANCH="chore/distribution-${VERSION}"
 
 # A re-run of the same release must not fail on an existing branch.
+#
+# --force-with-lease needs a remote-tracking ref to form its lease against. The
+# release checkout is a fresh shallow clone of one ref, so refs/remotes/origin/
+# <branch> does not exist and the push is rejected with "stale info" — which is
+# exactly how the first chocolatey re-run died. Fetch the branch first so the
+# lease has a basis, and it behaves as intended: overwrite our own earlier
+# attempt, refuse if someone else moved it.
 if git ls-remote --exit-code --heads origin "${BRANCH}" >/dev/null 2>&1; then
   echo "branch ${BRANCH} already exists on origin; force-updating it"
+  git fetch --depth=1 origin "+refs/heads/${BRANCH}:refs/remotes/origin/${BRANCH}"
+  EXPECT="$(git rev-parse "refs/remotes/origin/${BRANCH}")"
   git checkout -B "${BRANCH}"
   git add distribution
   git commit -m "chore(distribution): refresh manifests for v${VERSION}"
-  git push --force-with-lease origin "${BRANCH}"
+  # The lease takes the expected commit, not a ref path.
+  git push --force-with-lease="${BRANCH}:${EXPECT}" origin "${BRANCH}"
 else
   git checkout -b "${BRANCH}"
   git add distribution
