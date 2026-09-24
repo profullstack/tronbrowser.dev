@@ -9,6 +9,7 @@ import {
 } from "./coinpay-auth.js";
 import { pushSettings, pullSettings } from "./settings-store.js";
 import { encryptVault, decryptVault } from "./vault.js";
+import { DEFAULT_PUSH_SERVICE, pushServiceFrom } from "./push-client.js";
 import {
   connect as btrConnect,
   disconnect as btrDisconnect,
@@ -391,6 +392,42 @@ function flash(id, msg) {
   el(id).textContent = msg;
   setTimeout(() => (el(id).textContent = ""), 1600);
 }
+
+/* ---------- Push service (push-client.js reads `pushService`) ---------- */
+async function mountPush() {
+  const { pushService } = await chrome.storage.local.get("pushService");
+  const mode = pushService === "off" ? "off" : pushService && pushService !== DEFAULT_PUSH_SERVICE ? "custom" : "default";
+  el("pushMode").value = mode;
+  el("pushUrl").value = mode === "custom" ? pushService : "";
+  el("pushCustomRow").hidden = mode !== "custom";
+  el("pushMode").addEventListener("change", () => {
+    el("pushCustomRow").hidden = el("pushMode").value !== "custom";
+  });
+  el("savePush").addEventListener("click", async () => {
+    const choice = el("pushMode").value;
+    if (choice === "off") {
+      await chrome.storage.local.set({ pushService: "off" });
+      return flash("savedPush", "push off ✓");
+    }
+    if (choice === "default") {
+      await chrome.storage.local.remove("pushService");
+      return flash("savedPush", "saved ✓");
+    }
+    const url = pushServiceFrom(el("pushUrl").value);
+    if (!url || url === DEFAULT_PUSH_SERVICE) return flash("savedPush", "enter an https:// URL");
+    // Check it speaks our protocol before switching every site over to it.
+    try {
+      const info = await (await fetch(url)).json();
+      if (info.service !== "tronbrowser-push") throw new Error("not a compatible push service");
+    } catch (e) {
+      return flash("savedPush", `can't use that URL: ${e.message}`);
+    }
+    await chrome.storage.local.set({ pushService: url });
+    flash("savedPush", "saved ✓");
+  });
+}
+mountPush();
+
 function escape(s) {
   const d = document.createElement("div");
   d.textContent = s || "";

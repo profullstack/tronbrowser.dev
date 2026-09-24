@@ -1,5 +1,9 @@
 import { decideInstallTarget, lookupInstalled } from './install-state.js';
 import { PIT_SOCKS_PORT, pitProxyConfig } from './pit-proxy.js';
+import { installPush } from './push-client.js';
+
+// Web Push through TronBrowser's configured push service (the engine has none).
+installPush();
 
 // Open the AI side panel when the toolbar action is clicked.
 chrome.sidePanel

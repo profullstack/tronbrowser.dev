@@ -1,4 +1,5 @@
 import { serve } from '@hono/node-server';
+import { createNodeWebSocket } from '@hono/node-ws';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { getCookie, setCookie, deleteCookie } from 'hono/cookie';
@@ -15,6 +16,8 @@ import { dnsRoutes } from './dns.js';
 import { tronRelay } from './mcp/tron.js';
 import { safeRedirect } from './redirect.js';
 import { extLoginTarget } from './ext-login.js';
+import { db } from './db.js';
+import { pushService } from './push/routes.js';
 
 const CP = {
   clientId: process.env.COINPAY_CLIENT_ID || '',
@@ -28,6 +31,7 @@ const CP = {
 const APP_URL = process.env.APP_URL || 'https://tronbrowser.dev';
 
 const app = new Hono();
+const { injectWebSocket, upgradeWebSocket } = createNodeWebSocket({ app });
 app.use('*', cors({ origin: (o) => o || '*', credentials: true }));
 
 const cookieOpts = { httpOnly: true, secure: true, sameSite: 'Lax' as const, path: '/', maxAge: SESSION_TTL };
@@ -50,6 +54,13 @@ async function startSession(c: any, userId: string, redirect?: string) {
 }
 
 app.get('/api/healthz', (c) => c.json({ ok: true }));
+
+/* ---------- Web Push service: tronbrowser.dev/api/1/push ---------- */
+// ungoogled-chromium has no push service; the bundled extension registers
+// here instead (the push service is a TronBrowser setting, this is the default).
+const push = pushService({ db, publicBase: `${APP_URL}/api/1/push`, upgradeWebSocket });
+app.route('/api/1/push', push.app);
+setInterval(() => push.sweep().catch(() => undefined), 3600_000).unref();
 
 /* ---------- Extension store (tronbrowser.dev/store) ---------- */
 app.route('/api/store', store);
@@ -243,4 +254,5 @@ function baseUrl(c: any): string {
 }
 
 const port = Number(process.env.PORT || 8080);
-serve({ fetch: app.fetch, port }, () => console.log(`tronbrowser api on :${port}`));
+const server = serve({ fetch: app.fetch, port }, () => console.log(`tronbrowser api on :${port}`));
+injectWebSocket(server);
