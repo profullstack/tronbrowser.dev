@@ -84,9 +84,20 @@ export function extractExpression(target: string, fields: FieldSpec[] = []): str
     return { headers, rows };
   });
 
+  // Rendered text, not textContent: textContent includes <script>/<style>
+  // source, and on script-heavy pages (Ashby inlines its bundle) the 20k cap
+  // was spent on code before any visible words, e.g. "Thanks for applying".
+  const visibleText = (root) => {
+    if (!root) return '';
+    if (typeof root.innerText === 'string' && root.isConnected && getComputedStyle(root).display !== 'none') return clean(root.innerText);
+    const copy = root.cloneNode(true);
+    for (const n of copy.querySelectorAll('script, style, noscript, template')) n.remove();
+    return clean(copy.textContent);
+  };
+
   const mainText = () => {
     const m = document.querySelector('main, article, [role=main]') || document.body;
-    return { text: clean(m.textContent).slice(0, 20000) };
+    return { text: visibleText(m).slice(0, 20000) };
   };
 
   const target = ${JSON.stringify(target)};
@@ -105,7 +116,7 @@ export function extractExpression(target: string, fields: FieldSpec[] = []): str
   }
 
   switch (target) {
-    case 'text': return { text: clean(document.body ? document.body.textContent : '').slice(0, 20000) };
+    case 'text': return { text: visibleText(document.body).slice(0, 20000) };
     case 'links': return links();
     case 'forms': return forms();
     case 'tables': return tables();

@@ -12,8 +12,11 @@ import {
   fillRef,
   formatSnapshotText,
   goto,
+  pressKey,
   printPdf,
   screenshotPng,
+  selectRef,
+  uploadRef,
   type AgentSnapshot,
   type CdpConnection,
   type FieldSpec,
@@ -87,6 +90,24 @@ export class Page {
   async fill(ref: string, value: string): Promise<void> {
     this.#tracer?.record('fill', ref); // value redacted from the trace
     await fillRef(this.#conn, ref, value);
+  }
+
+  /** Attach local files to an `<input type=file>` by ref (paths are not traced). */
+  async upload(ref: string, files: string | string[]): Promise<void> {
+    this.#tracer?.record('upload', ref);
+    await uploadRef(this.#conn, ref, Array.isArray(files) ? files : [files]);
+  }
+
+  /** Choose an option by value or visible text in a native or custom select; returns the chosen label. */
+  async select(ref: string, value: string): Promise<string | undefined> {
+    this.#tracer?.record('select', ref);
+    return (await selectRef(this.#conn, ref, value)).chosen;
+  }
+
+  /** Press a key on the focused element with trusted input (Enter, Tab, ArrowDown, one character…). */
+  async press(key: string): Promise<void> {
+    this.#tracer?.record('press', key);
+    await pressKey(this.#conn, key);
   }
 
   /** Alias of fill for MVP (character-level typing lands with richer input in M3.5+). */

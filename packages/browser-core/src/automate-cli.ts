@@ -4,6 +4,7 @@
  *
  *   tron snapshot [--json] [--include-hidden]
  *   tron click <ref> | fill <ref> <value>
+ *   tron upload <ref> <file...> | select <ref> <value> | press <key>
  *   tron extract <text|links|forms|tables|main|selector> [--field n=sel[@attr]]
  *   tron screenshot <path> [--full-page] | tron pdf <path>
  *   tron headless <url> [--snapshot|--screenshot <path>|--pdf <path>|--extract <mode>] [--json]
@@ -16,7 +17,7 @@
 import { execFile } from 'node:child_process';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve as resolvePath } from 'node:path';
 import { promisify } from 'node:util';
 import { CdpClient, type CdpConnection } from './automation/cdp-client.js';
 import { cdpListUrl } from './automation/cdp.js';
@@ -39,7 +40,10 @@ import {
   fillRef,
   formatSnapshotText,
   goto,
+  pressKey,
+  selectRef,
   StaleRefError,
+  uploadRef,
 } from './automation/page.js';
 import { resolvePageWsUrl } from './automation/page-target.js';
 import type { CdpTarget, SessionDescriptor } from './automation/types.js';
@@ -209,6 +213,7 @@ async function runOp(deps: CliDeps, conn: CdpConnection, op: HeadlessOp): Promis
 
 const USAGE =
   'usage: tron snapshot [--json] | click <ref> | fill <ref> <value> | ' +
+  'upload <ref> <file...> | select <ref> <value> | press <key> | ' +
   'extract <text|links|forms|tables|main|selector> [--field n=sel] | ' +
   'screenshot <path> [--full-page] | pdf <path> | ' +
   'headless <url> [--snapshot|--screenshot <path>|--pdf <path>|--extract <mode>] [--json]';
@@ -258,6 +263,42 @@ export async function run(argv: string[], overrides: Partial<CliDeps> = {}): Pro
         const filled = await fillRef(conn, ref, value);
         await traceRecord(deps.env, conn, 'fill', { ref, value });
         deps.out(`filled ${filled.ref}`);
+        return EXIT.ok;
+      }
+      case 'upload': {
+        const [ref, ...files] = rest;
+        if (!ref || !files.length) {
+          deps.err('usage: tron upload <ref> <file> [file...]');
+          return EXIT.usage;
+        }
+        const paths = files.map((f) => resolvePath(f));
+        conn = await attach(deps);
+        const up = await uploadRef(conn, ref, paths);
+        await traceRecord(deps.env, conn, 'upload', { ref });
+        deps.out(`uploaded ${paths.length} file(s) to ${up.ref}`);
+        return EXIT.ok;
+      }
+      case 'select': {
+        const [ref, value] = rest;
+        if (!ref || value === undefined) {
+          deps.err('usage: tron select <ref> <value-or-label>');
+          return EXIT.usage;
+        }
+        conn = await attach(deps);
+        const sel = await selectRef(conn, ref, value);
+        await traceRecord(deps.env, conn, 'select', { ref, value });
+        deps.out(`selected ${JSON.stringify(sel.chosen ?? value)} in ${sel.ref}`);
+        return EXIT.ok;
+      }
+      case 'press': {
+        const key = rest[0];
+        if (!key) {
+          deps.err('usage: tron press <key>   (Enter, Tab, Escape, ArrowDown, one character…)');
+          return EXIT.usage;
+        }
+        conn = await attach(deps);
+        await pressKey(conn, key);
+        deps.out(`pressed ${key}`);
         return EXIT.ok;
       }
       case 'extract': {
