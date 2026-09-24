@@ -2,7 +2,7 @@
 # and exec the host's Chromium. `snapcraft` builds; publish with `snapcraft upload`.
 name: tronbrowser
 base: core24
-version: '3.15.1'
+version: '3.16.0'
 summary: Privacy-first, AI-native browser (Ungoogled Chromium fork)
 description: |
   Open-source, privacy-first, AI-native web browser built on Ungoogled Chromium.
@@ -20,6 +20,6 @@ apps:
 parts:
   tronbrowser:
     plugin: dump
-    source: https://github.com/profullstack/tronbrowser.dev/releases/download/v3.15.1/tronbrowser-linux-x64.tar.gz
+    source: https://github.com/profullstack/tronbrowser.dev/releases/download/v3.16.0/tronbrowser-linux-x64.tar.gz
     organize:
       'tronbrowser/*': './'
