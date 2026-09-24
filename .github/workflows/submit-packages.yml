@@ -77,8 +77,11 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           AUR_SSH_KEY: ${{ secrets.AUR_SSH_KEY }}
           GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
-          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
-          SCOOP_BUCKET_TOKEN: ${{ secrets.SCOOP_BUCKET_TOKEN }}
+          # Per-repo ssh deploy keys, not PATs: scoped to the single repository
+          # they push to, creatable through the API, revoked by deleting them
+          # from that repo.
+          HOMEBREW_TAP_SSH_KEY: ${{ secrets.HOMEBREW_TAP_SSH_KEY }}
+          SCOOP_BUCKET_SSH_KEY: ${{ secrets.SCOOP_BUCKET_SSH_KEY }}
           SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.SNAPCRAFT_STORE_CREDENTIALS }}
         run: |
           ARGS="-v ${{ steps.v.outputs.version }}"
