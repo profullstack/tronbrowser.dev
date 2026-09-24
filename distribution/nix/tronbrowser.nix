@@ -3,11 +3,11 @@
 
 stdenv.mkDerivation rec {
   pname = "tronbrowser";
-  version = "0.1.0";
+  version = "3.15.1";
 
   src = fetchurl {
     url = "https://github.com/profullstack/tronbrowser.dev/releases/download/v${version}/tronbrowser-linux-x64.tar.gz";
-    sha256 = "d966a54a6369ec283203abd257f89e50844ff68551229a463f568dc638dcf4c7";
+    sha256 = "fd102dbb35aa3e313cb3c06a77b0fc15415dc33740a692c182050bb7f5447130";
   };
 
   nativeBuildInputs = [ makeWrapper ];
