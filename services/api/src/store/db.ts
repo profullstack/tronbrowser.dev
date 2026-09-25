@@ -1,5 +1,5 @@
-// Data access for the extension store. Mirrors the style of ../db.ts (raw
-// libSQL via the shared db() client).
+// Data access for the extension store. Mirrors the style of ../db.ts (raw SQL
+// via the shared db() client; Postgres through @profullstack/libsql-pg).
 import { createHash, randomBytes } from 'node:crypto';
 import { db, type User } from '../db.js';
 import { uuid } from '../auth.js';
@@ -181,8 +181,9 @@ export async function listLiveExtensions(opts: { q?: string | undefined; limit?:
   const offset = boundedInteger(opts.offset, 0, 0);
   if (opts.q) {
     const like = `%${opts.q}%`;
+    // ILIKE, not LIKE: SQLite's LIKE ignored ASCII case and store search relied on it.
     const r = await db().execute({
-      sql: `SELECT * FROM extensions WHERE status = 'live' AND (name LIKE ? OR summary LIKE ?)
+      sql: `SELECT * FROM extensions WHERE status = 'live' AND (name ILIKE ? OR summary ILIKE ?)
             ORDER BY updated_at DESC LIMIT ? OFFSET ?`,
       args: [like, like, limit, offset],
     });

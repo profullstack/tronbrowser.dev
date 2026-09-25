@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { Hono } from 'hono';
-import { createClient, type Client } from '@libsql/client';
+import { createClient as createSqliteClient, type Client } from '@libsql/client';
+import { createClient as createPgClient } from '@profullstack/libsql-pg';
 import { readFileSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 import { generateVapidKeys, sendPush, vapidHeader } from '@profullstack/notifications/server';
@@ -16,7 +17,31 @@ import {
 } from '../../../../apps/desktop/extensions/ai-sidebar/push-crypto.js';
 
 const BASE = 'https://tronbrowser.dev/api/1/push';
-const migration = readFileSync(new URL('../../../../packages/storage/migrations/0007_push.sql', import.meta.url), 'utf8');
+// The suite runs against an in-memory SQLite by default, so CI needs no
+// database. With TEST_DATABASE_URL=postgres://... it runs the same requests
+// through @profullstack/libsql-pg against the Postgres schema instead, which is
+// what production uses.
+const PG_URL = process.env.TEST_DATABASE_URL;
+const migration = readFileSync(
+  new URL(`../../../../packages/storage/${PG_URL ? 'migrations-pg' : 'migrations'}/0007_push.sql`, import.meta.url),
+  'utf8',
+);
+const PUSH_TABLES = ['push_messages', 'push_subscriptions', 'push_devices'];
+
+async function freshClient(): Promise<Client> {
+  if (!PG_URL) {
+    const c = createSqliteClient({ url: ':memory:' });
+    await c.executeMultiple(migration);
+    return c;
+  }
+  // Postgres: the pg pool runs the whole file in one round trip, then the
+  // tables are emptied so each test starts blank.
+  const c = createPgClient({ url: PG_URL, dialect: 'postgres' }) as unknown as Client & { pool: { query: (sql: string) => Promise<unknown> } };
+  await c.pool.query(migration);
+  await c.pool.query(`TRUNCATE ${PUSH_TABLES.join(', ')}`);
+  // The routes speak SQLite; a second client with the default dialect rewrites them.
+  return createPgClient({ url: PG_URL }) as unknown as Client;
+}
 
 let client: Client;
 let app: Hono;
@@ -25,8 +50,7 @@ const secret = randomBytes(32).toString('base64url');
 const auth = { authorization: `Bearer ${secret}`, 'content-type': 'application/json' };
 
 beforeEach(async () => {
-  client = createClient({ url: ':memory:' });
-  await client.executeMultiple(migration);
+  client = await freshClient();
   service = pushService({ db: () => client, publicBase: BASE });
   app = new Hono();
   app.route('/api/1/push', service.app);

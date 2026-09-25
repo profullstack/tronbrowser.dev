@@ -16,8 +16,12 @@ import { dnsRoutes } from './dns.js';
 import { tronRelay } from './mcp/tron.js';
 import { safeRedirect } from './redirect.js';
 import { extLoginTarget } from './ext-login.js';
-import { db } from './db.js';
+import { assertDatabaseUrl, db } from './db.js';
 import { pushService } from './push/routes.js';
+
+// Fail fast: a missing or non-Postgres DATABASE_URL is a deploy error, not a
+// condition to limp along under (there is no file-database fallback).
+assertDatabaseUrl();
 
 const CP = {
   clientId: process.env.COINPAY_CLIENT_ID || '',

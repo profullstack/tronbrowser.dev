@@ -2,7 +2,7 @@
   "name": "tronbrowser",
   "version": "3.8.8",
   "private": true,
-  "description": "TronBrowser.dev — open-source, privacy-first, AI-native browser",
+  "description": "TronBrowser.dev \u2014 open-source, privacy-first, AI-native browser",
   "packageManager": "pnpm@9.12.0",
   "engines": {
     "node": ">=24"
@@ -22,11 +22,12 @@
     "@types/node": "^24.0.0",
     "typescript": "^5.6.3",
     "vitest": "^2.1.4",
-    "@libsql/client": "^0.14.0",
     "@eslint/js": "^9.18.0",
     "eslint": "^9.18.0",
     "globals": "^15.14.0",
-    "typescript-eslint": "^8.62.0"
+    "typescript-eslint": "^8.62.0",
+    "@profullstack/libsql-pg": "^0.1.1",
+    "@libsql/client": "^0.14.0"
   },
   "main": "index.js",
   "directories": {

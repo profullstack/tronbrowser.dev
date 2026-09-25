@@ -18,7 +18,7 @@
 // We never see a payload in the clear: it arrives encrypted to a key only the
 // browser holds, and is relayed as-is.
 import { Hono } from 'hono';
-import type { Client } from '@libsql/client';
+import type { Client } from '@profullstack/libsql-pg';
 import { createHash, randomBytes } from 'node:crypto';
 import { verifyVapid } from './vapid.js';
 
