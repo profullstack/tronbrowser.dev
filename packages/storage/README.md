@@ -29,19 +29,23 @@ backups/replication; everything else is self-hosted and user-managed.
 
 ## Migrations
 
-Schema lives in [`migrations/`](migrations/) as ordered `NNNN_name.sql` files,
-applied by a forward-only runner that tracks applied files in a
+The API runs on Postgres (via `@profullstack/libsql-pg`, which keeps the
+`@libsql/client` surface the code was written against). Schema lives in
+[`migrations-pg/`](migrations-pg/) as ordered `NNNN_name.sql` files, generated
+from the SQLite originals in [`migrations/`](migrations/) with
+`npx libsql-pg convert-schema` and reviewed. `scripts/db-migrate.mjs` applies
+whichever directory matches the URL it is given and records each file in a
 `schema_migrations` table (idempotent).
 
 ```bash
-doppler run -- pnpm db:migrate    # apply pending migrations to the configured DB
-pnpm db:status                    # show applied vs pending (no changes)
+DATABASE_URL=postgres://... pnpm db:migrate    # apply pending Postgres migrations
+pnpm db:status                                 # show applied vs pending
 ```
 
-The runner ([`scripts/db-migrate.mjs`](../../scripts/db-migrate.mjs)) reads the
-same `TRONBROWSER_DB_URL`/`_AUTH_TOKEN`/`_PATH` env, so it targets Turso, your
-own libSQL server, or a local SQLite file. Current migrations:
-`0001_ai_provider_keys`, `0002_accounts_settings` (anonymous CoinPay + email/
-password accounts, sessions, synced settings).
+The SQLite files stay until the Turso cutover is proven; a `libsql://` or
+`file:` URL still applies them. Moving the rows:
 
-See [`.env.example`](../../.env.example) and the [PRD](../../docs/tronbrowser-prd.md).
+```bash
+npx libsql-pg copy --from "$TRONBROWSER_DB_URL" --token "$TRONBROWSER_DB_AUTH_TOKEN" \
+  --to "$DATABASE_URL" --verify
+```

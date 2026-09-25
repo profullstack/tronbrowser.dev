@@ -1,19 +1,54 @@
-import { createClient, type Client } from '@libsql/client';
+import { createClient, type Client } from '@profullstack/libsql-pg';
 
 let _db: Client | null = null;
 
+const POSTGRES_URL = /^postgres(ql)?:\/\//i;
+
+/**
+ * The Postgres connection string, or a clear error.
+ *
+ * The API moved from Turso/libSQL to Postgres (2026-09). @profullstack/libsql-pg
+ * keeps the @libsql/client surface (execute / rows / rowsAffected) over a pg
+ * pool and rewrites the SQLite idioms in these queries per statement, so the
+ * call sites below did not change. There is deliberately no fallback to a
+ * file or libsql:// database: a misconfigured deploy fails here, loudly.
+ *
+ * DATABASE_URL is the setting; TRONBROWSER_DB_URL is accepted as an alias so
+ * an existing deploy can be repointed by changing one value.
+ */
+export function databaseUrl(env: NodeJS.ProcessEnv = process.env): string {
+  const url = env.DATABASE_URL || env.TRONBROWSER_DB_URL;
+  if (!url) {
+    const hint = env.TRONBROWSER_DB_PATH
+      ? ' TRONBROWSER_DB_PATH is set but file databases are no longer supported: copy it into Postgres with `npx libsql-pg copy` and set DATABASE_URL.'
+      : '';
+    throw new Error(`DATABASE_URL is not set (expected postgres://user:pass@host:5432/tronbrowser).${hint}`);
+  }
+  if (!POSTGRES_URL.test(url)) {
+    const scheme = url.split(':')[0];
+    throw new Error(
+      `DATABASE_URL must be a postgres:// or postgresql:// URL, got "${scheme}:". ` +
+        'TronBrowser runs on Postgres only; libsql:// and file: databases are not supported. ' +
+        'Move the data with `npx libsql-pg copy --from <that url> --to postgres://...`.',
+    );
+  }
+  return url;
+}
+
+/** Throws unless the database URL points at Postgres. Call at process start to fail fast. */
+export function assertDatabaseUrl(env: NodeJS.ProcessEnv = process.env): void {
+  databaseUrl(env);
+}
+
 export function db(): Client {
   if (_db) return _db;
-  const url = process.env.TRONBROWSER_DB_URL;
-  const authToken = process.env.TRONBROWSER_DB_AUTH_TOKEN;
-  const path = process.env.TRONBROWSER_DB_PATH;
-  if (path) _db = createClient({ url: 'file:' + path.replace(/^file:/, '') });
-  else if (url && !/^(file:|\.\/|\/)/.test(url)) {
-    if (!authToken) throw new Error('TRONBROWSER_DB_AUTH_TOKEN required for remote DB');
-    _db = createClient({ url, authToken });
-  } else if (url) _db = createClient({ url: url.startsWith('file:') ? url : 'file:' + url });
-  else throw new Error('Set TRONBROWSER_DB_URL (+_AUTH_TOKEN) or TRONBROWSER_DB_PATH');
+  _db = createClient({ url: databaseUrl() });
   return _db;
+}
+
+/** ISO-8601 UTC timestamp `ttlSeconds` from now. */
+export function expiresAt(ttlSeconds: number, now: number = Date.now()): string {
+  return new Date(now + ttlSeconds * 1000).toISOString();
 }
 
 export interface User {
@@ -54,9 +89,13 @@ export async function setEmailVerified(userId: string): Promise<void> {
 }
 
 export async function createSession(token: string, userId: string, ttlSeconds: number): Promise<void> {
+  // Hand-ported: datetime('now', ?) with a BOUND modifier is not something the
+  // libsql-pg rewriter can turn into now() + interval (the modifier has to be
+  // a literal), so the expiry is computed here and bound as an ISO string
+  // (expires_at is timestamptz in migrations-pg).
   await db().execute({
-    sql: "INSERT INTO sessions (token, user_id, expires_at) VALUES (?, ?, datetime('now', ?))",
-    args: [token, userId, `+${ttlSeconds} seconds`],
+    sql: 'INSERT INTO sessions (token, user_id, expires_at) VALUES (?, ?, ?)',
+    args: [token, userId, expiresAt(ttlSeconds)],
   });
 }
 
@@ -74,9 +113,10 @@ export async function deleteSession(token: string): Promise<void> {
 }
 
 export async function putEmailToken(token: string, userId: string, purpose: string, ttlSeconds: number): Promise<void> {
+  // Same hand port as createSession: the expiry is bound, not computed in SQL.
   await db().execute({
-    sql: "INSERT INTO email_tokens (token, user_id, purpose, expires_at) VALUES (?, ?, ?, datetime('now', ?))",
-    args: [token, userId, purpose, `+${ttlSeconds} seconds`],
+    sql: 'INSERT INTO email_tokens (token, user_id, purpose, expires_at) VALUES (?, ?, ?, ?)',
+    args: [token, userId, purpose, expiresAt(ttlSeconds)],
   });
 }
 
