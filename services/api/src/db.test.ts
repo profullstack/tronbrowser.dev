@@ -3,8 +3,8 @@ import { databaseUrl, expiresAt } from './db.js';
 
 describe('databaseUrl', () => {
   it('accepts postgres:// and postgresql://, DATABASE_URL first', () => {
-    expect(databaseUrl({ DATABASE_URL: 'postgres://u:p@h:5432/d' })).toBe('postgres://u:p@h:5432/d');
-    expect(databaseUrl({ TRONBROWSER_DB_URL: 'postgresql://u:p@h/d' })).toBe('postgresql://u:p@h/d');
+    expect(databaseUrl({ DATABASE_URL: 'postgres://h:5432/d' })).toBe('postgres://h:5432/d');
+    expect(databaseUrl({ TRONBROWSER_DB_URL: 'postgresql://h/d' })).toBe('postgresql://h/d');
     expect(databaseUrl({ DATABASE_URL: 'postgres://a/x', TRONBROWSER_DB_URL: 'postgres://b/y' })).toBe('postgres://a/x');
   });
 
