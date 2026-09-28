@@ -29,6 +29,8 @@ type Turn =
   | { message: ChatMessage; state: 'pending' }
   | { message: ChatMessage; state: 'failed'; reason: ChatFailure };
 const FAILURE_COPY: Record<ChatFailure, string> = {
+  request_too_large: 'This message and conversation are too large to send. Your messages are still here. Start a new conversation with Clear, or send a shorter message.',
+  response_too_large: 'The assistant reply was too large. Your message is still here. Try a shorter request.',
   timeout: `No reply within ${CHAT_TIMEOUT_MS / 1000} seconds. The request may still have reached the service.`,
   cancelled: 'Stopped. The request may still have reached the service.',
   network: "Couldn't reach the assistant.",
@@ -188,7 +190,7 @@ export function ChatScreen() {
               ? 'Waiting for reply...'
               : FAILURE_COPY[turn.reason]}
           </Text>
-          <TouchableOpacity
+          {!(turn.state === 'failed' && turn.reason === 'request_too_large') && <TouchableOpacity
             accessibilityRole="button"
             accessibilityLabel={busy ? 'Stop response' : 'Retry message'}
             accessibilityHint={busy ? undefined : 'Sends the message again.'}
@@ -202,7 +204,7 @@ export function ChatScreen() {
             }
           >
             <Text style={styles.actionText}>{busy ? 'Stop' : 'Retry'}</Text>
-          </TouchableOpacity>
+          </TouchableOpacity>}
         </View>
       )}
       <View style={styles.composer}>

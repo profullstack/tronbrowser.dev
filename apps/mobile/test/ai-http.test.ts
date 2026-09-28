@@ -58,6 +58,17 @@ async function withServer(
 }
 
 describe('chat using real loopback HTTP and AbortController', () => {
+  it('stops a chunked oversized response without awaiting its end or retrying', async () => {
+    let closed!: Promise<unknown>;
+    await withServer(response => {
+      closed = once(response, 'close');
+      response.write('{"text":"' + 'x'.repeat(65536));
+    }, async requests => {
+      await expect(sendChat(history)).rejects.toMatchObject({ kind: 'response_too_large' });
+      await expectClosed(closed);
+      expect(requests).toHaveLength(1);
+    });
+  });
   it('sends one POST with public conversation fields and decodes UTF-8', async () => {
     await withServer(
       (response) => {

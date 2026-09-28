@@ -32,7 +32,8 @@ describe('one bounded chat attempt', () => {
           ? new Promise<Response>(() => {})
           : Promise.resolve({
               ok: true,
-              json: () => new Promise(() => {}),
+              headers: new Headers(),
+              text: () => new Promise(() => {}),
             } as Response),
       );
       vi.stubGlobal('fetch', fetcher);
