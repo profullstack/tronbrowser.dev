@@ -45,6 +45,22 @@ async function send(root: ReactTestInstance, text = 'hello') {
   await fire(button(root, 'Send message'), 'onPress');
 }
 describe('chat recovery without hidden replay', () => {
+  it('retains an oversized failed turn and offers clear instead of an identical retry', async () => {
+    const { root } = await renderScreen(<ChatScreen />);
+    await send(root, 'keep this prompt');
+    await fire(input(root), 'onChangeText', 'shorter draft');
+    await actAsync(() => calls[0]!.reject(new ChatError('request_too_large')));
+    expect(textContents(root)).toContain('keep this prompt');
+    expect(input(root).props.value).toBe('shorter draft');
+    expect(button(root, 'Retry message')).toBeUndefined();
+    await fire(button(root, 'Clear conversation'), 'onPress');
+    await fire(button(root, 'Cancel clear conversation'), 'onPress');
+    expect(textContents(root)).toContain('keep this prompt');
+    await fire(button(root, 'Clear conversation'), 'onPress');
+    await fire(button(root, 'Confirm clear conversation'), 'onPress');
+    expect(input(root).props.value).toBe('shorter draft');
+    expect(calls).toHaveLength(1);
+  });
   it('shows a timeout as a failed turn without retrying automatically', async () => {
     const { root } = await renderScreen(<ChatScreen />);
     await send(root);
