@@ -41,6 +41,57 @@ jobs:
       - name: Test
         run: pnpm test
 
+  # dev2 runs services/api on Bun (see Dockerfile). vitest above stays the gate;
+  # this job runs the API's portable tests under the runtime prod uses and
+  # boots the built API on Bun against Postgres. Files using vitest-only APIs
+  # (vi.stubEnv / vi.stubGlobal / vi.mocked ...) are skipped here.
+  api-bun:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_HOST_AUTH_METHOD: trust   # throwaway CI database, no password
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 2s
+          --health-timeout 5s --health-retries 20
+    env:
+      DATABASE_URL: postgres://postgres@127.0.0.1:5432/postgres
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.0   # keep in step with BUN_IMAGE in the Dockerfile
+
+      - name: Install + build the API
+        run: |
+          pnpm install --frozen-lockfile --filter @tronbrowser/api...
+          pnpm --filter @tronbrowser/browser-core --filter @tronbrowser/agent-runtime --filter @tronbrowser/sdk --filter @tronbrowser/api build
+
+      - name: Portable API tests under bun test
+        working-directory: services/api
+        run: |
+          set -e
+          for f in $(git ls-files 'src/*.test.ts' 'src/*.test.js' | xargs grep -L -E 'vi\.(stub|unstub|mocked|importActual|hoisted|mock\()'); do
+            echo "::group::bun test $f"; bun test "./$f"; echo "::endgroup::"
+          done
+
+      - name: Migrate + boot the API on Bun
+        run: |
+          set -e
+          MIGRATIONS_DIR=packages/storage/migrations-pg bun scripts/db-migrate.mjs
+          PORT=8090 bun services/api/dist/index.js > api.log 2>&1 &
+          for i in $(seq 1 30); do curl -fsS http://127.0.0.1:8090/api/healthz && break; sleep 1; done
+          curl -fsS http://127.0.0.1:8090/api/1/push
+          curl -fsS http://127.0.0.1:8090/api/store/extensions
+          cat api.log
+
   # package + release jobs are stubbed until the Chromium build lands in CI.
   package:
     runs-on: ubuntu-latest

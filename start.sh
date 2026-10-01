@@ -4,8 +4,8 @@
 set -e
 # Apply any pending DB migrations on boot (idempotent, forward-only). Non-fatal:
 # a transient DB hiccup shouldn't block the whole service from starting.
-MIGRATIONS_DIR=/api/migrations node /api/db-migrate.mjs || echo "[migrate] FAILED — continuing"
-PORT=8090 node /api/dist/index.js &
+MIGRATIONS_DIR=/api/migrations bun /api/db-migrate.mjs || echo "[migrate] FAILED — continuing"
+PORT=8090 bun /api/dist/index.js &
 
 # --- Tor v3 hidden service ---------------------------------------------------
 # Expose the site over a stable .onion. Tor forwards onion:80 -> Caddy on $PORT

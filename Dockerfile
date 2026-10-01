@@ -8,6 +8,12 @@
 
 ARG UNGOOGLED_CHROMIUM_VERSION=152.0.7977.82-1
 ARG OBSCURA_VERSION=0.2.2
+# The API runs on Bun (fleet Node -> Bun migration). The repo itself stays a
+# pnpm workspace on Node 24 (desktop, mobile, extensions and release builds use
+# it), so pnpm still builds the API below; only the container's runtime moves.
+ARG BUN_IMAGE=oven/bun:1.4.0-slim
+
+FROM ${BUN_IMAGE} AS bun
 
 # --- build the API (a pnpm workspace member: it imports @tronbrowser/sdk) ---
 FROM node:24-bookworm-slim AS api
@@ -40,11 +46,13 @@ RUN set -eu; arch="$(uname -m)"; case "$arch" in x86_64) uc=x86_64; ob=x86_64 ;;
     | tar -xz -C /opt/obscura; \
   test -x /opt/obscura/obscura
 
-# --- final: caddy + node + tor + the engines ---
+# --- final: caddy + bun + tor + the engines ---
 # Debian rather than Alpine: the portable ungoogled-chromium and Obscura are
-# glibc binaries. Caddy is a static binary, copied from its own image.
-FROM node:24-bookworm-slim
+# glibc binaries. Caddy and Bun are single binaries, copied from their images.
+# There is no Node in this stage: the API and the migration runner run on Bun.
+FROM debian:bookworm-slim
 COPY --from=caddy:2 /usr/bin/caddy /usr/bin/caddy
+COPY --from=bun /usr/local/bin/bun /usr/local/bin/bun
 # openssh-client: the store provisions BBS publisher accounts and generates
 # ed25519 keypairs via `ssh`/`ssh-keygen` (services/api/src/store/fileshost.ts).
 # tor: runs a Tor v3 hidden service in this same container so tronbrowser.dev is
