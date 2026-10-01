@@ -51,13 +51,13 @@ jobs:
       postgres:
         image: postgres:16-alpine
         env:
-          POSTGRES_PASSWORD: pw
+          POSTGRES_HOST_AUTH_METHOD: trust   # throwaway CI database, no password
         ports: ["5432:5432"]
         options: >-
           --health-cmd "pg_isready -U postgres" --health-interval 2s
           --health-timeout 5s --health-retries 20
     env:
-      DATABASE_URL: postgres://postgres:pw@127.0.0.1:5432/postgres
+      DATABASE_URL: postgres://postgres@127.0.0.1:5432/postgres
     steps:
       - uses: actions/checkout@v5
       - uses: pnpm/action-setup@v6
