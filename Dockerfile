@@ -84,7 +84,14 @@ COPY --from=api /out/node_modules /api/node_modules
 COPY --from=api /out/package.json /api/package.json
 # DB migrations run on boot (start.sh) so schema never drifts from the deploy.
 COPY scripts/db-migrate.mjs /api/db-migrate.mjs
-COPY packages/storage/migrations /api/migrations
+# The API runs on Postgres, so the image carries the Postgres migrations
+# (migrations-pg), never the legacy SQLite ones in packages/storage/migrations.
+# Fail the build if any shipped file lacks the Postgres-schema header.
+COPY packages/storage/migrations-pg /api/migrations-pg
+RUN for f in /api/migrations-pg/*.sql; do \
+      head -1 "$f" | grep -q '^-- TronBrowser Postgres schema:' \
+        || { echo "not a Postgres migration: $f" >&2; exit 1; }; \
+    done
 COPY start.sh /start.sh
 RUN chmod +x /start.sh
 CMD ["/start.sh"]
