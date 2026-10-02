@@ -31,6 +31,19 @@ if (!url && !filePath) {
 
 const DIR = process.env.MIGRATIONS_DIR || join(ROOT, isPostgres ? 'packages/storage/migrations-pg' : 'packages/storage/migrations');
 const files = readdirSync(DIR).filter((f) => f.endsWith('.sql')).sort();
+console.log(`[migrate] ${isPostgres ? 'postgres' : 'libsql'} target, reading ${DIR} (${files.length} file(s))`);
+
+// Every Postgres migration starts with this header. A file without it is the
+// legacy SQLite schema (packages/storage/migrations), which must never be run
+// against the production Postgres; refuse before touching the database.
+const PG_HEADER = /^-- TronBrowser Postgres schema:/;
+if (isPostgres) {
+  const bad = files.filter((f) => !PG_HEADER.test(readFileSync(join(DIR, f), 'utf8')));
+  if (bad.length) {
+    console.error(`[migrate] refusing: ${DIR} holds non-Postgres migrations (${bad.join(', ')}). Point MIGRATIONS_DIR at packages/storage/migrations-pg.`);
+    process.exit(1);
+  }
+}
 
 if (isPostgres) {
   const { createClient } = await import('@profullstack/libsql-pg');

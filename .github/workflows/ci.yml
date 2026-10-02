@@ -85,6 +85,10 @@ jobs:
       - name: Migrate + boot the API on Bun
         run: |
           set -e
+          # The runner must refuse the legacy SQLite migrations on a Postgres target.
+          if MIGRATIONS_DIR=packages/storage/migrations bun scripts/db-migrate.mjs; then
+            echo "db-migrate applied SQLite migrations to Postgres" >&2; exit 1
+          fi
           MIGRATIONS_DIR=packages/storage/migrations-pg bun scripts/db-migrate.mjs
           PORT=8090 bun services/api/dist/index.js > api.log 2>&1 &
           for i in $(seq 1 30); do curl -fsS http://127.0.0.1:8090/api/healthz && break; sleep 1; done

@@ -4,7 +4,7 @@
 set -e
 # Apply any pending DB migrations on boot (idempotent, forward-only). Non-fatal:
 # a transient DB hiccup shouldn't block the whole service from starting.
-MIGRATIONS_DIR=/api/migrations bun /api/db-migrate.mjs || echo "[migrate] FAILED — continuing"
+MIGRATIONS_DIR=/api/migrations-pg bun /api/db-migrate.mjs || echo "[migrate] FAILED — continuing"
 PORT=8090 bun /api/dist/index.js &
 
 # --- Tor v3 hidden service ---------------------------------------------------
