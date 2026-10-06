@@ -119,7 +119,10 @@ Usage:
   tron pwa sync         Repoint their desktop icons at TronBrowser
                         (use when an installed app dies from its icon but
                          opens fine from the address bar)
-  tron doctor           Check the engine, locks, databases and disk
+  tron pwa search <q>   Search pwamart.com, the app store for web apps
+  tron pwa install <slug|url>
+                        Open a pwamart app (or any https URL) as an app window
+  tron doctor          Check the engine, locks, databases and disk
                         (use when "Something went wrong when opening your
                          profile" appears; --json for machine output)
   tron repair           Fix what doctor found, with the browser closed
