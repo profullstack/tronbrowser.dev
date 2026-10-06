@@ -608,7 +608,22 @@ def cmd_revert(apps_dir: str, dry_run: bool) -> int:
 
 # pwamart.com is the app store for web apps. Its listings carry a start_url, and
 # an install counted as "tron" tells publishers where installs come from.
-PWAMART_URL = (os.environ.get("PWAMART_URL") or "https://pwamart.com").rstrip("/")
+def _store_url() -> str:
+    """The store base. https only, except plain http on loopback (the tests'
+    stand-in store): a mistyped or hostile PWAMART_URL must not turn this helper
+    into something that fetches arbitrary internal URLs."""
+    from urllib.parse import urlsplit
+
+    raw = (os.environ.get("PWAMART_URL") or "https://pwamart.com").rstrip("/")
+    u = urlsplit(raw)
+    loopback = u.scheme == "http" and u.hostname in ("127.0.0.1", "localhost", "::1")
+    if (u.scheme != "https" and not loopback) or not u.hostname or u.username or u.password:
+        print(f"tron pwa: ignoring PWAMART_URL={raw!r} (https only); using https://pwamart.com", file=sys.stderr)
+        return "https://pwamart.com"
+    return raw
+
+
+PWAMART_URL = _store_url()
 
 
 def pwamart_get(path: str) -> dict:
@@ -616,6 +631,8 @@ def pwamart_get(path: str) -> dict:
     import urllib.request
 
     req = urllib.request.Request(f"{PWAMART_URL}/api/v1{path}", headers={"user-agent": "tron-pwa"})
+    # The base is the pwamart store, validated by _store_url (https, or loopback in tests).
+    # threatcrush-disable-next-line py-ssrf-outbound-request
     with urllib.request.urlopen(req, timeout=15) as res:
         return json.loads(res.read().decode("utf-8"))
 
@@ -631,6 +648,8 @@ def pwamart_count(slug: str) -> None:
             headers={"content-type": "application/json", "user-agent": "tron-pwa"},
             method="POST",
         )
+        # Same validated store base as pwamart_get.
+        # threatcrush-disable-next-line py-ssrf-outbound-request
         urllib.request.urlopen(req, timeout=5).read()
     except Exception:
         pass  # a missed count must never block an install

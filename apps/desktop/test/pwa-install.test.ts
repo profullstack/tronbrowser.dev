@@ -38,6 +38,14 @@ describe('tron pwa install', () => {
     }
   });
 
+  it('ignores a PWAMART_URL that is not https (or loopback http)', () => {
+    for (const bad of ['http://169.254.169.254', 'file:///etc', 'https://user:pw@store.example']) {
+      const r = spawnSync('python3', [TRON_PWA, 'install', 'https://app.example/', '--dry-run'], { encoding: 'utf8', env: env({ PWAMART_URL: bad }) });
+      expect(r.stderr).toContain('ignoring PWAMART_URL');
+      expect(r.stdout.trim()).toBe(`${CLI} --app=https://app.example/`);
+    }
+  });
+
   it('looks a slug up on pwamart and launches its start_url', async () => {
     const seen: string[] = [];
     const server = createServer((req, res) => {
