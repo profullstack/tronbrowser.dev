@@ -31,6 +31,11 @@ shortcut from someone's real Chrome is left exactly as it is.
   tron pwa [list]      show every web-app shortcut and who owns it
   tron pwa sync        point TronBrowser's shortcuts at the launcher
   tron pwa revert      hand them back to the engine binary (used by uninstall)
+  tron pwa search <q>  search pwamart.com, the app store for web apps
+  tron pwa install <slug|https-url>
+                       open a pwamart listing (or any URL) as a TronBrowser app
+                       window; Install in its address bar then keeps it, and the
+                       icon it writes is repointed by sync like any other
 
 `--dry-run` reports what sync/revert would change without writing.
 """
@@ -601,6 +606,79 @@ def cmd_revert(apps_dir: str, dry_run: bool) -> int:
     return 0
 
 
+# pwamart.com is the app store for web apps. Its listings carry a start_url, and
+# an install counted as "tron" tells publishers where installs come from.
+PWAMART_URL = (os.environ.get("PWAMART_URL") or "https://pwamart.com").rstrip("/")
+
+
+def pwamart_get(path: str) -> dict:
+    import json
+    import urllib.request
+
+    req = urllib.request.Request(f"{PWAMART_URL}/api/v1{path}", headers={"user-agent": "tron-pwa"})
+    with urllib.request.urlopen(req, timeout=15) as res:
+        return json.loads(res.read().decode("utf-8"))
+
+
+def pwamart_count(slug: str) -> None:
+    import json
+    import urllib.request
+
+    try:
+        req = urllib.request.Request(
+            f"{PWAMART_URL}/api/v1/apps/{slug}/installs",
+            data=json.dumps({"method": "tron"}).encode(),
+            headers={"content-type": "application/json", "user-agent": "tron-pwa"},
+            method="POST",
+        )
+        urllib.request.urlopen(req, timeout=5).read()
+    except Exception:
+        pass  # a missed count must never block an install
+
+
+def cmd_search(query: str) -> int:
+    import urllib.parse
+
+    try:
+        r = pwamart_get("/apps?" + urllib.parse.urlencode({"q": query, "limit": 20}))
+    except Exception as e:
+        print(f"tron pwa: could not reach {PWAMART_URL}: {e}", file=sys.stderr)
+        return 1
+    for a in r.get("apps", []):
+        print(f"{a['slug']:<26} {a['name'][:30]:<30} {a.get('category_name', '')}")
+    print(f"\n{r.get('total', 0)} app(s) on {PWAMART_URL} · tron pwa install <slug>")
+    return 0
+
+
+def cmd_install(target: str, dry_run: bool) -> int:
+    import re
+    import urllib.parse
+
+    if target.startswith("https://"):
+        url, slug = target, None
+    elif re.fullmatch(r"[a-z0-9][a-z0-9-]{0,58}[a-z0-9]", target or ""):
+        try:
+            app = pwamart_get(f"/apps/{urllib.parse.quote(target)}")["app"]
+        except Exception as e:
+            print(f"tron pwa: no app '{target}' on {PWAMART_URL} ({e})", file=sys.stderr)
+            return 1
+        url, slug = app.get("start_url") or app["url"], target
+    else:
+        print("tron pwa install: give a pwamart slug or an https:// URL", file=sys.stderr)
+        return 2
+    if not url.startswith("https://"):
+        print(f"tron pwa: refusing a non-https start URL: {url}", file=sys.stderr)
+        return 1
+    cmd = [launcher_cli(), f"--app={url}"]
+    if dry_run:
+        print(" ".join(cmd))
+        return 0
+    if slug:
+        pwamart_count(slug)
+    os.execv(cmd[0], cmd)
+    return 0
+
+
 def main(argv: list[str]) -> int:
     args = [a for a in argv if a != "--dry-run"]
     dry_run = "--dry-run" in argv
@@ -616,7 +694,11 @@ def main(argv: list[str]) -> int:
         return cmd_sync(apps_dir, dry_run)
     if cmd == "revert":
         return cmd_revert(apps_dir, dry_run)
-    print(f"tron pwa: unknown command '{cmd}'. Try: list, sync, revert", file=sys.stderr)
+    if cmd == "search":
+        return cmd_search(" ".join(args[1:]))
+    if cmd == "install":
+        return cmd_install(args[1] if len(args) > 1 else "", dry_run)
+    print(f"tron pwa: unknown command '{cmd}'. Try: list, sync, revert, search, install", file=sys.stderr)
     return 2
 
 
