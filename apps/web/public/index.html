@@ -164,11 +164,7 @@
   .faq { margin-top: 16px; }
   .faq h3 { color: var(--cyan); font-size: 16px; margin: 22px 0 6px; }
   .faq p { margin: 0; color: var(--fg); }
-  footer { text-align: center; margin-top: 64px; color: var(--muted); }
-  footer nav a { margin: 0 8px; }
-  footer nav.webring { margin-top: 10px; font-size: 13px; }
-  footer nav.webring a { color: var(--muted); margin: 0 4px; }
-  .copyright { margin-top: 14px; font-size: 13px; color: var(--muted); opacity: .8; }
+  .site-foot { text-align: center; margin-top: 64px; color: var(--muted); }
   .onion { margin-top: 12px; font-size: 13px; }
   .onion a { color: var(--muted); word-break: break-all; }
   .onion .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%;
@@ -254,24 +250,14 @@
     </div>
   </main>
 
-  <footer>
-    <nav>
-      <a href="/store/">Store</a> ·
-      <a href="/login">Sign in</a> ·
-      <a href="/privacy">Privacy</a> ·
-      <a href="https://github.com/profullstack/tronbrowser.dev">GitHub</a> ·
-      <a href="https://github.com/profullstack/tronbrowser.dev/blob/main/docs/tronbrowser-prd.md">PRD</a> ·
-      <a href="https://github.com/profullstack/tronbrowser.dev/releases">Releases</a>
-    </nav>
-    <nav class="webring" aria-label="Profullstack webring">
-      <a href="https://rssamplifier.com/ring/profullstack/previous?from=https%3A%2F%2Ftronbrowser.dev%2F" rel="prev">&lt;&lt;</a>
-      <a href="https://rssamplifier.com/ring/profullstack">Profullstack</a>
-      <a href="https://rssamplifier.com/ring/profullstack/next?from=https%3A%2F%2Ftronbrowser.dev%2F" rel="next">&gt;&gt;</a>
-      <a href="https://rssamplifier.com/ring/profullstack/random?from=https%3A%2F%2Ftronbrowser.dev%2F" title="Random site" aria-label="Random site">&#x2684;</a>
-    </nav>
-    <div class="copyright">© 2026 <a href="https://profullstack.com">Profullstack, Inc.</a> · MIT License · <time datetime="2026-06-25">Updated June 2026</time></div>
+  <div class="site-foot">
+    <!-- @profullstack/footer: server-rendered copy for crawlers and the ring verifier; embed.js swaps in the @latest template. -->
+    <footer data-profullstack-footer data-site="https://tronbrowser.dev/" data-since="2026" data-tagline="MIT License" data-links='[{"label":"Store","href":"/store/"},{"label":"Sign in","href":"/login"},{"label":"Privacy","href":"/privacy"},{"label":"GitHub","href":"https://github.com/profullstack/tronbrowser.dev"},{"label":"PRD","href":"https://github.com/profullstack/tronbrowser.dev/blob/main/docs/tronbrowser-prd.md"},{"label":"Releases","href":"https://github.com/profullstack/tronbrowser.dev/releases"}]'>
+      <footer class="pfs-footer" data-pfs-footer="0.2.1"><style>.pfs-footer{--pfs-footer-muted:color-mix(in srgb,currentColor 62%,transparent);--pfs-footer-gap:.5rem 1.25rem;--pfs-footer-size:.875rem;border-top:1px solid color-mix(in srgb,currentColor 14%,transparent);font-size:var(--pfs-footer-size);line-height:1.5;color:inherit}.pfs-footer__inner{max-width:72rem;margin:0 auto;padding:1.5rem 1rem;display:flex;flex-direction:column;align-items:center;gap:.75rem;text-align:center}.pfs-footer a{color:var(--pfs-footer-muted);text-decoration:none}.pfs-footer a:hover,.pfs-footer a:focus-visible{color:inherit;text-decoration:underline}.pfs-footer__links{display:flex;flex-wrap:wrap;justify-content:center;gap:var(--pfs-footer-gap)}.pfs-footer__ring{display:flex;flex-wrap:wrap;justify-content:center;align-items:center;gap:.6rem}.pfs-footer__icon{display:inline-block;width:1em;height:1em;vertical-align:-.125em;background-color:currentColor;-webkit-mask:var(--pfs-footer-glyph) center/contain no-repeat;mask:var(--pfs-footer-glyph) center/contain no-repeat}.pfs-footer__icon--random{--pfs-footer-glyph:url("data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2024%2024'%20fill%3D'none'%20stroke%3D'black'%20stroke-width%3D'2'%20stroke-linecap%3D'round'%20stroke-linejoin%3D'round'%3E%3Crect%20x%3D'3'%20y%3D'3'%20width%3D'18'%20height%3D'18'%20rx%3D'3'%2F%3E%3Ccircle%20cx%3D'8'%20cy%3D'8'%20r%3D'1'%2F%3E%3Ccircle%20cx%3D'16'%20cy%3D'8'%20r%3D'1'%2F%3E%3Ccircle%20cx%3D'12'%20cy%3D'12'%20r%3D'1'%2F%3E%3Ccircle%20cx%3D'8'%20cy%3D'16'%20r%3D'1'%2F%3E%3Ccircle%20cx%3D'16'%20cy%3D'16'%20r%3D'1'%2F%3E%3C%2Fsvg%3E")}.pfs-footer__icon--vote{--pfs-footer-glyph:url("data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2024%2024'%20fill%3D'none'%20stroke%3D'black'%20stroke-width%3D'2'%20stroke-linecap%3D'round'%20stroke-linejoin%3D'round'%3E%3Cpath%20d%3D'M12%204%2021%2019H3z'%2F%3E%3C%2Fsvg%3E")}.pfs-footer__copy{margin:0;color:var(--pfs-footer-muted)}.pfs-footer__copy a{color:inherit}</style><div class="pfs-footer__inner"><nav class="pfs-footer__links" aria-label="Footer"><a href="/store/">Store</a><a href="/login">Sign in</a><a href="/privacy">Privacy</a><a href="https://github.com/profullstack/tronbrowser.dev">GitHub</a><a href="https://github.com/profullstack/tronbrowser.dev/blob/main/docs/tronbrowser-prd.md">PRD</a><a href="https://github.com/profullstack/tronbrowser.dev/releases">Releases</a></nav><nav class="webring pfs-footer__ring" aria-label="Profullstack webring"><a href="https://rssamplifier.com/ring/profullstack/previous?from=https%3A%2F%2Ftronbrowser.dev%2F" rel="prev" title="Previous site">&lt;&lt;</a><a href="https://rssamplifier.com/ring/profullstack">Profullstack</a><a href="https://rssamplifier.com/ring/profullstack/next?from=https%3A%2F%2Ftronbrowser.dev%2F" rel="next" title="Next site">&gt;&gt;</a><a href="https://rssamplifier.com/ring/profullstack/random?from=https%3A%2F%2Ftronbrowser.dev%2F" title="Random site" aria-label="Random site"><span class="pfs-footer__icon pfs-footer__icon--random" aria-hidden="true"></span></a><a href="https://rssamplifier.com/ring/profullstack/vote" referrerpolicy="origin" title="Vote for this site" aria-label="Vote for this site"><span class="pfs-footer__icon pfs-footer__icon--vote" aria-hidden="true"></span></a></nav><p class="pfs-footer__copy">&copy; 2026 <a href="https://profullstack.com/">Profullstack, Inc.</a> &middot; MIT License</p></div></footer>
+    </footer>
     <div class="onion"><span class="dot" aria-hidden="true"></span><a href="http://5nlx2hye6lddy4zki4xv3oteoxgerfd3343haizoicmonfb2ediy5gyd.onion" rel="noopener noreferrer">http://5nlx2hye6lddy4zki4xv3oteoxgerfd3343haizoicmonfb2ediy5gyd.onion</a></div>
-  </footer>
+  </div>
+  <script type="module" src="https://cdn.jsdelivr.net/npm/@profullstack/footer@latest/src/embed.js"></script>
 </div>
 <script src="/app.js?v=0.1.8"></script>
 <!-- CrawlProof: privacy-friendly, cookieless analytics. -->
