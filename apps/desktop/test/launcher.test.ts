@@ -4,7 +4,7 @@
 // change to flag handling has to survive something before it ships.
 
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, copyFileSync, writeFileSync, readFileSync, chmodSync, existsSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, copyFileSync, writeFileSync, readFileSync, chmodSync, existsSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -479,5 +479,115 @@ describe('profile written by a newer engine', () => {
     seedLastVersion(home, '152.0.7977.82');
     expect(run([], { home, version: 'Chromium 152.0.7977.82' }).stderr).not.toContain('OLDER');
     expect(run([], { home, version: 'Chromium 153.0.8010.36' }).stderr).not.toContain('OLDER');
+  });
+});
+
+// --- macOS: finding the Homebrew cask ---------------------------------------
+// On macOS the browser is an .app bundle, and the Homebrew cask does not leave
+// it where you would guess: it MOVES Chromium.app to brew's `appdir` and keeps
+// only a symlink in the Caskroom. Probing /Applications alone therefore misses
+// an app that brew installed perfectly well — and the launcher's response to
+// "not found" is to refuse to start and tell the user to install the thing they
+// just installed. So the Caskroom is searched too, through brew's own prefix.
+//
+// The Caskroom under test is the one reached through brew's own prefix (a stub
+// `brew` under $HOME/bin), which is what makes a relocated Homebrew work.
+// TRONBROWSER_MAC_SEARCH_ROOT points the machine-wide paths — /Applications and
+// the two default Caskrooms — at an empty fixture dir, so these run the same
+// whether or not the host has a Chromium.app of its own.
+
+/** A Chromium.app bundle at `appPath`, reached through a Caskroom symlink. */
+function caskApp(home: string, version: string): string {
+  const real = join(home, 'appdir', version, 'Chromium.app');
+  mkdirSync(join(real, 'Contents', 'MacOS'), { recursive: true });
+  writeFileSync(join(real, 'Contents', 'MacOS', 'Chromium'), '#!/bin/sh\nexit 0\n', { mode: 0o755 });
+  const room = join(home, 'Caskroom', 'ungoogled-chromium', version);
+  mkdirSync(room, { recursive: true });
+  symlinkSync(real, join(room, 'Chromium.app'));
+  return join(room, 'Chromium.app');
+}
+
+/**
+ * Run the launcher with no browser on PATH and no TRONBROWSER_BROWSER, so it
+ * has to discover one. `brew` and `open` are stubs under $HOME/bin: brew only
+ * has to EXIST, since its path is what locates the Caskroom ($HOME/Caskroom),
+ * and `open` is what the launcher execs on macOS instead of the inner binary.
+ */
+function runMac(home: string): { opened: string[]; stderr: string; status: number | null } {
+  const bin = join(home, 'bin');
+  mkdirSync(bin, { recursive: true });
+  const openArgv = join(home, 'open-argv.txt');
+  writeFileSync(join(bin, 'brew'), '#!/bin/sh\nexit 1\n', { mode: 0o755 });
+  writeFileSync(
+    join(bin, 'open'),
+    ['#!/bin/sh', `: > "${openArgv}"`, `for a in "$@"; do printf '%s\\n' "$a" >> "${openArgv}"; done`, 'exit 0'].join('\n'),
+    { mode: 0o755 },
+  );
+
+  const script = join(bin, 'tronbrowser');
+  copyFileSync(LAUNCHER, script);
+  chmodSync(script, 0o755);
+
+  const result = spawnSync('sh', [script], {
+    encoding: 'utf8',
+    env: {
+      PATH: `${bin}:/usr/bin:/bin:/usr/sbin:/sbin`,
+      HOME: home,
+      TRONBROWSER_MAC_SEARCH_ROOT: join(home, 'root'),
+      TRONBROWSER_DATA: join(home, 'profile'),
+      TRONBROWSER_VERBOSE: '1',
+    },
+  });
+  return {
+    opened: existsSync(openArgv) ? readFileSync(openArgv, 'utf8').split('\n').filter(Boolean) : [],
+    stderr: result.stderr ?? '',
+    status: result.status,
+  };
+}
+
+describe('macOS app discovery', () => {
+  it('runs the cask app through the Caskroom when appdir is not /Applications', () => {
+    const home = mkdtempSync(join(tmpdir(), 'tron-launcher-'));
+    homes.push(home);
+    const app = caskApp(home, '154.0.8037.97-1.1');
+    const { opened, stderr, status } = runMac(home);
+    expect(stderr).not.toContain('runs Ungoogled Chromium ONLY');
+    expect(status).toBe(0);
+    // Launched via LaunchServices (`open -na`), not the inner binary.
+    expect(opened.slice(0, 3)).toEqual(['-na', app, '--args']);
+  });
+
+  it('asks no questions about a Caskroom app — the path is the proof', () => {
+    // Trust otherwise comes from `brew list --cask`, which needs brew on PATH
+    // (it usually is not, at launch) and keeps reporting the cask installed
+    // after the .app is gone. A live Caskroom path cannot be wrong either way.
+    const home = mkdtempSync(join(tmpdir(), 'tron-launcher-'));
+    homes.push(home);
+    caskApp(home, '154.0.8037.97-1.1');
+    expect(runMac(home).stderr).not.toContain("Couldn't confirm");
+  });
+
+  it('runs the newest cask version, not the first one found', () => {
+    // An older engine cannot open a profile a newer one wrote: every database
+    // fails at once ("Something went wrong when opening your profile").
+    const home = mkdtempSync(join(tmpdir(), 'tron-launcher-'));
+    homes.push(home);
+    caskApp(home, '150.0.0.0-1.1');
+    const newest = caskApp(home, '154.0.8037.97-1.1');
+    expect(runMac(home).opened[1]).toBe(newest);
+  });
+
+  it('ignores a Caskroom symlink whose app was deleted out from under brew', () => {
+    // The state that prompted all this: brew reports the cask installed, the
+    // Caskroom symlink dangles, and nothing on disk can actually run.
+    const home = mkdtempSync(join(tmpdir(), 'tron-launcher-'));
+    homes.push(home);
+    const room = join(home, 'Caskroom', 'ungoogled-chromium', '154.0.8037.97-1.1');
+    mkdirSync(room, { recursive: true });
+    symlinkSync(join(home, 'appdir', 'gone', 'Chromium.app'), join(room, 'Chromium.app'));
+    const { opened, stderr, status } = runMac(home);
+    expect(opened).toEqual([]);
+    expect(stderr).toContain('runs Ungoogled Chromium ONLY');
+    expect(status).toBe(1);
   });
 });

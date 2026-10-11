@@ -204,3 +204,93 @@ describe('tron repair', () => {
     expect(stdout).toContain('OLDER');
   });
 });
+
+// --- macOS: which Chromium.app will run -------------------------------------
+// On macOS TronBrowser has no engine of its own — it drives a Chromium.app
+// found on disk — so "no app" means `tron` never opens a window at all. The
+// state worth naming is the quiet one: Homebrew reports the cask installed
+// while the app it points at is gone, and nothing says so until the next
+// launch. Only meaningful on macOS; the check is a no-op elsewhere.
+//
+// The Caskroom under test is reached through brew's own prefix (a stub `brew`
+// on PATH), and TRONBROWSER_MAC_SEARCH_ROOT aims the machine-wide paths —
+// /Applications and the default Caskrooms — at an empty fixture dir, so the
+// host's own Chromium.app cannot decide the outcome.
+const onMac = process.platform === 'darwin';
+
+/** A Caskroom whose Chromium.app symlink points at `target` (gone, if absent). */
+function caskroom(env: Env, version: string, target?: string): string {
+  const brewBin = join(env.home, 'brewprefix', 'bin');
+  mkdirSync(brewBin, { recursive: true });
+  writeFileSync(join(brewBin, 'brew'), '#!/bin/sh\nexit 1\n', { mode: 0o755 });
+  const room = join(env.home, 'brewprefix', 'Caskroom', 'ungoogled-chromium', version);
+  mkdirSync(room, { recursive: true });
+  const link = join(room, 'Chromium.app');
+  symlinkSync(target ?? join(env.home, 'deleted', 'Chromium.app'), link);
+  return link;
+}
+
+/** Report with no TRONBROWSER_BROWSER override, so discovery actually runs. */
+function discoveredReport(env: Env): { problems: { code: string; text: string; hint: string }[] } {
+  const result = spawnSync('python3', [DOCTOR, 'doctor', '--json'], {
+    encoding: 'utf8',
+    env: {
+      PATH: `${join(env.home, 'brewprefix', 'bin')}:/usr/bin:/bin`,
+      HOME: env.home,
+      TRONBROWSER_DATA: env.profile,
+      TRONBROWSER_MAC_SEARCH_ROOT: join(env.home, 'root'),
+    },
+  });
+  expect([0, 1]).toContain(result.status);
+  return JSON.parse(result.stdout ?? '{}');
+}
+
+describe.skipIf(!onMac)('macOS browser discovery', () => {
+  it('names a cask whose app was deleted, and does not suggest install --force', () => {
+    // `brew install --cask --force` is a no-op while the install receipt is
+    // intact, so it can be re-run forever with the app still missing.
+    const env = setup();
+    caskroom(env, '154.0.8037.97-1.1');
+    const stale = discoveredReport(env).problems.find((p) => p.code === 'cask-app-missing');
+    expect(stale).toBeDefined();
+    expect(stale!.hint).toBe('brew reinstall --cask ungoogled-chromium');
+    expect(stale!.text).toContain('keeps saying installed');
+  });
+
+  it('runs the cask app the launcher would, reached through brew\'s prefix', () => {
+    const env = setup();
+    const real = join(env.home, 'appdir', 'Chromium.app');
+    mkdirSync(join(real, 'Contents', 'MacOS'), { recursive: true });
+    writeFileSync(join(real, 'Contents', 'MacOS', 'Chromium'), '#!/bin/sh\nexit 0\n', { mode: 0o755 });
+    writeFileSync(
+      join(real, 'Contents', 'Info.plist'),
+      '<?xml version="1.0"?><!DOCTYPE plist><plist version="1.0"><dict>' +
+        '<key>CFBundleShortVersionString</key><string>154.0.8037.97</string></dict></plist>',
+    );
+    const link = caskroom(env, '154.0.8037.97-1.1', real);
+    const rep = discoveredReport(env) as { problems: { code: string }[]; engine?: { source: string; version: string } };
+    expect(rep.problems.map((p) => p.code)).not.toContain('no-macos-app');
+    expect(rep.engine?.source).toBe(link);
+    // Read from Info.plist, never by running the binary: launched from a shell
+    // rather than through LaunchServices, Chromium SIGABRTs.
+    expect(rep.engine?.version).toBe('154.0.8037.97');
+  });
+
+  it('suggests brew, not Flatpak, when nothing is installed', () => {
+    const env = setup();
+    const problems = discoveredReport(env).problems;
+    expect(problems.map((p) => p.code)).toContain('no-macos-app');
+    for (const p of problems) {
+      expect(p.hint).toContain('brew');
+      expect(p.hint).not.toContain('flatpak');
+    }
+  });
+
+  it('stays quiet about app bundles when TRONBROWSER_BROWSER is set', () => {
+    // An explicit override IS the engine; /Applications is irrelevant then.
+    const env = setup();
+    caskroom(env, '154.0.8037.97-1.1');
+    expect(codes(env)).not.toContain('cask-app-missing');
+    expect(codes(env)).not.toContain('no-macos-app');
+  });
+});
