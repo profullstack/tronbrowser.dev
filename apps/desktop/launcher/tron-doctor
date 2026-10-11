@@ -37,8 +37,10 @@ deleted, so the browser rebuilds it. It refuses to run under a live browser.
 
 from __future__ import annotations
 
+import glob
 import json
 import os
+import plistlib
 import re
 import shutil
 import socket
@@ -52,6 +54,17 @@ FLATPAK_APPS = (
     "com.github.Eloston.UngoogledChromium",
 )
 NATIVE_NAMES = ("ungoogled-chromium", "ungoogled-chromium-stable")
+
+# The macOS app bundles the launcher will run, in its order of preference. On
+# macOS TronBrowser has no engine of its own: it drives a Chromium.app found on
+# disk, so if none of these resolves there is nothing to run and `tron` refuses
+# to start. Caskroom entries are added at runtime — see macos_caskroom_apps().
+MAC_APPS = (
+    "/Applications/Ungoogled Chromium.app",
+    "/Applications/Chromium.app",
+    "~/Applications/Ungoogled Chromium.app",
+    "~/Applications/Chromium.app",
+)
 
 # The databases the profile-error dialog can be about, and what each holds, so
 # a repair says in plain words what it is taking away rather than a filename.
@@ -167,6 +180,74 @@ def engine_candidates() -> list[dict]:
             found.append(
                 {"source": f"flatpak {app}", "kind": "flatpak", "version": m.group(1).strip() if m else ""}
             )
+    if sys.platform == "darwin":
+        found.extend(macos_candidates())
+    return found
+
+
+def mac_root() -> str:
+    """Prefix for the machine-wide search paths, so the tests can aim them at a
+    fixture. Unset in normal use; grants nothing TRONBROWSER_BROWSER does not."""
+    return os.environ.get("TRONBROWSER_MAC_SEARCH_ROOT", "")
+
+
+def macos_caskroom_apps() -> list[str]:
+    """Every Chromium.app the Homebrew ungoogled cask has staged, live or not.
+
+    The cask MOVES the bundle to brew's `appdir` and leaves a symlink here, so
+    this is the only path that holds whatever `appdir` is set to. brew's prefix
+    is relocatable, so ask brew where it is; the two defaults cover brew not
+    being on PATH at all (/opt/homebrew is Apple Silicon, /usr/local is Intel).
+    Dangling links are returned too — naming that state is the whole point.
+    """
+    root = mac_root()
+    rooms = [root + "/opt/homebrew/Caskroom", root + "/usr/local/Caskroom"]
+    brew = shutil.which("brew")
+    if brew:
+        rooms.insert(0, os.path.join(os.path.dirname(os.path.dirname(brew)), "Caskroom"))
+    out: list[str] = []
+    for room in rooms:
+        for app in sorted(glob.glob(os.path.join(room, "ungoogled-chromium", "*", "Chromium.app"))):
+            if app not in out:
+                out.append(app)
+    return out
+
+
+def app_is_runnable(app: str) -> bool:
+    """True when the bundle's inner binary is actually there and executable.
+
+    This is what separates a working install from a Caskroom symlink pointing
+    at an .app that was deleted out from under brew — a state `brew list --cask`
+    still reports as installed.
+    """
+    return os.access(os.path.join(app, "Contents", "MacOS", "Chromium"), os.X_OK)
+
+
+def app_version(app: str) -> str:
+    """The bundle's version, read from Info.plist.
+
+    Never by running the binary: launched from a shell rather than through
+    LaunchServices it SIGABRTs, which is also why the launcher uses `open -na`.
+    """
+    try:
+        with open(os.path.join(app, "Contents", "Info.plist"), "rb") as fh:
+            return str(plistlib.load(fh).get("CFBundleShortVersionString", "") or "")
+    except (OSError, ValueError):
+        return ""
+
+
+def macos_candidates() -> list[dict]:
+    """The macOS app bundles the launcher could run, newest-relevant first."""
+    found: list[dict] = []
+    seen: set[str] = set()
+    root = mac_root()
+    apps = [os.path.expanduser(a) if a.startswith("~") else root + a for a in MAC_APPS]
+    for app in apps + macos_caskroom_apps():
+        real = os.path.realpath(app)
+        if real in seen or not app_is_runnable(app):
+            continue
+        seen.add(real)
+        found.append({"source": app, "kind": "macos-app", "version": app_version(app)})
     return found
 
 
@@ -201,7 +282,9 @@ def check_engine(rep: Report, data: str) -> None:
         rep.problem(
             "no-engine",
             "No Ungoogled Chromium is installed, so there is nothing to run the profile with.",
-            "flatpak install -y flathub io.github.ungoogled_software.ungoogled_chromium",
+            "brew install --cask ungoogled-chromium"
+            if sys.platform == "darwin"
+            else "flatpak install -y flathub io.github.ungoogled_software.ungoogled_chromium",
         )
         return
 
@@ -280,6 +363,55 @@ def lock_state(data: str) -> dict:
         except OSError:
             state["alive"] = None
     return state
+
+
+def check_macos_browser(rep: Report) -> None:
+    """macOS only: report which Chromium.app will run, and why none does.
+
+    On macOS TronBrowser ships no engine, so "no app" is not a degraded mode —
+    `tron` exits with "runs Ungoogled Chromium ONLY" and never opens a window.
+    The failure that prompted this check is quieter than it sounds: brew reports
+    the cask installed, the Caskroom symlink points at an /Applications app that
+    is no longer there, and nothing says so until the next launch.
+    """
+    if sys.platform != "darwin":
+        return
+    # An explicit override is the engine; what is or is not in /Applications
+    # does not matter, and saying otherwise would be noise.
+    if os.environ.get("TRONBROWSER_BROWSER"):
+        return
+    apps = macos_candidates()
+    rep.facts["macos_apps"] = apps
+    stale = [a for a in macos_caskroom_apps() if not app_is_runnable(a)]
+    rep.facts["macos_stale_casks"] = stale
+
+    if apps:
+        if stale:
+            rep.note(
+                "cask-stale",
+                "A Homebrew cask entry points at an app that is gone "
+                f"({stale[0]}); harmless while another app works, but "
+                "`brew reinstall --cask ungoogled-chromium` tidies it up.",
+            )
+        return
+
+    if stale:
+        rep.problem(
+            "cask-app-missing",
+            f"Homebrew reports the ungoogled-chromium cask installed, but the app it points at is "
+            f"gone ({os.path.realpath(stale[0])}). `brew list --cask` keeps saying installed, so "
+            "nothing notices until 'tron' refuses to start.",
+            # Not `install --force`: an intact install receipt makes that a
+            # no-op, and the app stays missing however many times you run it.
+            "brew reinstall --cask ungoogled-chromium",
+        )
+    else:
+        rep.problem(
+            "no-macos-app",
+            "No de-googled Chromium.app was found, so 'tron' cannot start. Looked in "
+            "/Applications, ~/Applications and the Homebrew Caskroom.",
+            "brew install --cask ungoogled-chromium   (or: curl -fsSL https://tronbrowser.dev/install.sh | sh)",
+        )
 
 
 def check_locks(rep: Report, data: str) -> None:
@@ -477,9 +609,11 @@ def diagnose(data: str) -> Report:
     rep.facts["profile_exists"] = os.path.isdir(data)
     if not os.path.isdir(data):
         rep.note("no-profile", f"{data} does not exist yet; the first launch creates it.")
+        check_macos_browser(rep)
         check_engine(rep, data)
         check_disk(rep, data)
         return rep
+    check_macos_browser(rep)
     check_engine(rep, data)
     check_locks(rep, data)
     check_databases(rep, data)
@@ -497,6 +631,11 @@ def print_report(rep: Report) -> None:
         print(f"Engine:   {eng['version'] or 'unknown version'}  [{eng['source']}]")
     else:
         print("Engine:   none found")
+    for app in f.get("macos_apps") or []:
+        if not eng or app["source"] != eng["source"]:
+            print(f"Also here: {app['version'] or 'unknown version'}  [{app['source']}]")
+    for app in f.get("macos_stale_casks") or []:
+        print(f"Stale cask entry: {app} -> {os.path.realpath(app)}  (missing)")
     if f.get("last_version"):
         print(f"Profile last opened by: {f['last_version']}")
     if f.get("running"):

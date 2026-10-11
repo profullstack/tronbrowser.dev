@@ -139,14 +139,47 @@ fi
 # launch via `open -na` (LaunchServices), NOT the inner binary directly, which
 # SIGABRTs when run from a shell.
 MAC_APP=""
+MAC_CASKROOM=0   # set when the app came out of the Homebrew cask (its own proof)
+# Prefix for the machine-wide paths below, so the tests can point the whole
+# search at a fixture directory. It grants nothing TRONBROWSER_BROWSER does not
+# already grant — that runs any binary you name — and is unset in normal use.
+MAC_ROOT="${TRONBROWSER_MAC_SEARCH_ROOT:-}"
 if [ -z "$BROWSER" ]; then
   for app in \
-    "/Applications/Ungoogled Chromium.app/Contents/MacOS/Chromium" \
-    "/Applications/Chromium.app/Contents/MacOS/Chromium" \
+    "$MAC_ROOT/Applications/Ungoogled Chromium.app/Contents/MacOS/Chromium" \
+    "$MAC_ROOT/Applications/Chromium.app/Contents/MacOS/Chromium" \
     "$HOME/Applications/Ungoogled Chromium.app/Contents/MacOS/Chromium" \
     "$HOME/Applications/Chromium.app/Contents/MacOS/Chromium"; do
     if [ -x "$app" ]; then BROWSER="$app"; MAC_APP="${app%/Contents/MacOS/*}"; break; fi
   done
+
+  # The Homebrew cask MOVES Chromium.app to brew's `appdir` and leaves a symlink
+  # behind in the Caskroom. `appdir` is configurable (~/.config/homebrew or
+  # HOMEBREW_CASK_OPTS), so the four paths above can all miss an app that brew
+  # installed perfectly well — and then TronBrowser refuses to start with
+  # "install Ungoogled Chromium", which the user just did. The Caskroom path is
+  # the one that holds whatever `appdir` is, so follow it. Its prefix is where
+  # the two architectures differ: /opt/homebrew on Apple Silicon, /usr/local on
+  # Intel. A dangling symlink (the .app deleted out from under brew) fails the
+  # -x test and is correctly skipped. Newest version wins, as above.
+  if [ -z "$BROWSER" ]; then
+    # Ask brew where its Caskroom is rather than assuming: the prefix is
+    # relocatable, and the two defaults below are only the common cases. brew is
+    # usually NOT on PATH in a GUI/non-login launch, hence both.
+    _bp="$(command -v brew 2>/dev/null || true)"
+    for room in \
+      ${_bp:+"$(dirname "$(dirname "$_bp")")/Caskroom"} \
+      "$MAC_ROOT/opt/homebrew/Caskroom" "$MAC_ROOT/usr/local/Caskroom"; do
+      for cask in "$room"/ungoogled-chromium/*/Chromium.app; do
+        [ -x "$cask/Contents/MacOS/Chromium" ] || continue
+        v="$(ver_of "$(basename "$(dirname "$cask")")")"
+        if [ -z "$MAC_APP" ] || ver_gt "$v" "${BEST_VERSION:-}"; then
+          BROWSER="$cask/Contents/MacOS/Chromium"; MAC_APP="$cask"
+          MAC_CASKROOM=1; BEST_VERSION="$v"
+        fi
+      done
+    done
+  fi
 fi
 
 if [ -z "$BROWSER" ]; then
@@ -581,6 +614,10 @@ esac
 if [ -n "$MAC_APP" ] && [ -z "${TRONBROWSER_BROWSER:-}" ]; then
   # Trust a build our own installer downloaded (marker records the verified app).
   _verified=0
+  # Resolved through the Caskroom: that path only exists because the ungoogled
+  # cask put it there, which is the same thing `brew list --cask` is asked for
+  # below — except it cannot lie and does not need brew on PATH.
+  [ "$MAC_CASKROOM" = "1" ] && _verified=1
   if [ -f "$DIR/.ungoogled-macos" ]; then
     _m="$(cat "$DIR/.ungoogled-macos" 2>/dev/null)"
     [ "$_m" = "$MAC_APP" ] && _verified=1

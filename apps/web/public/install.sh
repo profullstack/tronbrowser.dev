@@ -569,13 +569,15 @@ download_ungoogled_macos() { # launcher_dir
   ldir="$1"
   case "$(uname -m)" in
     arm64|aarch64) uc_arch="arm64" ;;
-    x86_64|amd64)  uc_arch="x86-64" ;;
+    x86_64|amd64)  uc_arch="x86_64" ;;
     *) return 1 ;;
   esac
   ucrepo="ungoogled-software/ungoogled-chromium-macos"
-  fetch "https://api.github.com/repos/$ucrepo/releases/latest" /tmp/tb_uc.json || return 1
+  ucjson="$(mktemp)"
+  fetch "https://api.github.com/repos/$ucrepo/releases/latest" "$ucjson" || { rm -f "$ucjson"; return 1; }
   # Pick the .dmg asset for our arch (assets look like *_arm64-macos.dmg).
-  url="$(sed -n 's/.*"browser_download_url":[[:space:]]*"\([^"]*'"$uc_arch"'-macos\.dmg\)".*/\1/p' /tmp/tb_uc.json | head -n1)"
+  url="$(sed -n 's/.*"browser_download_url":[[:space:]]*"\([^"]*'"$uc_arch"'-macos\.dmg\)".*/\1/p' "$ucjson" | head -n1)"
+  rm -f "$ucjson"
   [ -n "$url" ] || return 1
 
   tmp="$(mktemp -d)"; mnt="$tmp/mnt"; mkdir -p "$mnt"
@@ -588,7 +590,13 @@ download_ungoogled_macos() { # launcher_dir
   ok=0
   if [ -n "$srcapp" ]; then
     mkdir -p "$HOME/Applications"; rm -rf "$dest"
-    cp -R "$srcapp" "$dest" 2>/dev/null && [ -d "$dest" ] && ok=1
+    # ditto, not cp -R: it is the supported way to copy an .app, preserving the
+    # extended attributes and bundle metadata the code signature is computed
+    # over. On Apple Silicon a damaged signature is fatal (arm64 code must be
+    # signed), so the app would install and then be killed at launch.
+    if ditto "$srcapp" "$dest" 2>/dev/null || cp -R "$srcapp" "$dest" 2>/dev/null; then
+      [ -d "$dest" ] && ok=1
+    fi
   fi
   hdiutil detach -quiet "$mnt" 2>/dev/null || true
   rm -rf "$tmp"
@@ -600,6 +608,34 @@ download_ungoogled_macos() { # launcher_dir
   [ -n "$ldir" ] && printf '%s\n' "$dest" > "$ldir/.ungoogled-macos" 2>/dev/null || true
   info "Installed Ungoogled Chromium to $dest"
   return 0
+}
+
+# Print the de-googled Chromium.app the LAUNCHER would pick, or nothing. This
+# has to mirror the launcher's search exactly — an app the installer is happy
+# with but the launcher cannot see is the same as no app at all.
+#
+# Note the Caskroom entries: the cask MOVES Chromium.app to brew's `appdir`
+# (configurable) and leaves a symlink there, so the Caskroom is the only path
+# that holds whatever `appdir` is. /opt/homebrew is Apple Silicon, /usr/local is
+# Intel. Every candidate is tested through the inner binary, which is what makes
+# a dangling Caskroom symlink — the .app deleted out from under brew — read as
+# missing rather than present.
+mac_app_path() {
+  # brew's prefix is relocatable, so ask it where the Caskroom is; the two
+  # defaults cover the case where brew is not on PATH (Apple Silicon /
+  # Intel). Newest-first is the launcher's job — here any usable app will do.
+  _bp="$(command -v brew 2>/dev/null || true)"
+  for _a in \
+    "/Applications/Ungoogled Chromium.app" \
+    "/Applications/Chromium.app" \
+    "$HOME/Applications/Ungoogled Chromium.app" \
+    "$HOME/Applications/Chromium.app" \
+    ${_bp:+"$(dirname "$(dirname "$_bp")")"/Caskroom/ungoogled-chromium/*/Chromium.app} \
+    /opt/homebrew/Caskroom/ungoogled-chromium/*/Chromium.app \
+    /usr/local/Caskroom/ungoogled-chromium/*/Chromium.app; do
+    [ -x "$_a/Contents/MacOS/Chromium" ] && { printf '%s\n' "$_a"; return 0; }
+  done
+  return 1
 }
 
 # TronBrowser runs Ungoogled Chromium ONLY (never regular Chrome/Chromium), so
@@ -618,21 +654,8 @@ ensure_browser() {
     # Already have a build WE installed & verified (marker points at a live app)?
     if [ -n "$_ldir" ] && [ -f "$_ldir/.ungoogled-macos" ]; then
       _m="$(cat "$_ldir/.ungoogled-macos" 2>/dev/null)"
-      [ -n "$_m" ] && [ -d "$_m" ] && return 0
+      [ -n "$_m" ] && [ -x "$_m/Contents/MacOS/Chromium" ] && return 0
     fi
-
-    # The launcher needs the Chromium.app actually on disk AND proof it's the
-    # ungoogled build (the Homebrew cask, or our own marker). `brew list --cask`
-    # alone LIES — it reports the cask "installed" even after the .app was deleted
-    # out from under brew — so we also require the .app at a path the launcher checks.
-    app=""
-    for a in \
-      "/Applications/Ungoogled Chromium.app" \
-      "/Applications/Chromium.app" \
-      "$HOME/Applications/Ungoogled Chromium.app" \
-      "$HOME/Applications/Chromium.app"; do
-      [ -d "$a" ] && { app="$a"; break; }
-    done
 
     # Homebrew usually ISN'T on PATH in the non-login shell that `tron upgrade`
     # spawns (Apple Silicon: /opt/homebrew, Intel: /usr/local), so probe the known
@@ -642,20 +665,49 @@ ensure_browser() {
       command -v "$b" >/dev/null 2>&1 && { brew="$b"; break; }
     done
 
-    if [ -n "$brew" ]; then
-      if [ -n "$app" ] && "$brew" list --cask ungoogled-chromium >/dev/null 2>&1; then return 0; fi
+    # The test that matters is not "did brew exit 0" but "can the launcher find
+    # the app" — those came apart in practice: brew reports the cask installed,
+    # the Caskroom holds a symlink to a /Applications/Chromium.app that is gone,
+    # and the install says "Installed TronBrowser" while `tron` dies on first
+    # launch with "install Ungoogled Chromium", which the user just did. So
+    # verify through the launcher's own search, after every attempt.
+    if [ -n "$brew" ] && [ -z "$(mac_app_path || true)" ]; then
       info "Installing Ungoogled Chromium (brew cask)…"
       # --force REPLACES any pre-existing regular Chromium.app rather than erroring,
       # and REINSTALLS when brew's metadata is stale but the .app is gone.
-      "$brew" install --cask ungoogled-chromium --force && return 0
-      warn "brew cask install failed — falling back to a direct download…"
+      "$brew" install --cask ungoogled-chromium --force >/dev/null 2>&1 || true
+      # An intact install receipt makes `install --force` a no-op, so the app
+      # stays missing. `reinstall` re-stages the download and re-links it.
+      if [ -z "$(mac_app_path || true)" ]; then
+        "$brew" reinstall --cask ungoogled-chromium >/dev/null 2>&1 || true
+      fi
     fi
+
+    app="$(mac_app_path || true)"
+    if [ -n "$app" ]; then
+      # Record it ONLY when the path itself proves the build is de-googled: under
+      # a Caskroom (the cask put it there) or named "Ungoogled Chromium.app".
+      # A bare /Applications/Chromium.app could be anyone's plain Chromium, and
+      # the marker is a trust grant — the launcher runs a marked app with no
+      # further questions. Unproven paths are left to its own brew check.
+      case "$app" in
+        */Caskroom/ungoogled-chromium/*|*[Uu]ngoogled*)
+          [ -n "$_ldir" ] && printf '%s\n' "$app" > "$_ldir/.ungoogled-macos" 2>/dev/null || true ;;
+      esac
+      return 0
+    fi
+    [ -n "$brew" ] && warn "brew cask install did not leave a usable Chromium.app — falling back to a direct download…"
 
     # No Homebrew (or it failed): grab the official notarized build ourselves.
     # No brew, no sudo, nothing for the user to run by hand.
     if download_ungoogled_macos "$_ldir"; then return 0; fi
 
-    warn "Couldn't auto-install Ungoogled Chromium (check your network)."
+    # Say so plainly. Returning non-zero here would abort an install that has
+    # already put the launcher on disk, so this stays a warning — but it must
+    # never be silent: without the browser, `tron` cannot start at all.
+    warn "Could not install Ungoogled Chromium — 'tron' will not launch until it is present."
+    say  "    brew install --cask ungoogled-chromium"
+    say  "  then re-run:  curl -fsSL $INSTALL_URL | sh"
     return 0
   fi
 
@@ -684,8 +736,12 @@ brand_macos_icon() {
   [ "${TB_NO_ICON:-0}" = "1" ] && return 0
   command -v sips >/dev/null 2>&1 && command -v iconutil >/dev/null 2>&1 || return 0
   local png="$1"; [ -f "$png" ] || return 0
-  local app="/Applications/Chromium.app"; [ -d "$app" ] || app="$HOME/Applications/Chromium.app"
-  [ -d "$app" ] || return 0
+  # Brand whichever app the launcher actually runs. Checking only
+  # /Applications/Chromium.app silently skipped the direct-download path, which
+  # installs to ~/Applications/Ungoogled Chromium.app, and the Homebrew cask
+  # whenever its appdir is not /Applications.
+  local app; app="$(mac_app_path || true)"
+  [ -n "$app" ] || return 0
 
   local iconfile; iconfile="$(defaults read "$app/Contents/Info" CFBundleIconFile 2>/dev/null || echo app)"
   case "$iconfile" in *.icns) ;; *) iconfile="$iconfile.icns" ;; esac
