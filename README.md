@@ -16,7 +16,11 @@ affiliate injection · user-owned data · Chrome-extension compatible · self-ho
 curl -fsSL https://tronbrowser.dev/install.sh | sh
 ```
 
-Then use the agent-friendly **`tron`** CLI:
+On macOS that puts **TronBrowser.app** in `~/Applications`, so it is in
+Launchpad, Spotlight and the Dock like any other app; on Linux it registers a
+`.desktop` entry in your app menu.
+
+Or use the agent-friendly **`tron`** CLI:
 
 ```bash
 tron <url>        # open URL(s) in TronBrowser

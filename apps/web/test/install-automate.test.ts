@@ -4,7 +4,7 @@
 // generated CLI and run it against a fake install tree.
 
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, symlinkSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, symlinkSync, realpathSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -25,7 +25,7 @@ beforeAll(() => {
   expect(end, 'CLI heredoc has no terminator').toBeGreaterThan(start);
   const body = installSrc.slice(start + "<<'TRON'\n".length, end);
 
-  const dir = mkdtempSync(join(tmpdir(), 'tron-cli-'));
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), 'tron-cli-')));
   roots.push(dir);
   cli = join(dir, 'tron');
   writeFileSync(cli, body, { mode: 0o755 });
@@ -39,7 +39,7 @@ afterAll(() => {
 
 /** A fake install: launcher dir with a `tronbrowser` shim, `current` symlink, and a fake node that prints its argv + env. */
 function install(opts: { automateBin?: boolean; obscura?: boolean } = {}) {
-  const home = mkdtempSync(join(tmpdir(), 'tron-home-'));
+  const home = realpathSync(mkdtempSync(join(tmpdir(), 'tron-home-')));
   roots.push(home);
   const app = join(home, '.local', 'lib', 'tronbrowser');
   const launcher = join(app, 'v1', 'tronbrowser');

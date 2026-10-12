@@ -727,14 +727,111 @@ ensure_browser() {
   fi
 }
 
-# (macOS) Brand the app icon: replace Ungoogled Chromium's icon with ours so the
-# dock/Cmd-Tab shows TronBrowser while you browse. Built on-device from the
-# bundled PNG via sips+iconutil. Chromium's own auto-update resets it — re-run
-# `tron upgrade` to re-apply. Skip with TB_NO_ICON=1. $1 = path to tronbrowser.png
+# (macOS) Build an .icns from a PNG and print its path. Every size Finder, the
+# Dock, Launchpad and Spotlight ask for, built on-device with the tools macOS
+# already has. $1 = source PNG. Prints nothing and fails if it cannot.
+png_to_icns() { # png
+  local png="$1"
+  [ -f "$png" ] || return 1
+  command -v sips >/dev/null 2>&1 && command -v iconutil >/dev/null 2>&1 || return 1
+  local set icns; set="$(mktemp -d)/icon.iconset"; mkdir -p "$set"; icns="$(mktemp).icns"
+  _g() { sips -z "$2" "$2" "$png" --out "$set/$1" >/dev/null 2>&1; }
+  _g icon_16x16.png 16;   _g icon_16x16@2x.png 32
+  _g icon_32x32.png 32;   _g icon_32x32@2x.png 64
+  _g icon_128x128.png 128;_g icon_128x128@2x.png 256
+  _g icon_256x256.png 256;_g icon_256x256@2x.png 512
+  _g icon_512x512.png 512;_g icon_512x512@2x.png 1024
+  iconutil -c icns "$set" -o "$icns" 2>/dev/null || return 1
+  printf '%s\n' "$icns"
+}
+
+# (macOS) TronBrowser as an actual app.
+#
+# Until now the install put a freedesktop .desktop file in
+# $PREFIX/share/applications on EVERY platform. macOS does not read those — only
+# .app bundles are indexed — so on a Mac the install left nothing in Launchpad,
+# Spotlight, Finder or the Dock, and the only way to start the browser was to
+# type `tron` in a terminal. The installer said "find 'TronBrowser' in your app
+# menu" regardless, so the honest reading of the bug report "I can't find
+# TronBrowser in my apps" is that it was never there.
+#
+# The bundle is a thin wrapper: its executable is a script that execs the `tron`
+# CLI, which is what knows how to find Chromium and which flags to pass. Built
+# here rather than shipped in the release zip because it has to hardcode the
+# absolute path to the CLI (a GUI launch inherits almost no PATH).
+#
+# It deliberately declares no CFBundleURLTypes. That would list TronBrowser in
+# "Default web browser", but macOS delivers URLs to a chosen browser as a GURL
+# Apple Event, which a shell-script executable cannot receive — so the setting
+# would appear to work and silently drop every link. Being absent is better than
+# being broken.
+#
+# Skip with TB_NO_APP=1. $1 = path to tronbrowser.png
+MAC_APP_BUNDLE="${TRONBROWSER_MAC_APP:-$HOME/Applications/TronBrowser.app}"
+
+make_macos_app() { # png
+  [ "$(uname -s)" = "Darwin" ] || return 0
+  [ "${TB_NO_APP:-0}" = "1" ] && return 0
+  local png="$1" app="$MAC_APP_BUNDLE"
+  local macos="$app/Contents/MacOS" res="$app/Contents/Resources"
+
+  mkdir -p "$macos" "$res" 2>/dev/null || { warn "Couldn't create $app"; return 1; }
+
+  # The executable. `exec` so the bundle leaves no shell behind; the launcher
+  # itself hands off to `open -na`, which detaches, so this exits immediately
+  # and the Dock icon bounces once rather than sitting there for the session.
+  cat > "$macos/TronBrowser" <<APPEXEC
+#!/bin/sh
+# TronBrowser.app — a wrapper so the browser appears in Launchpad, Spotlight,
+# Finder and the Dock. The real launcher is the \`tron\` CLI, written by
+# install.sh; this only has to find it, since a GUI launch inherits no PATH.
+exec "$TRON_CLI" "\$@"
+APPEXEC
+  chmod +x "$macos/TronBrowser"
+
+  local icon="" icns=""
+  if icns="$(png_to_icns "$png" 2>/dev/null)" && [ -n "$icns" ]; then
+    cp -f "$icns" "$res/tronbrowser.icns" 2>/dev/null && icon="tronbrowser.icns"
+  fi
+
+  # CFBundleVersion has to be a plain dotted number, so strip the tag's "v".
+  local ver; ver="$(cat "$VERSION_FILE" 2>/dev/null | sed 's/^v//')"
+  cat > "$app/Contents/Info.plist" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleName</key><string>TronBrowser</string>
+  <key>CFBundleDisplayName</key><string>TronBrowser</string>
+  <key>CFBundleExecutable</key><string>TronBrowser</string>
+  <key>CFBundleIdentifier</key><string>dev.tronbrowser.launcher</string>
+  <key>CFBundlePackageType</key><string>APPL</string>
+  <key>CFBundleShortVersionString</key><string>${ver:-0.0.0}</string>
+  <key>CFBundleVersion</key><string>${ver:-0.0.0}</string>${icon:+
+  <key>CFBundleIconFile</key><string>$icon</string>}
+  <key>LSMinimumSystemVersion</key><string>11.0</string>
+  <key>NSHighResolutionCapable</key><true/>
+</dict>
+</plist>
+PLIST
+
+  # Nudge Launch Services so Spotlight and Launchpad see it now rather than
+  # whenever they next rescan. Best-effort: the bundle works without this.
+  local lsr=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
+  [ -x "$lsr" ] && "$lsr" -f "$app" >/dev/null 2>&1 || true
+  touch "$app" 2>/dev/null || true
+
+  info "TronBrowser is in your Applications folder ($app) — search Spotlight for \"TronBrowser\"."
+}
+
+# (macOS) Brand the icon of the Chromium that TronBrowser drives, so the window
+# you are actually browsing in says TronBrowser in the Dock and Cmd-Tab too.
+# This is separate from the .app above: that is what you launch, this is the
+# engine it launches. Chromium's own auto-update resets it — re-run
+# `tron upgrade` to re-apply. Skip with TB_NO_ICON=1. $1 = tronbrowser.png
 brand_macos_icon() {
   [ "$(uname -s)" = "Darwin" ] || return 0
   [ "${TB_NO_ICON:-0}" = "1" ] && return 0
-  command -v sips >/dev/null 2>&1 && command -v iconutil >/dev/null 2>&1 || return 0
   local png="$1"; [ -f "$png" ] || return 0
   # Brand whichever app the launcher actually runs. Checking only
   # /Applications/Chromium.app silently skipped the direct-download path, which
@@ -747,14 +844,8 @@ brand_macos_icon() {
   case "$iconfile" in *.icns) ;; *) iconfile="$iconfile.icns" ;; esac
   [ -f "$app/Contents/Resources/$iconfile" ] || iconfile="app.icns"
 
-  local set icns; set="$(mktemp -d)/icon.iconset"; mkdir -p "$set"; icns="$(mktemp).icns"
-  _g() { sips -z "$2" "$2" "$png" --out "$set/$1" >/dev/null 2>&1; }
-  _g icon_16x16.png 16;   _g icon_16x16@2x.png 32
-  _g icon_32x32.png 32;   _g icon_32x32@2x.png 64
-  _g icon_128x128.png 128;_g icon_128x128@2x.png 256
-  _g icon_256x256.png 256;_g icon_256x256@2x.png 512
-  _g icon_512x512.png 512;_g icon_512x512@2x.png 1024
-  if iconutil -c icns "$set" -o "$icns" 2>/dev/null && cp -f "$icns" "$app/Contents/Resources/$iconfile" 2>/dev/null; then
+  local icns; icns="$(png_to_icns "$png" 2>/dev/null)" || return 0
+  if [ -n "$icns" ] && cp -f "$icns" "$app/Contents/Resources/$iconfile" 2>/dev/null; then
     touch "$app" 2>/dev/null
     killall Dock 2>/dev/null || true
     info "Branded $app with the TronBrowser icon (resets on Chromium update; re-run 'tron upgrade')."
@@ -1169,10 +1260,14 @@ do_install() {
 
   # Desktop app-menu entry (KDE/GNOME) so TronBrowser shows up as an app.
   # Prefer the PNG app icon (KDE renders SVG app icons inconsistently); fall back to SVG.
+  # Freedesktop only: macOS indexes .app bundles and ignores this file entirely,
+  # so writing it there left the Mac install with no app anywhere. make_macos_app
+  # below is the equivalent, and runs instead.
   icon="$(dirname "$bin")/tronbrowser.png"; [ -f "$icon" ] || icon="$(dirname "$bin")/tronbrowser.svg"
   apps_dir="$PREFIX/share/applications"
-  mkdir -p "$apps_dir"
-  cat > "$apps_dir/tronbrowser.desktop" <<DESKTOP
+  if [ "$(uname -s)" != "Darwin" ]; then
+    mkdir -p "$apps_dir"
+    cat > "$apps_dir/tronbrowser.desktop" <<DESKTOP
 [Desktop Entry]
 Type=Application
 Name=TronBrowser
@@ -1186,7 +1281,8 @@ MimeType=text/html;x-scheme-handler/http;x-scheme-handler/https;
 StartupWMClass=TronBrowser
 StartupNotify=true
 DESKTOP
-  command -v update-desktop-database >/dev/null 2>&1 && update-desktop-database "$apps_dir" 2>/dev/null || true
+    command -v update-desktop-database >/dev/null 2>&1 && update-desktop-database "$apps_dir" 2>/dev/null || true
+  fi
 
   ensure_engine   || true  # TronBrowser's own engine; ensure_browser is the fallback
   ensure_browser
@@ -1197,10 +1293,15 @@ DESKTOP
   ensure_certutil || true  # so Moshpit names load over HTTPS on first launch
   ensure_moshpit_root || true  # the registry's root: every Moshpit name over https
   ensure_obscura  || true  # so 'tron automate' has its scraping engine
+  make_macos_app   "$(dirname "$bin")/tronbrowser.png" || true
   brand_macos_icon "$(dirname "$bin")/tronbrowser.png"
 
   info "Installed TronBrowser $tag to $APP_DIR"
-  say  "    launch:  tron   (or find 'TronBrowser' in your app menu)"
+  if [ "$(uname -s)" = "Darwin" ]; then
+    say  "    launch:  tron   (or open TronBrowser from Launchpad / Spotlight)"
+  else
+    say  "    launch:  tron   (or find 'TronBrowser' in your app menu)"
+  fi
   say  "    manage:  tron upgrade | tron remove | tron version"
   case ":$PATH:" in
     *":$PREFIX/bin:"*) : ;;
@@ -1315,6 +1416,7 @@ do_upgrade() {
     ensure_certutil || true   # and that Moshpit trust can be written
     ensure_moshpit_root || true  # and that the registry's root is current
     ensure_obscura  || true   # and that the scraping engine is current
+    make_macos_app   "$(find "$APP_DIR" -maxdepth 3 -name tronbrowser.png 2>/dev/null | head -n1)" || true  # and that the app exists (added after some installs)
     brand_macos_icon "$(find "$APP_DIR" -maxdepth 3 -name tronbrowser.png 2>/dev/null | head -n1)"  # re-apply icon (Chromium updates reset it)
     info "Re-install anyway with: TB_FORCE=1 tron upgrade"
     return
@@ -1328,6 +1430,9 @@ do_remove() {
   rm -rf "$APP_DIR"
   rm -f "$TRON_CLI" "$ALIAS_CLI" "$PREFIX/share/applications/tronbrowser.desktop"
   command -v update-desktop-database >/dev/null 2>&1 && update-desktop-database "$PREFIX/share/applications" 2>/dev/null || true
+  # Our own bundle only — never the Chromium the browser drives, which the user
+  # may well have had before TronBrowser and will still want after it.
+  rm -rf "$MAC_APP_BUNDLE" 2>/dev/null || true
   say "Removed. (Profile/bookmarks/history kept; delete ~/.tronbrowser and ~/TronBrowser to wipe data.)"
 }
 
@@ -1360,6 +1465,9 @@ Env:
                               this (default: 1024; 0 disables)
   TRONBROWSER_OBSCURA_VERSION Obscura release to install for 'tron automate'
                               (default: 0.2.2; TB_NO_OBSCURA_INSTALL=1 skips it)
+  TRONBROWSER_MAC_APP         (macOS) where TronBrowser.app goes
+                              (default: \$HOME/Applications/TronBrowser.app;
+                              TB_NO_APP=1 skips it)
 EOF
 }
 
@@ -1380,6 +1488,9 @@ case "$cmd" in
   ensure-moshpit-root) ensure_moshpit_root ;;
   ensure-obscura) ensure_obscura ;;
   ensure-certutil) ensure_certutil ;;
+  # Rebuild ~/Applications/TronBrowser.app on its own, for an install that
+  # predates it or an app the user has since moved to the Trash.
+  mac-app) make_macos_app "$(find "$APP_DIR" -maxdepth 3 -name tronbrowser.png 2>/dev/null | head -n1)" ;;
   version|--version|-v) do_version ;;
   help|--help|-h) usage ;;
   *) err "unknown command: $cmd (try 'help')" ;;
