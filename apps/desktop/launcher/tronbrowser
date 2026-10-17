@@ -496,7 +496,26 @@ SEARCH_PREV="$(cat "$SEARCH_MARK" 2>/dev/null || true)"
 SEARCH_PREV="$(printf '%s' "$SEARCH_PREV" | tr -d '[:space:]')"
 if [ -z "$SEARCH_PREV" ] && [ -f "$DATA/.tron-search-kagi" ]; then SEARCH_PREV="kagi"; fi
 
-if command -v python3 >/dev/null 2>&1 && [ "$SEARCH_PREV" != "$SEARCH_WANT" ]; then
+# 3.17.0 marked the move to pit.world done even where it left the engine alone,
+# so profiles on one of Chromium's stock engines (Ecosia, Google, Bing ...) never
+# moved. One more pass replaces a stock engine nobody edited; .tron-search-stock
+# records that it ran.
+SEARCH_STOCK_MARK="$DATA/.tron-search-stock"
+SEARCH_STOCK=0
+if [ "$SEARCH_WANT" = pit ] && [ "$SEARCH_EXPLICIT" = 0 ] && [ ! -f "$SEARCH_STOCK_MARK" ]; then SEARCH_STOCK=1; fi
+
+# Chromium rewrites Preferences from memory when it exits, so an edit made while
+# this profile is open is silently lost. Leave it, and the marks, for a launch
+# that finds the browser closed.
+profile_in_use() {
+  local lock pid
+  lock="$(readlink "$DATA/SingletonLock" 2>/dev/null)" || return 1
+  pid="${lock##*-}"
+  case "$pid" in ''|*[!0-9]*) return 1 ;; esac
+  kill -0 "$pid" 2>/dev/null
+}
+
+if command -v python3 >/dev/null 2>&1 && { [ "$SEARCH_PREV" != "$SEARCH_WANT" ] || [ "$SEARCH_STOCK" = 1 ]; } && ! profile_in_use; then
   SEARCH_PREV_URL=""
   if [ -n "$SEARCH_PREV" ]; then
     SEARCH_PREV_URL="$(search_engine_spec "$SEARCH_PREV" 2>/dev/null | cut -d'|' -f3 || true)"
@@ -505,12 +524,14 @@ if command -v python3 >/dev/null 2>&1 && [ "$SEARCH_PREV" != "$SEARCH_WANT" ]; t
   TB_ENGINE="$(search_engine_spec "$SEARCH_WANT")" \
   TB_PREV_URL="$SEARCH_PREV_URL" \
   TB_FORCE="$SEARCH_EXPLICIT" \
-  python3 - <<'PY' || true
+  TB_STOCK="$SEARCH_STOCK" \
+  python3 - <<'PY' && SEARCH_APPLIED=1 || SEARCH_APPLIED=0
 import json, os, sys, tempfile
 p = os.environ["TB_PREFS"]
 name, keyword, url = os.environ["TB_ENGINE"].split("|")
 prev_url = os.environ.get("TB_PREV_URL", "")
 force = os.environ.get("TB_FORCE") == "1"
+stock = os.environ.get("TB_STOCK") == "1"
 os.makedirs(os.path.dirname(p), exist_ok=True)
 # An existing file that does not parse is LEFT ALONE. Replacing it with a fresh
 # dict is how a profile gets wiped: this file holds every setting in the profile,
@@ -522,7 +543,7 @@ if os.path.exists(p):
             d = json.load(f)
     except Exception:
         sys.stderr.write("TronBrowser: %s did not parse — leaving it untouched.\n" % p)
-        raise SystemExit(0)
+        raise SystemExit(1)
 else:
     d = {}
 
@@ -532,14 +553,25 @@ else:
 # `tron search` is the one case that outranks whatever is currently set.
 cur = d.get("default_search_provider_data", {}).get("template_url_data") or {}
 cur_url = cur.get("url", "")
-if force or not cur_url or (prev_url and cur_url == prev_url):
-    d.setdefault("default_search_provider_data", {})["template_url_data"] = {
+# Chromium's own stock engines (prepopulate_id > 0 and never edited, so still
+# safe_for_autoreplace) are not a choice anyone made in this browser, so the
+# move to pit.world replaces those too.
+is_stock = int(cur.get("prepopulate_id") or 0) > 0 and cur.get("safe_for_autoreplace") is True
+if force or not cur_url or (prev_url and cur_url == prev_url) or (stock and is_stock):
+    engine = {
         "short_name": name,
         "keyword": keyword,
         "url": url,
         "favicon_url": "https://" + keyword.split("/")[0] + "/favicon.ico",
         "safe_for_autoreplace": False,
     }
+    dsp = d.setdefault("default_search_provider_data", {})
+    dsp["template_url_data"] = engine
+    # The mirror and the guid still point at the old engine, and Chromium would
+    # pick it back out of Web Data by that guid.
+    if "mirrored_template_url_data" in dsp:
+        dsp["mirrored_template_url_data"] = dict(engine)
+    (d.get("default_search_provider") or {}).pop("guid", None)
     # Preferences is the profile. A truncated write loses every setting in it,
     # so land it as a rename rather than in place.
     fd, tmp = tempfile.mkstemp(dir=os.path.dirname(p))
@@ -547,9 +579,12 @@ if force or not cur_url or (prev_url and cur_url == prev_url):
         json.dump(d, f)
     os.replace(tmp, p)
 PY
-  mkdir -p "$DATA"
-  printf '%s\n' "$SEARCH_WANT" > "$SEARCH_MARK" 2>/dev/null || true
-  rm -f "$DATA/.tron-search-kagi" 2>/dev/null || true
+  if [ "$SEARCH_APPLIED" = 1 ]; then
+    mkdir -p "$DATA"
+    printf '%s\n' "$SEARCH_WANT" > "$SEARCH_MARK" 2>/dev/null || true
+    rm -f "$DATA/.tron-search-kagi" 2>/dev/null || true
+    if [ "$SEARCH_WANT" = pit ]; then : > "$SEARCH_STOCK_MARK" 2>/dev/null || true; fi
+  fi
 fi
 
 # Show the feed (ai-sidebar New Tab page) on startup. We can't pass a startup URL —
