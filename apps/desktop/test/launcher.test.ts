@@ -4,8 +4,8 @@
 // change to flag handling has to survive something before it ships.
 
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, copyFileSync, writeFileSync, readFileSync, chmodSync, existsSync, symlinkSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { mkdtempSync, mkdirSync, copyFileSync, writeFileSync, readFileSync, chmodSync, existsSync, symlinkSync, unlinkSync } from 'node:fs';
+import { hostname, tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -229,6 +229,72 @@ describe('omnibox search engine', () => {
     );
     run([], { home: first.home });
     expect(dse(first.home).url).toBe(chosen);
+  });
+
+  /** A profile whose default is one of Chromium's stock engines, as the choice screen leaves it. */
+  function seedStock(opts: { marker?: string; edited?: boolean } = {}): string {
+    const home = seed({ marker: opts.marker });
+    const ecosia = {
+      short_name: 'Ecosia',
+      keyword: 'ecosia.org',
+      url: 'https://www.ecosia.org/search?q={searchTerms}',
+      prepopulate_id: 101,
+      safe_for_autoreplace: !opts.edited,
+      synced_guid: '485bf7d3-0215-45af-87dc-538868000101',
+    };
+    writeFileSync(
+      prefsPath(home),
+      JSON.stringify({
+        default_search_provider: { guid: ecosia.synced_guid, reset_occurred: false },
+        default_search_provider_data: { template_url_data: ecosia, mirrored_template_url_data: ecosia },
+        bookmark_bar: { show_on_all_tabs: true },
+      }),
+    );
+    return home;
+  }
+
+  it('moves a profile 3.17.0 marked as done but left on a stock engine (Ecosia)', () => {
+    // 3.17.0 wrote .tron-search=pit without touching a stock engine, so the
+    // switch never happened and never retried.
+    const home = seedStock({ marker: 'pit' });
+    run([], { home });
+    const json = JSON.parse(readFileSync(prefsPath(home), 'utf8'));
+    expect(dse(home).url).toBe('https://pit.world/search?q={searchTerms}');
+    expect(json.default_search_provider_data.mirrored_template_url_data.url).toBe('https://pit.world/search?q={searchTerms}');
+    // Chromium would otherwise pull Ecosia back out of Web Data by this guid.
+    expect(json.default_search_provider.guid).toBeUndefined();
+    expect(json.bookmark_bar?.show_on_all_tabs).toBe(true);
+    expect(existsSync(join(home, 'profile', '.tron-search-stock'))).toBe(true);
+  });
+
+  it('keeps a stock engine the user edited', () => {
+    const home = seedStock({ marker: 'pit', edited: true });
+    run([], { home });
+    expect(dse(home).url).toBe('https://www.ecosia.org/search?q={searchTerms}');
+  });
+
+  it('does the stock pass once, so a later choice of a stock engine sticks', () => {
+    const home = seedStock({ marker: 'pit' });
+    run([], { home });
+    const p = prefsPath(home);
+    const json = JSON.parse(readFileSync(p, 'utf8'));
+    json.default_search_provider_data.template_url_data = { url: 'https://www.bing.com/search?q={searchTerms}', prepopulate_id: 3, safe_for_autoreplace: true };
+    writeFileSync(p, JSON.stringify(json));
+    run([], { home });
+    expect(dse(home).url).toBe('https://www.bing.com/search?q={searchTerms}');
+  });
+
+  it('leaves an open profile alone and applies on the next launch', () => {
+    // Chromium rewrites Preferences when it exits, so an edit made under it is lost.
+    const home = seedStock({ marker: 'pit' });
+    const lock = join(home, 'profile', 'SingletonLock');
+    symlinkSync(`${hostname()}-${process.pid}`, lock);
+    run([], { home });
+    expect(dse(home).url).toBe('https://www.ecosia.org/search?q={searchTerms}');
+    expect(existsSync(join(home, 'profile', '.tron-search-stock'))).toBe(false);
+    unlinkSync(lock);
+    run([], { home });
+    expect(dse(home).url).toBe('https://pit.world/search?q={searchTerms}');
   });
 
   it('keeps the rest of Preferences when it rewrites the engine', () => {
