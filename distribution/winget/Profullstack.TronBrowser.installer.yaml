@@ -14,12 +14,12 @@
 # the user installing an interpreter and a browser first. PairUX ships a nullsoft
 # .exe and is in winget-pkgs today, which is the shape to copy.
 PackageIdentifier: Profullstack.TronBrowser
-PackageVersion: 3.17.0
+PackageVersion: 3.17.1
 InstallerType: zip
 Installers:
   - Architecture: x64
-    InstallerUrl: https://github.com/profullstack/tronbrowser.dev/releases/download/v3.17.0/tronbrowser-win-x64.zip
-    InstallerSha256: AF66615492EDD9AD18205FCCBD35EDAD336194193ADA06D7D80B3D7A14AC9321
+    InstallerUrl: https://github.com/profullstack/tronbrowser.dev/releases/download/v3.17.1/tronbrowser-win-x64.zip
+    InstallerSha256: 229A06B97E4CFC45FD4B8D87035D7E694B2E471EE59AF060799B58D1CC29C31A
     NestedInstallerType: portable
     NestedInstallerFiles:
       - RelativeFilePath: tronbrowser\tronbrowser.cmd
