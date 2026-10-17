@@ -38,7 +38,7 @@ describe.each(['android', 'ios'] as const)('browser recovery on %s', platform =>
     await navigate(SECOND);
     expect(input(root).props.value).toBe('my unfinished search');
     await fire(input(root), 'onSubmitEditing');
-    expect(theWebView().props.source?.uri).toBe('https://duckduckgo.com/?q=my%20unfinished%20search');
+    expect(theWebView().props.source?.uri).toBe('https://pit.world/search?q=my%20unfinished%20search');
   });
 
   it('restores the current page address when an edit is dismissed without submitting', async () => {

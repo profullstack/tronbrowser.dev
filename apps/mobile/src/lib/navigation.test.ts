@@ -23,25 +23,25 @@ describe('normalizeUrl', () => {
 
   it('searches ordinary text', () => {
     expect(normalizeUrl('privacy first browser')).toBe(
-      'https://duckduckgo.com/?q=privacy%20first%20browser',
+      'https://pit.world/search?q=privacy%20first%20browser',
     );
   });
 
   it('searches unsupported schemes instead of loading them', () => {
     expect(normalizeUrl('javascript:alert(1)')).toBe(
-      'https://duckduckgo.com/?q=javascript%3Aalert(1)',
+      'https://pit.world/search?q=javascript%3Aalert(1)',
     );
   });
 
   it('does not treat domain-looking text with spaces as a URL', () => {
     expect(normalizeUrl('example.com malicious suffix')).toBe(
-      'https://duckduckgo.com/?q=example.com%20malicious%20suffix',
+      'https://pit.world/search?q=example.com%20malicious%20suffix',
     );
   });
 
   it('searches with a no-account engine, not Kagi', () => {
     // Kagi needs a subscription after its trial; a fresh install must be able
-    // to search out of the box, matching the desktop DuckDuckGo default.
+    // to search out of the box, matching the desktop pit.world default.
     expect(normalizeUrl('some query')).not.toContain('kagi.com');
   });
 });

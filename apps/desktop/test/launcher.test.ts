@@ -161,7 +161,7 @@ describe('omnibox search engine', () => {
     // Kagi is subscription-only past its trial, so defaulting to it left a new
     // install unable to search at all — it just landed on a login wall.
     const { home } = run([]);
-    expect(dse(home).url).toBe('https://duckduckgo.com/?q={searchTerms}');
+    expect(dse(home).url).toBe('https://pit.world/search?q={searchTerms}');
   });
 
   it('never sets a suggestions_url', () => {
@@ -181,13 +181,25 @@ describe('omnibox search engine', () => {
     const home = seed({ want: 'notanengine' });
     const { stderr } = run([], { home });
     expect(stderr).toContain("unknown search engine 'notanengine'");
-    expect(dse(home).url).toBe('https://duckduckgo.com/?q={searchTerms}');
+    expect(dse(home).url).toBe('https://pit.world/search?q={searchTerms}');
   });
 
   it('repairs a profile it had previously pinned to Kagi', () => {
     // The actual bug: everyone who installed before this had Kagi written into
     // their profile by us, and nothing moved them off it.
     const home = seed({ url: KAGI_URL, legacyKagi: true });
+    run([], { home });
+    expect(dse(home).url).toBe('https://pit.world/search?q={searchTerms}');
+  });
+
+  it('moves a profile on our previous default (DuckDuckGo) to pit.world', () => {
+    const home = seed({ url: 'https://duckduckgo.com/?q={searchTerms}', marker: 'ddg' });
+    run([], { home });
+    expect(dse(home).url).toBe('https://pit.world/search?q={searchTerms}');
+  });
+
+  it('keeps DuckDuckGo for someone who chose it with `tron search ddg`', () => {
+    const home = seed({ url: 'https://duckduckgo.com/?q={searchTerms}', marker: 'ddg', want: 'ddg' });
     run([], { home });
     expect(dse(home).url).toBe('https://duckduckgo.com/?q={searchTerms}');
   });

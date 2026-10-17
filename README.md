@@ -52,9 +52,10 @@ Linux phones (Librem 5 / PinePhone / Ubuntu Touch). See
 
 ## What you get today
 
-- **De-googled new tab** — TronBrowser page, **Kagi** as the default search
-  (no Google in the omnibox; NeoSearch, Xprivo, and DuckDuckGo available as
-  alternatives), quick links.
+- **De-googled new tab** — TronBrowser page, **[pit.world](https://pit.world)**
+  as the default search in both the address bar and the new tab (no logs, no
+  cookies, resolves Moshpit names; DuckDuckGo, Kagi, NeoSearch and Xprivo
+  available with `tron search <engine>`), quick links.
 - **RSS reader** on the new tab — seeded from your OPML; add/remove feeds and
   **import/export OPML** in Settings.
 - **AI sidebar (bring your own keys)** — Anthropic, OpenAI, Google/Gemini,

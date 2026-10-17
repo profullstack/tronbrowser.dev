@@ -446,17 +446,17 @@ case "${1:-}" in
     # only the launcher can write it there — an MV3 extension has no API for this
     # on Linux — so this records the choice and the next launch applies it. The
     # new-tab box has its own separate picker in TronBrowser Settings.
-    _engines="ddg kagi neosearch xprivo oxiverse"
+    _engines="pit ddg kagi neosearch xprivo oxiverse"
     _dirs="${TRONBROWSER_DATA:-$HOME/.tronbrowser}"
     if [ -d "$HOME/TronBrowser" ]; then _dirs="$_dirs $HOME/TronBrowser"; fi
     _want="${2:-}"
     if [ -z "$_want" ]; then
       for _d in $_dirs; do
         _cur="$(cat "$_d/search-engine" 2>/dev/null || true)"
-        echo "Address bar: ${_cur:-ddg (default)}   [$_d]"
+        echo "Address bar: ${_cur:-pit (default, pit.world)}   [$_d]"
       done
       echo "Available: $_engines"
-      echo "Set with:  tron search ddg"
+      echo "Set with:  tron search pit    (or ddg, kagi, ...)"
       echo "(The new-tab search box is set separately in TronBrowser Settings.)"
       exit 0
     fi

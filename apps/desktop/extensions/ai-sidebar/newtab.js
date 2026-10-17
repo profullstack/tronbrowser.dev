@@ -12,12 +12,14 @@ const DEFAULT_TICKERS = 'SPY, AAPL, NVDA, BTC-USD';
 const DEFAULT_LEAGUES = 'nfl, nba';
 const splitList = (s) => String(s || '').split(',').map((x) => x.trim()).filter(Boolean);
 
-// --- Search: Web (DuckDuckGo by default) or AI (sidebar) ---
+// --- Search: Web (pit.world by default) or AI (sidebar) ---
 // This is the NEW-TAB box only. The address bar's engine is a browser-level
 // setting the extension cannot reach; `tron search <engine>` sets that one.
-// Default is DuckDuckGo because it answers without an account — Kagi is
-// subscription-only past its trial, so it cannot be the out-of-box default.
+// Default is pit.world: it answers without an account, keeps no logs or cookies,
+// and resolves Moshpit names. Kagi is subscription-only past its trial, so it
+// cannot be the out-of-box default.
 const SEARCH_ENGINES = {
+  pit: { name: 'pit.world', url: 'https://pit.world/search?q=' },
   kagi: { name: 'Kagi', url: 'https://kagi.com/search?q=' },
   neosearch: { name: 'NeoSearch', url: 'https://neosearch.org/?q=' },
   xprivo: { name: 'Xprivo', url: 'https://www.xprivo.com/search/?q=' },
@@ -42,7 +44,7 @@ const TOR_SEARCH_ENGINES = {
   excavator: { name: 'Excavator', url: 'http://2fd6cemt4gmccflhm6imvdfvli3nf7zn6rfrwpsy7uhxrgbypvwf5fad.onion/?q=' },
 };
 let searchMode = 'web';
-let searchEngine = 'ddg';
+let searchEngine = 'pit';
 let torSearchEngine = 'ahmia';
 let torEnabled = false;
 
@@ -50,7 +52,7 @@ let torEnabled = false;
 // is on, otherwise the clearnet default.
 function activeEngine() {
   if (torEnabled) return TOR_SEARCH_ENGINES[torSearchEngine] || TOR_SEARCH_ENGINES.ahmia;
-  return SEARCH_ENGINES[searchEngine] || SEARCH_ENGINES.ddg;
+  return SEARCH_ENGINES[searchEngine] || SEARCH_ENGINES.pit;
 }
 
 function setMode(mode) {

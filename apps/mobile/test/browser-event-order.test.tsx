@@ -249,7 +249,7 @@ describe.each(['android', 'ios'] as const)('browser event ordering on %s', platf
         n.props.pointerEvents === 'none', 'failed native page');
       expect(page.props.accessibilityElementsHidden).toBe(true);
       await fire(input(root), 'onSubmitEditing');
-      expect(theWebView().props.source?.uri).toBe('https://duckduckgo.com/?q=unfinished%20query');
+      expect(theWebView().props.source?.uri).toBe('https://pit.world/search?q=unfinished%20query');
       expect(textContents(root)).not.toContain(ERROR);
       expect(button(root, 'Back').props.disabled).toBe(true);
       expect(webViewRegistry()).toHaveLength(2);
