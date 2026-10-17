@@ -1,6 +1,6 @@
 /**
  * Search through the real BrowserScreen: address-bar input must reach the
- * actual WebView `source` as a no-account DuckDuckGo query — the same
+ * actual WebView `source` as a no-account pit.world query — the same
  * correction the desktop launcher already ships — never as Kagi and never as a
  * raw unsupported scheme.
  */
@@ -26,14 +26,14 @@ describe('BrowserScreen search', () => {
     expect(theWebView().props.source).toEqual({ uri: HOME });
   });
 
-  it('sends plain text to DuckDuckGo, which needs no account', async () => {
+  it('sends plain text to pit.world, which needs no account', async () => {
     const renderer = await renderScreen(<BrowserScreen />);
     await submitAddress(renderer.root, 'privacy first browser');
     expect(theWebView().props.source).toEqual({
-      uri: 'https://duckduckgo.com/?q=privacy%20first%20browser',
+      uri: 'https://pit.world/search?q=privacy%20first%20browser',
     });
     expect(addressInput(renderer.root).props.value).toBe(
-      'https://duckduckgo.com/?q=privacy%20first%20browser',
+      'https://pit.world/search?q=privacy%20first%20browser',
     );
   });
 
@@ -47,7 +47,7 @@ describe('BrowserScreen search', () => {
     const renderer = await renderScreen(<BrowserScreen />);
     await submitAddress(renderer.root, 'javascript:alert(1)');
     expect(theWebView().props.source).toEqual({
-      uri: 'https://duckduckgo.com/?q=javascript%3Aalert(1)',
+      uri: 'https://pit.world/search?q=javascript%3Aalert(1)',
     });
   });
 });

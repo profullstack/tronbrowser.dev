@@ -460,6 +460,7 @@ fi
 # enter and stalls typing when the endpoint is slow or answers 401.
 search_engine_spec() {
   case "$1" in
+    pit)       echo "pit.world|pit.world|https://pit.world/search?q={searchTerms}" ;;
     ddg)       echo "DuckDuckGo|duckduckgo.com|https://duckduckgo.com/?q={searchTerms}" ;;
     kagi)      echo "Kagi|kagi.com|https://kagi.com/search?q={searchTerms}" ;;
     neosearch) echo "NeoSearch|neosearch.org|https://neosearch.org/?q={searchTerms}" ;;
@@ -474,14 +475,17 @@ search_engine_spec() {
 
 # What the user asked for (`tron search <engine>`), or a default that works
 # without an account. Kagi is subscription-only past its trial, so defaulting
-# the omnibox to it leaves a fresh install unable to search at all.
+# the omnibox to it leaves a fresh install unable to search at all. The default
+# is pit.world (no logs, no cookies, and it resolves Moshpit names, which pairs
+# with the Pit toggle). A profile still on our previous default (ddg) moves to
+# it on the next launch; an explicit `tron search ddg` stays ddg.
 SEARCH_WANT="$(cat "$DATA/search-engine" 2>/dev/null || true)"
 SEARCH_WANT="$(printf '%s' "$SEARCH_WANT" | tr -d '[:space:]')"
 SEARCH_EXPLICIT=1
-if [ -z "$SEARCH_WANT" ]; then SEARCH_WANT="ddg"; SEARCH_EXPLICIT=0; fi
+if [ -z "$SEARCH_WANT" ]; then SEARCH_WANT="pit"; SEARCH_EXPLICIT=0; fi
 if ! search_engine_spec "$SEARCH_WANT" >/dev/null 2>&1; then
-  echo "TronBrowser: unknown search engine '$SEARCH_WANT' — using ddg. See 'tron search'." >&2
-  SEARCH_WANT="ddg"; SEARCH_EXPLICIT=0
+  echo "TronBrowser: unknown search engine '$SEARCH_WANT' — using pit. See 'tron search'." >&2
+  SEARCH_WANT="pit"; SEARCH_EXPLICIT=0
 fi
 
 # Which engine we last set. Profiles from before this file existed recorded it

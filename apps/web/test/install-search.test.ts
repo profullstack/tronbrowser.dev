@@ -67,7 +67,7 @@ describe('tron search', () => {
     const h = home();
     const { status, out } = search(h);
     expect(status).toBe(0);
-    expect(out).toContain('ddg');
+    expect(out).toContain('pit (default, pit.world)');
   });
 
   it('records the chosen engine where the launcher looks for it', () => {

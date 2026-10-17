@@ -4,10 +4,10 @@ const DOMAIN_OR_IP =
   /^(?:(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}|(?:\d{1,3}\.){3}\d{1,3}|localhost)(?::\d{1,5})?(?:[/?#][^\s]*)?$/i;
 
 function searchUrl(query: string): string {
-  // DuckDuckGo answers without an account. Kagi is subscription-only past its
-  // trial, so defaulting to it left a fresh install with a broken search box —
-  // the same out-of-box failure the desktop launcher already corrects.
-  return `https://duckduckgo.com/?q=${encodeURIComponent(query)}`;
+  // pit.world answers without an account and keeps no logs or cookies. Kagi is
+  // subscription-only past its trial, so defaulting to it left a fresh install
+  // with a broken search box; the desktop launcher uses pit.world too.
+  return `https://pit.world/search?q=${encodeURIComponent(query)}`;
 }
 
 /**
