@@ -92,6 +92,7 @@ RUN for f in /api/migrations-pg/*.sql; do \
       head -1 "$f" | grep -q '^-- TronBrowser Postgres schema:' \
         || { echo "not a Postgres migration: $f" >&2; exit 1; }; \
     done
+COPY scripts/pit-footer.mjs /pit-footer.mjs
 COPY start.sh /start.sh
 RUN chmod +x /start.sh
 CMD ["/start.sh"]

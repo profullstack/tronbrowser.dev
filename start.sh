@@ -6,6 +6,9 @@ set -e
 # a transient DB hiccup shouldn't block the whole service from starting.
 MIGRATIONS_DIR=/api/migrations-pg bun /api/db-migrate.mjs || echo "[migrate] FAILED — continuing"
 PORT=8090 bun /api/dist/index.js &
+# pit.world global footer: fetched server-side at boot and hourly, written into
+# each page's <!--pit-footer--> slot. Never blocks or breaks serving.
+bun /pit-footer.mjs &
 
 # --- Tor v3 hidden service ---------------------------------------------------
 # Expose the site over a stable .onion. Tor forwards onion:80 -> Caddy on $PORT
