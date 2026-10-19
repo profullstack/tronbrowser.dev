@@ -165,8 +165,6 @@
   .faq h3 { color: var(--cyan); font-size: 16px; margin: 22px 0 6px; }
   .faq p { margin: 0; color: var(--fg); }
   .site-foot { text-align: center; margin-top: 64px; color: var(--muted); }
-  .foot-links { font-size: 14px; }
-  .foot-links a { color: var(--muted); }
   .onion { margin-top: 12px; font-size: 13px; }
   .onion a { color: var(--muted); word-break: break-all; }
   .onion .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%;
@@ -263,9 +261,13 @@
   </main>
 
   <div class="site-foot">
-    <footer class="foot-links">&copy; 2026 TronBrowser &middot; MIT License &middot; <a href="/store/">Store</a> &middot; <a href="/login">Sign in</a> &middot; <a href="/privacy">Privacy</a> &middot; <a href="https://github.com/profullstack/tronbrowser.dev">GitHub</a> &middot; <a href="https://github.com/profullstack/tronbrowser.dev/releases">Releases</a></footer>
+    <!-- @profullstack/footer: server-rendered copy for crawlers and the ring verifier; embed.js swaps in the @latest template. -->
+    <footer data-profullstack-footer data-site="https://tronbrowser.dev/" data-since="2026" data-tagline="MIT License" data-links='[{"label":"Store","href":"/store/"},{"label":"Sign in","href":"/login"},{"label":"Privacy","href":"/privacy"},{"label":"GitHub","href":"https://github.com/profullstack/tronbrowser.dev"},{"label":"Releases","href":"https://github.com/profullstack/tronbrowser.dev/releases"}]'>
+      <footer class="pfs-footer" data-pfs-footer="0.2.4"><style>.pfs-footer{--pfs-footer-muted:color-mix(in srgb,currentColor 62%,transparent);--pfs-footer-gap:.5rem 1.25rem;--pfs-footer-size:.875rem;border-top:1px solid color-mix(in srgb,currentColor 14%,transparent);font-size:var(--pfs-footer-size);line-height:1.5;color:inherit}.pfs-footer__inner{max-width:72rem;margin:0 auto;padding:1.5rem 1rem;display:flex;flex-direction:column;align-items:center;gap:.75rem;text-align:center}.pfs-footer a{color:var(--pfs-footer-muted);text-decoration:none}.pfs-footer a:hover,.pfs-footer a:focus-visible{color:inherit;text-decoration:underline}.pfs-footer__links{display:flex;flex-wrap:wrap;justify-content:center;gap:var(--pfs-footer-gap)}.pfs-footer__ring{display:flex;flex-wrap:wrap;justify-content:center;align-items:center;gap:.6rem}.pfs-footer__copy{margin:0;color:var(--pfs-footer-muted)}.pfs-footer__copy a{color:inherit}</style><div class="pfs-footer__inner"><nav class="pfs-footer__links" aria-label="Footer"><a href="/store/">Store</a><a href="/login">Sign in</a><a href="/privacy">Privacy</a><a href="https://github.com/profullstack/tronbrowser.dev">GitHub</a><a href="https://github.com/profullstack/tronbrowser.dev/releases">Releases</a></nav><nav class="webring pfs-footer__ring" aria-label="Profullstack webring"><a href="https://rssamplifier.com/ring/profullstack/previous?from=https%3A%2F%2Ftronbrowser.dev%2F" rel="prev" title="Previous site">&lt;&lt;</a><a href="https://rssamplifier.com/ring/profullstack">Profullstack</a><a href="https://rssamplifier.com/ring/profullstack/next?from=https%3A%2F%2Ftronbrowser.dev%2F" rel="next" title="Next site">&gt;&gt;</a></nav><p class="pfs-footer__copy">&copy; 2026 <a href="https://profullstack.com/">Profullstack, Inc.</a> &middot; MIT License</p></div></footer>
+    </footer>
     <div class="onion"><span class="dot" aria-hidden="true"></span><a href="http://5nlx2hye6lddy4zki4xv3oteoxgerfd3343haizoicmonfb2ediy5gyd.onion" rel="noopener noreferrer">http://5nlx2hye6lddy4zki4xv3oteoxgerfd3343haizoicmonfb2ediy5gyd.onion</a></div>
   </div>
+  <script type="module" src="https://cdn.jsdelivr.net/npm/@profullstack/footer@latest/src/embed.js"></script>
 </div>
 <script src="/app.js?v=0.1.8"></script>
 <!-- CrawlProof: privacy-friendly, cookieless analytics. -->
