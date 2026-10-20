@@ -20,8 +20,9 @@ describe('extension network helper requests', () => {
         onMessage: { addListener: (listener) => listeners.push(listener) },
         sendMessage: done(),
       },
-      storage: { local: storage(), session: storage() },
+      storage: { local: storage(), session: storage(), onChanged: { addListener: vi.fn() } },
       tabs: { onUpdated: { addListener: vi.fn() }, update: done() },
+      declarativeNetRequest: { updateSessionRules: done() },
       proxy: { settings: { set: done(), clear: done() } },
       privacy: { network: { webRTCIPHandlingPolicy: { set: done(), clear: done() } } },
     });
