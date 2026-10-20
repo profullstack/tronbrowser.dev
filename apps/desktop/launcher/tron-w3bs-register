@@ -19,7 +19,10 @@ TARGET="${TRONBROWSER_W3BS_HANDLER_TARGET:-${1:-}}"
 linux() {
   command -v xdg-mime >/dev/null 2>&1 || return 0
   _cur="$(xdg-mime query default x-scheme-handler/w3bs 2>/dev/null || true)"
-  [ -z "$_cur" ] || return 0
+  # xdg-mime reports tronbrowser.desktop merely because it declares the scheme,
+  # while GIO (GNOME, and what xdg-open defers to there) only honours an
+  # explicit default. So write ours unless another app holds it.
+  case "$_cur" in ''|tronbrowser.desktop) ;; *) return 0 ;; esac
   # Only claim the scheme through a desktop entry that declares it; install.sh,
   # the .deb/.rpm and the AppImage all write one named tronbrowser.desktop.
   for _d in "${XDG_DATA_HOME:-$HOME/.local/share}" $(printf '%s' "${XDG_DATA_DIRS:-/usr/local/share:/usr/share}" | tr ':' ' '); do

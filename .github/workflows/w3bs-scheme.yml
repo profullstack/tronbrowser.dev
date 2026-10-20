@@ -30,9 +30,11 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v5
-      - name: Install xdg-utils
+      - name: Install xdg-utils and gio
         if: runner.os == 'Linux'
-        run: command -v xdg-open || (sudo apt-get update -qq && sudo apt-get install -y -qq xdg-utils)
+        run: |
+          command -v xdg-open && command -v gio \
+            || (sudo apt-get update -qq && sudo apt-get install -y -qq xdg-utils libglib2.0-bin)
       - name: OS opens w3bs:// in TronBrowser
         run: sh apps/desktop/test/w3bs-scheme/posix.sh
 

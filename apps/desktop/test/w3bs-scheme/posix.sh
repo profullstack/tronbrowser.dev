@@ -44,7 +44,18 @@ case "$(uname -s)" in
     [ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleURLTypes:0:CFBundleURLSchemes:0' "$PLIST")" = w3bs ] \
       || fail "handler app does not declare w3bs"
     codesign --verify "$APP" || fail "handler app signature is broken"
-    open "$URI"
+    # LaunchServices learns about the app asynchronously.
+    i=0
+    until open "$URI" 2>/dev/null; do
+      i=$((i + 1))
+      if [ "$i" -ge 20 ]; then
+        /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -dump \
+          | grep -i -B3 -A3 'w3bs\|tronbrowser.links' >&2 || true
+        open "$URI" || true
+        fail "LaunchServices has no handler for w3bs"
+      fi
+      sleep 1
+    done
     ;;
   *)
     command -v xdg-open >/dev/null 2>&1 || fail "xdg-open is not installed"
@@ -68,10 +79,12 @@ EOF
     sh "$W/bin/tron-w3bs-register" "$W/bin/tron"
     [ "$(xdg-mime query default x-scheme-handler/w3bs)" = tronbrowser.desktop ] \
       || fail "tronbrowser.desktop is not the w3bs handler"
-    # xdg-open only consults scheme handlers when it sees a display, which a
-    # real desktop always has and a CI runner never does. It only checks that
-    # the variable is set; nothing connects to it.
-    DISPLAY="${DISPLAY:-:99}" xdg-open "$URI"
+    # As on a GNOME desktop: xdg-open hands the URI to `gio open`, which looks
+    # the handler up in mimeapps.list. Generic mode is not used because
+    # xdg-utils 1.1.x (Ubuntu 24.04) misreads any scheme with a digit, like
+    # w3bs, as a file path. DISPLAY only has to be set; nothing connects to it.
+    command -v gio >/dev/null 2>&1 || fail "gio is not installed"
+    DISPLAY="${DISPLAY:-:99}" XDG_CURRENT_DESKTOP=GNOME xdg-open "$URI"
     ;;
 esac
 
