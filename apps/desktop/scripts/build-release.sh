@@ -108,6 +108,10 @@ stage() { # dest dir
   # launcher starts it; it starts Tor / the Moshpit resolver only when asked).
   install -m 0755 "$DESKTOP/launcher/tron-tor-helper" "$s/tron-tor-helper"
   install -m 0644 "$DESKTOP/launcher/tron-windows.py" "$s/tron-windows.py"
+  # w3bs:// registration with the OS: the shim runs tron-w3bs-register in the
+  # background on Linux/macOS, tronbrowser.cmd runs tron-w3bs.ps1 on Windows.
+  install -m 0755 "$DESKTOP/launcher/tron-w3bs-register" "$s/tron-w3bs-register"
+  install -m 0644 "$DESKTOP/launcher/tron-w3bs.ps1" "$s/tron-w3bs.ps1"
   # Repoints installed-web-app desktop icons at the launcher. The shim runs it
   # on every start (the engine rewrites those files behind us); `tron pwa` is
   # the manual handle.

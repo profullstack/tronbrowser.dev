@@ -50,7 +50,13 @@ while [ "$_i" -lt "$_argc" ]; do
   _a="$1"; shift; _i=$((_i + 1))
   case "$_a" in
     w3bs:*|W3BS:*)
-      _a="$W3BS_GATEWAY$(printf '%s' "$_a" | od -An -v -tx1 | tr -d ' \n' | sed 's/\(..\)/%\1/g')" ;;
+      # Percent-encode like encodeURIComponent: unreserved characters stay.
+      _a="$W3BS_GATEWAY$(printf '%s' "$_a" | LC_ALL=C awk '
+        BEGIN { for (i = 1; i < 256; i++) ord[sprintf("%c", i)] = i }
+        { for (i = 1; i <= length($0); i++) {
+            c = substr($0, i, 1)
+            if (c ~ /[A-Za-z0-9._~!*()\047-]/) printf "%s", c; else printf "%%%02X", ord[c]
+        } }')" ;;
   esac
   set -- "$@" "$_a"
 done
@@ -772,6 +778,14 @@ if [ "$TOR" != "1" ] && [ -z "$MAC_APP" ] && [ -f "$DIR/tron-pwa" ]; then
   if command -v python3 >/dev/null 2>&1; then
     TRONBROWSER_DATA="$DATA" python3 "$DIR/tron-pwa" sync >&2 || true
   fi
+fi
+
+# w3bs:// from other apps and the address bar reaches the OS, which must hand it
+# back to this launcher (see the w3bs:// rewrite above). On every start, in the
+# background, so package-manager installs that never ran install.sh register
+# too and an upgrade that moved us re-points the handler.
+if [ -f "$DIR/tron-w3bs-register" ]; then
+  sh "$DIR/tron-w3bs-register" "$DIR/$(basename "$SELF")" >/dev/null 2>&1 </dev/null &
 fi
 
 # --- Moshpit names over HTTPS ----------------------------------------------

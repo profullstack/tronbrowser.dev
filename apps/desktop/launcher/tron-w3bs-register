@@ -1,0 +1,92 @@
+#!/bin/sh
+# Register TronBrowser as the handler for w3bs:// URIs with the OS, so a W3BS
+# link from another app, or one typed in the address bar (Chromium hands any
+# scheme it cannot load to the OS), comes back to `tron`, which opens it
+# through the w3bs.org resolver.
+#
+#   tron-w3bs-register <command>
+#
+# <command> is what the OS runs with the URI as its one argument: the launcher
+# passes its own path. Idempotent, quiet and best-effort: the launcher runs it
+# in the background on every start, so upgrades and moved installs heal
+# themselves. A handler someone else registered (the w3bs.org inspector, say) is
+# left alone. Windows registers from tron-w3bs.ps1 instead.
+set -u
+
+TARGET="${TRONBROWSER_W3BS_HANDLER_TARGET:-${1:-}}"
+[ -n "$TARGET" ] || { echo "usage: tron-w3bs-register <command>" >&2; exit 2; }
+
+linux() {
+  command -v xdg-mime >/dev/null 2>&1 || return 0
+  _cur="$(xdg-mime query default x-scheme-handler/w3bs 2>/dev/null || true)"
+  [ -z "$_cur" ] || return 0
+  # Only claim the scheme through a desktop entry that declares it; install.sh,
+  # the .deb/.rpm and the AppImage all write one named tronbrowser.desktop.
+  for _d in "${XDG_DATA_HOME:-$HOME/.local/share}" $(printf '%s' "${XDG_DATA_DIRS:-/usr/local/share:/usr/share}" | tr ':' ' '); do
+    if grep -qs 'x-scheme-handler/w3bs' "$_d/applications/tronbrowser.desktop"; then
+      xdg-mime default tronbrowser.desktop x-scheme-handler/w3bs 2>/dev/null || true
+      return 0
+    fi
+  done
+}
+
+# macOS routes a URL scheme to an app bundle that declares it, never to a
+# script, and Chromium.app cannot be the one: it would hand w3bs:// straight
+# back to the OS. So build a small faceless applet that declares w3bs and runs
+# $TARGET with the URI.
+macos() {
+  APP="${TRONBROWSER_W3BS_APP:-$HOME/Applications/TronBrowser Links.app}"
+  ID="dev.tronbrowser.links"
+  STAMP="$APP/Contents/Resources/tron-target"
+  if [ -f "$STAMP" ] && [ "$(cat "$STAMP" 2>/dev/null)" = "$TARGET" ]; then
+    return 0
+  fi
+  command -v osacompile >/dev/null 2>&1 || return 0
+  PB=/usr/libexec/PlistBuddy
+  LSREG=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
+
+  _src="$(mktemp -t tron-w3bs)" || return 0
+  # AppleScript string literal: escape backslashes and double quotes.
+  _t="$(printf '%s' "$TARGET" | sed 's/\\/\\\\/g; s/"/\\"/g')"
+  cat > "$_src" <<EOF
+on open location theURL
+	do shell script quoted form of "$_t" & " " & quoted form of theURL & " >/dev/null 2>&1 &"
+end open location
+on run
+end run
+EOF
+  mkdir -p "$(dirname "$APP")"
+  rm -rf "$APP"
+  osacompile -o "$APP" "$_src" || { rm -f "$_src"; return 0; }
+  rm -f "$_src"
+
+  _plist="$APP/Contents/Info.plist"
+  "$PB" -c "Set :CFBundleIdentifier $ID" "$_plist" 2>/dev/null || "$PB" -c "Add :CFBundleIdentifier string $ID" "$_plist"
+  "$PB" -c "Set :CFBundleName TronBrowser Links" "$_plist" 2>/dev/null || true
+  "$PB" -c "Add :LSUIElement bool true" "$_plist" 2>/dev/null || true
+  "$PB" -c "Delete :CFBundleURLTypes" "$_plist" 2>/dev/null || true
+  "$PB" -c "Add :CFBundleURLTypes array" "$_plist"
+  "$PB" -c "Add :CFBundleURLTypes:0 dict" "$_plist"
+  "$PB" -c "Add :CFBundleURLTypes:0:CFBundleURLName string W3BS resource" "$_plist"
+  "$PB" -c "Add :CFBundleURLTypes:0:CFBundleURLSchemes array" "$_plist"
+  "$PB" -c "Add :CFBundleURLTypes:0:CFBundleURLSchemes:0 string w3bs" "$_plist"
+  printf '%s' "$TARGET" > "$STAMP"
+  # Editing Info.plist breaks the applet's ad-hoc signature, and Apple silicon
+  # refuses to run an app with a broken one.
+  codesign --force --deep --sign - "$APP" >/dev/null 2>&1 || true
+  [ -x "$LSREG" ] && "$LSREG" -f "$APP" >/dev/null 2>&1 || true
+
+  # Become the default only when no other app has claimed w3bs.
+  osascript -l JavaScript >/dev/null 2>&1 <<EOF || true
+ObjC.import('CoreServices');
+const cur = $.LSCopyDefaultHandlerForURLScheme($('w3bs'));
+const id = cur.isNil() ? '' : ObjC.unwrap(cur);
+if (!id || id.toLowerCase() === '$ID') $.LSSetDefaultHandlerForURLScheme($('w3bs'), $('$ID'));
+EOF
+}
+
+case "$(uname -s)" in
+  Darwin) macos ;;
+  Linux|*BSD) linux ;;
+esac
+exit 0

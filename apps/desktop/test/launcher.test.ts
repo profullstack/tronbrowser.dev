@@ -123,6 +123,8 @@ describe('launcher flags', () => {
     const url = new URL(opened[0]!);
     expect(url.origin + url.pathname).toBe('https://w3bs.org/browse');
     expect(url.searchParams.get('q')).toBe('w3bs://prompt/w3bs/research@1');
+    // Encoded the way encodeURIComponent does it, so the address bar stays readable.
+    expect(opened[0]).toBe('https://w3bs.org/browse?q=w3bs%3A%2F%2Fprompt%2Fw3bs%2Fresearch%401');
     expect(opened[1]).toBe('https://tronbrowser.dev');
   });
 
