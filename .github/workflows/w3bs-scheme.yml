@@ -1,0 +1,48 @@
+name: w3bs:// handler
+
+# The OS-level half of w3bs:// support: each platform's real URL dispatch
+# (xdg-open, LaunchServices, ShellExecute) has to reach the launcher, which
+# opens the w3bs.org resolver. Nothing here can be checked from Linux alone.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'apps/desktop/launcher/**'
+      - 'apps/desktop/test/w3bs-scheme/**'
+      - '.github/workflows/w3bs-scheme.yml'
+  pull_request:
+    paths:
+      - 'apps/desktop/launcher/**'
+      - 'apps/desktop/test/w3bs-scheme/**'
+      - '.github/workflows/w3bs-scheme.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  posix:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install xdg-utils and gio
+        if: runner.os == 'Linux'
+        run: |
+          command -v xdg-open && command -v gio \
+            || (sudo apt-get update -qq && sudo apt-get install -y -qq xdg-utils libglib2.0-bin)
+      - name: OS opens w3bs:// in TronBrowser
+        run: sh apps/desktop/test/w3bs-scheme/posix.sh
+
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - name: Windows opens w3bs:// in TronBrowser
+        shell: pwsh
+        run: ./apps/desktop/test/w3bs-scheme/windows.ps1

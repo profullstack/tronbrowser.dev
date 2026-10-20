@@ -9,6 +9,14 @@ set "DIR=%~dp0"
 set "DATA=%USERPROFILE%\.tronbrowser"
 if defined TRONBROWSER_DATA set "DATA=%TRONBROWSER_DATA%"
 
+rem `tron w3bs://...`: Chromium cannot load the scheme, so tron-w3bs.ps1 opens
+rem it through the w3bs.org resolver (and calls back into this script).
+set "TB_ARG1=%~1"
+if /i "%TB_ARG1:~0,5%"=="w3bs:" (
+  powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "%DIR%tron-w3bs.ps1" "%TB_ARG1%"
+  exit /b %errorlevel%
+)
+
 rem Validate the interpreter: Windows may have a Store alias named python.exe.
 set "PYTHON="
 set "PYTHON_ARGS="
@@ -81,6 +89,10 @@ if not defined PYTHON (
   "%PYTHON%" %PYTHON_ARGS% "%DIR%tron-windows.py" start
   if errorlevel 1 echo TronBrowser: network helper unavailable; ordinary browsing still works. >&2
 )
+
+rem Register w3bs:// with Windows (links from other apps and the address bar),
+rem in the background so it never delays the window.
+if exist "%DIR%tron-w3bs.ps1" start "" /b powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -File "%DIR%tron-w3bs.ps1" -Register
 
 rem --enable-features=EnableTabMuting makes the tab audio indicator a clickable
 rem mute/unmute control (media::kEnableTabMuting is DISABLED_BY_DEFAULT upstream;
