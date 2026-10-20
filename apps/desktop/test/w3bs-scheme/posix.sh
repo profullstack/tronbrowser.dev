@@ -9,6 +9,7 @@ set -eu
 
 REPO="$(CDPATH= cd -- "$(dirname -- "$0")/../../../.." && pwd)"
 W="$(mktemp -d)"
+REAL_HOME="$HOME"
 export HOME="$W/home"
 export XDG_DATA_HOME="$HOME/.local/share" XDG_CONFIG_HOME="$HOME/.config"
 mkdir -p "$W/bin" "$XDG_DATA_HOME/applications" "$XDG_CONFIG_HOME"
@@ -16,7 +17,10 @@ cp "$REPO/apps/desktop/launcher/tronbrowser" "$REPO/apps/desktop/launcher/tron-w
 ARGV="$W/argv"
 URI='w3bs://prompt/w3bs/research@1'
 WANT='https://w3bs.org/browse?q=w3bs%3A%2F%2Fprompt%2Fw3bs%2Fresearch%401'
-APP="$HOME/Applications/TronBrowser Links.app"
+# LaunchServices will not route a URL to an app in a temporary directory, so on
+# macOS the applet goes where real installs put it, under a test-only name.
+# Same bundle id as the real one: run this on a disposable machine (CI).
+APP="$REAL_HOME/Applications/TronBrowser Links (test).app"
 
 # Named ungoogled-chromium so the launcher's de-googled check stays quiet.
 cat > "$W/bin/ungoogled-chromium" <<EOF
@@ -93,4 +97,8 @@ while [ ! -s "$ARGV" ] && [ "$i" -lt 60 ]; do sleep 1; i=$((i + 1)); done
 [ -s "$ARGV" ] || fail "the engine was never started for $URI"
 grep -qxF "$WANT" "$ARGV" || { cat "$ARGV" >&2; fail "the engine was not handed $WANT"; }
 echo "ok: $URI -> $WANT"
+if [ -d "$APP" ]; then
+  /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -u "$APP" 2>/dev/null || true
+  rm -rf "$APP"
+fi
 rm -rf "$W"
