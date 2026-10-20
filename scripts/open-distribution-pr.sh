@@ -18,6 +18,25 @@ if git diff --quiet -- distribution; then
   exit 0
 fi
 
+# True when version $1 sorts at or above version $2.
+version_ge() {
+  [ "$(printf '%s\n%s\n' "$1" "$2" | sort -V | tail -n1)" = "$1" ]
+}
+
+# Releases can land minutes apart (v3.19.0 through v3.19.4 shipped inside an
+# hour), so this job runs out of order and one release's refresh can reach a
+# main that already carries a newer one. That PR would only conflict on every
+# manifest and never be mergeable, so stop here instead of opening it.
+MAIN_VERSION=""
+if git fetch --depth=1 -q origin main 2>/dev/null; then
+  MAIN_VERSION="$(git show FETCH_HEAD:distribution/homebrew/tronbrowser.rb 2>/dev/null \
+    | sed -n 's/^ *version "\(.*\)"/\1/p' | head -n1 || true)"
+fi
+if [ -n "${MAIN_VERSION}" ] && version_ge "${MAIN_VERSION}" "${VERSION}"; then
+  echo "main already carries v${MAIN_VERSION} manifests (>= v${VERSION}); not opening a PR"
+  exit 0
+fi
+
 git config user.name "github-actions[bot]"
 git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
@@ -73,3 +92,19 @@ if [ "${RC}" -ne 0 ]; then
     exit "${RC}"
   fi
 fi
+
+# Every refresh rewrites the same lines, so an older refresh PR left open
+# conflicts the moment this one merges and can never land. Close each open
+# refresh for a lower version so the queue only ever holds the newest.
+gh pr list --base main --state open --search "head:chore/distribution-" \
+  --json number,headRefName --jq '.[] | "\(.number) \(.headRefName)"' |
+while read -r NUM HEAD; do
+  case "${HEAD}" in chore/distribution-*) ;; *) continue ;; esac
+  OTHER="${HEAD#chore/distribution-}"
+  [ "${OTHER}" = "${VERSION}" ] && continue
+  if version_ge "${VERSION}" "${OTHER}"; then
+    echo "closing superseded refresh PR #${NUM} (v${OTHER})"
+    gh pr close "${NUM}" --delete-branch \
+      --comment "Superseded by the v${VERSION} manifest refresh." || true
+  fi
+done
