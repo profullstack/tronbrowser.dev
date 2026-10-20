@@ -1,7 +1,7 @@
 import { decideInstallTarget, lookupInstalled } from './install-state.js';
 import { PIT_SOCKS_PORT, pitProxyConfig } from './pit-proxy.js';
 import { installPush } from './push-client.js';
-import { w3bsFromSearch } from './w3bs.js';
+import { PIT_DIRECT_RULES, w3bsFromSearch } from './w3bs.js';
 
 // Web Push through TronBrowser's configured push service (the engine has none).
 installPush();
@@ -9,9 +9,27 @@ installPush();
 // A w3bs:// URI typed in the address bar becomes a web search. w3bs-rules.json
 // redirects that search before it loads, but not when the omnibox serves it
 // from its search prefetch, so catch whatever a tab lands on as well.
-chrome.tabs.onUpdated.addListener((tabId, change) => {
-  const target = change.url && w3bsFromSearch(change.url);
+chrome.tabs.onUpdated.addListener(async (tabId, change) => {
+  if (!change.url || !/w3bs/i.test(change.url)) return;
+  const { pitEnabled } = await chrome.storage.local.get('pitEnabled');
+  const target = w3bsFromSearch(change.url, { pit: !!pitEnabled });
   if (target) chrome.tabs.update(tabId, { url: target }).catch(() => {});
+});
+
+// With Pit on, w3bs://chovy.hacker opens chovy.hacker itself instead of its
+// pit.world gateway. Session rules, kept in step with the toggle.
+async function syncW3bsPitRules() {
+  const { pitEnabled } = await chrome.storage.local.get('pitEnabled');
+  await chrome.declarativeNetRequest.updateSessionRules({
+    removeRuleIds: PIT_DIRECT_RULES.map((rule) => rule.id),
+    addRules: pitEnabled ? PIT_DIRECT_RULES : [],
+  });
+}
+syncW3bsPitRules().catch((err) => console.warn('w3bs pit rules:', err));
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === 'local' && 'pitEnabled' in changes) {
+    syncW3bsPitRules().catch((err) => console.warn('w3bs pit rules:', err));
+  }
 });
 
 // Open the AI side panel when the toolbar action is clicked.
