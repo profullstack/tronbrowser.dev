@@ -1,9 +1,18 @@
 import { decideInstallTarget, lookupInstalled } from './install-state.js';
 import { PIT_SOCKS_PORT, pitProxyConfig } from './pit-proxy.js';
 import { installPush } from './push-client.js';
+import { w3bsFromSearch } from './w3bs.js';
 
 // Web Push through TronBrowser's configured push service (the engine has none).
 installPush();
+
+// A w3bs:// URI typed in the address bar becomes a web search. w3bs-rules.json
+// redirects that search before it loads, but not when the omnibox serves it
+// from its search prefetch, so catch whatever a tab lands on as well.
+chrome.tabs.onUpdated.addListener((tabId, change) => {
+  const target = change.url && w3bsFromSearch(change.url);
+  if (target) chrome.tabs.update(tabId, { url: target }).catch(() => {});
+});
 
 // Open the AI side panel when the toolbar action is clicked.
 chrome.sidePanel
