@@ -1,6 +1,6 @@
 # FreeBSD port — www/tronbrowser. Consumes the GitHub release tarball.
 PORTNAME=	tronbrowser
-DISTVERSION=	3.19.2
+DISTVERSION=	3.19.4
 CATEGORIES=	www
 
 MASTER_SITES=	https://github.com/profullstack/tronbrowser.dev/releases/download/v${DISTVERSION}/
