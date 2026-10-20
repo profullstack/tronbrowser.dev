@@ -7,4 +7,4 @@ Exec=tron %u
 Icon=tronbrowser
 Terminal=false
 Categories=Network;WebBrowser;
-MimeType=text/html;x-scheme-handler/http;x-scheme-handler/https;
+MimeType=text/html;x-scheme-handler/http;x-scheme-handler/https;x-scheme-handler/w3bs;

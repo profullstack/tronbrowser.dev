@@ -4,6 +4,7 @@ import { fetchQuotes, fetchAllScores } from './markets.js';
 import { fetchMotd } from './motd.js';
 import { getToken as btrToken, BTR_BASE } from './bittorrented.js';
 import { fetchWithTimeout, storageGet } from './net.js';
+import { w3bsUrl } from './w3bs.js';
 
 const el = (id) => document.getElementById(id);
 
@@ -93,6 +94,12 @@ el('search').addEventListener('submit', async (e) => {
   e.preventDefault();
   const q = el('q').value.trim();
   if (!q) return;
+  // A W3BS URI is an address, not a question, in either mode.
+  const w3bs = w3bsUrl(q);
+  if (w3bs) {
+    location.href = w3bs;
+    return;
+  }
   if (searchMode === 'ai') {
     // Hand the question to the AI sidebar (privacy-first; uses your provider/key).
     await chrome.storage.local.set({ pendingAiQuery: { text: q, at: Date.now() } });
