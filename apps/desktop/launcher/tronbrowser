@@ -38,6 +38,23 @@ while [ "$_i" -lt "$_argc" ]; do
   set -- "$@" "$_a"
 done
 
+# --- w3bs:// URIs ---------------------------------------------------------
+# Chromium has no handler for w3bs://, so a W3BS URI handed to us (`tron
+# w3bs://prompt/w3bs/research@1`, or the desktop entry's x-scheme-handler/w3bs)
+# opens through the w3bs.org resolver page instead. Override the gateway with
+# TRONBROWSER_W3BS_GATEWAY; the URI is appended percent-encoded.
+W3BS_GATEWAY="${TRONBROWSER_W3BS_GATEWAY:-https://w3bs.org/browse?q=}"
+_argc=$#
+_i=0
+while [ "$_i" -lt "$_argc" ]; do
+  _a="$1"; shift; _i=$((_i + 1))
+  case "$_a" in
+    w3bs:*|W3BS:*)
+      _a="$W3BS_GATEWAY$(printf '%s' "$_a" | od -An -v -tx1 | tr -d ' \n' | sed 's/\(..\)/%\1/g')" ;;
+  esac
+  set -- "$@" "$_a"
+done
+
 BROWSER=""        # a binary path, or "flatpak"
 FLATPAK_APP=""
 IS_SNAP=0

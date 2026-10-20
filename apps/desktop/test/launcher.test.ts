@@ -115,6 +115,24 @@ describe('launcher flags', () => {
     expect(argv).toContain('https://tronbrowser.dev');
     expect(argv).toContain('--incognito');
   });
+
+  it('opens a w3bs:// URI through the w3bs.org resolver', () => {
+    const { argv } = run(['w3bs://prompt/w3bs/research@1', 'https://tronbrowser.dev']);
+    const opened = argv.filter((a) => !a.startsWith('--'));
+    expect(opened).toHaveLength(2);
+    const url = new URL(opened[0]!);
+    expect(url.origin + url.pathname).toBe('https://w3bs.org/browse');
+    expect(url.searchParams.get('q')).toBe('w3bs://prompt/w3bs/research@1');
+    expect(opened[1]).toBe('https://tronbrowser.dev');
+  });
+
+  it('honours TRONBROWSER_W3BS_GATEWAY', () => {
+    const { argv } = run(['w3bs://prompt/w3bs/research'], {
+      env: { TRONBROWSER_W3BS_GATEWAY: 'http://127.0.0.1:8080/browse?q=' },
+    });
+    const url = new URL(argv.find((a) => a.startsWith('http://127.0.0.1:8080/'))!);
+    expect(url.searchParams.get('q')).toBe('w3bs://prompt/w3bs/research');
+  });
 });
 
 // --- Omnibox search engine ---------------------------------------------------

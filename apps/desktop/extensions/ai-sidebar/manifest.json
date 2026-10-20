@@ -67,6 +67,18 @@
     },
     {
       "matches": [
+        "https://*/*",
+        "http://localhost/*",
+        "http://127.0.0.1/*"
+      ],
+      "js": [
+        "w3bs-links.js"
+      ],
+      "run_at": "document_start",
+      "all_frames": true
+    },
+    {
+      "matches": [
         "https://chromewebstore.google.com/detail/*",
         "https://chrome.google.com/webstore/detail/*"
       ],

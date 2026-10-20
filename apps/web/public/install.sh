@@ -1182,11 +1182,19 @@ Exec=$TRON_CLI %U
 Icon=$icon
 Terminal=false
 Categories=Network;WebBrowser;
-MimeType=text/html;x-scheme-handler/http;x-scheme-handler/https;
+MimeType=text/html;x-scheme-handler/http;x-scheme-handler/https;x-scheme-handler/w3bs;
 StartupWMClass=TronBrowser
 StartupNotify=true
 DESKTOP
   command -v update-desktop-database >/dev/null 2>&1 && update-desktop-database "$apps_dir" 2>/dev/null || true
+  # Open w3bs:// links through TronBrowser (the launcher hands them to the
+  # w3bs.org resolver), unless the user already picked another handler.
+  if command -v xdg-mime >/dev/null 2>&1; then
+    _w3bs="$(xdg-mime query default x-scheme-handler/w3bs 2>/dev/null || true)"
+    if [ -z "$_w3bs" ] || [ "$_w3bs" = "tronbrowser.desktop" ]; then
+      xdg-mime default tronbrowser.desktop x-scheme-handler/w3bs 2>/dev/null || true
+    fi
+  fi
 
   ensure_engine   || true  # TronBrowser's own engine; ensure_browser is the fallback
   ensure_browser
