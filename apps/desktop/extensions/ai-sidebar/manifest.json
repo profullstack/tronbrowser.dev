@@ -20,7 +20,8 @@
     "privacy",
     "notifications",
     "alarms",
-    "contentSettings"
+    "contentSettings",
+    "declarativeNetRequestWithHostAccess"
   ],
   "host_permissions": [
     "https://api.openai.com/*",
@@ -105,6 +106,15 @@
       "48": "icons/icon-48.png",
       "128": "icons/icon-128.png"
     }
+  },
+  "declarative_net_request": {
+    "rule_resources": [
+      {
+        "id": "w3bs",
+        "enabled": true,
+        "path": "w3bs-rules.json"
+      }
+    ]
   },
   "side_panel": {
     "default_path": "sidepanel.html"
