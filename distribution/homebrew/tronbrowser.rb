@@ -4,17 +4,17 @@
 class Tronbrowser < Formula
   desc "Open-source, privacy-first, AI-native browser (Ungoogled Chromium fork)"
   homepage "https://tronbrowser.dev"
-  version "3.17.1"
+  version "3.19.0"
   license "MIT"
 
   on_macos do
-    url "https://github.com/profullstack/tronbrowser.dev/releases/download/v3.17.1/tronbrowser-macos.zip"
+    url "https://github.com/profullstack/tronbrowser.dev/releases/download/v3.19.0/tronbrowser-macos.zip"
     sha256 "4f928b90b83a34d90edf6f3b4f522c47b85090046424ce69cc535a0cb85d77d1"
   end
 
   on_linux do
-    url "https://github.com/profullstack/tronbrowser.dev/releases/download/v3.17.1/tronbrowser-linux-x64.tar.gz"
-    sha256 "2027b225903395acf9b2381c62e319933a4b8b662b9b188aca6fec44ed4d7d84"
+    url "https://github.com/profullstack/tronbrowser.dev/releases/download/v3.19.0/tronbrowser-linux-x64.tar.gz"
+    sha256 "6df12461bee673a70961a3d5cacb01e84a573bb2dd2d1c46296ff7d33e80945b"
   end
 
   def install
