@@ -1,0 +1,16 @@
+[
+  {
+    "id": 1,
+    "priority": 1,
+    "action": {
+      "type": "redirect",
+      "redirect": { "regexSubstitution": "https://w3bs.org/browse?q=\\1" }
+    },
+    "condition": {
+      "regexFilter": "^https://[^/]+/[^?#]*\\?(?:[^#]*&)?q=(w3bs%3A%2F%2F[^&#]*).*$",
+      "isUrlFilterCaseSensitive": false,
+      "resourceTypes": ["main_frame"],
+      "excludedRequestDomains": ["w3bs.org"]
+    }
+  }
+]
