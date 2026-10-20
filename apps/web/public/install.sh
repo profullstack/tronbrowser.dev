@@ -51,8 +51,23 @@ fetch() { # url dest
 }
 
 latest_tag() {
-  fetch "https://api.github.com/repos/$REPO/releases/latest" /tmp/tb_rel.json
-  sed -n 's/.*"tag_name":[[:space:]]*"\([^"]*\)".*/\1/p' /tmp/tb_rel.json | head -n1
+  # The API allows 60 unauthenticated requests an hour per IP and answers 403
+  # past that, which a shared or busy address reaches easily. The web page's
+  # releases/latest redirect is not rate-limited that way, so fall back to
+  # reading the tag from where it lands.
+  _tag=""
+  if fetch "https://api.github.com/repos/$REPO/releases/latest" /tmp/tb_rel.json 2>/dev/null; then
+    _tag="$(sed -n 's/.*"tag_name":[[:space:]]*"\([^"]*\)".*/\1/p' /tmp/tb_rel.json | head -n1)"
+  fi
+  if [ -z "$_tag" ]; then
+    _page="https://github.com/$REPO/releases/latest"
+    if command -v curl >/dev/null 2>&1; then
+      _tag="$(curl -fsSIL -o /dev/null -w '%{url_effective}' "$_page" 2>/dev/null | sed -n 's#.*/releases/tag/##p')"
+    elif command -v wget >/dev/null 2>&1; then
+      _tag="$(wget -S --spider --max-redirect=0 "$_page" 2>&1 | sed -n 's#^ *Location: .*/releases/tag/\([^[:space:]]*\).*#\1#p' | head -n1)"
+    fi
+  fi
+  printf '%s\n' "$_tag"
 }
 
 # Writes the `tron` management CLI to $PREFIX/bin/tron.
