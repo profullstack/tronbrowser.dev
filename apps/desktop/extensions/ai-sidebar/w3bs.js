@@ -8,3 +8,22 @@ export function w3bsUrl(input) {
   const uri = String(input ?? '').trim();
   return /^w3bs:/i.test(uri) ? W3BS_GATEWAY + encodeURIComponent(uri) : null;
 }
+
+/**
+ * The resolver URL for a search results page whose query is a W3BS URI, or
+ * null. Chromium searches a typed w3bs://chovy.hacker instead of opening it,
+ * and when the omnibox serves that search from its prefetch the
+ * declarativeNetRequest rule in w3bs-rules.json never sees a request, so the
+ * background worker also checks every URL a tab lands on.
+ */
+export function w3bsFromSearch(href) {
+  let url;
+  try {
+    url = new URL(href);
+  } catch {
+    return null;
+  }
+  if (url.protocol !== 'https:' || url.hostname === 'w3bs.org') return null;
+  const q = url.searchParams.get('q');
+  return q ? w3bsUrl(q) : null;
+}
