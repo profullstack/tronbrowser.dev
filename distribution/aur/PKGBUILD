@@ -1,7 +1,7 @@
 # Maintainer: Profullstack, Inc. <security@profullstack.com>
 # AUR binary package — consumes the GitHub release tarball.
 pkgname=tronbrowser-bin
-pkgver=3.18.0
+pkgver=3.19.2
 pkgrel=1
 pkgdesc="Open-source, privacy-first, AI-native browser (Ungoogled Chromium fork)"
 arch=('x86_64')
@@ -11,7 +11,7 @@ depends=('chromium')
 provides=('tronbrowser')
 conflicts=('tronbrowser')
 source=("tronbrowser-${pkgver}.tar.gz::https://github.com/profullstack/tronbrowser.dev/releases/download/v${pkgver}/tronbrowser-linux-x64.tar.gz")
-sha256sums=('70723e1405f56342e82532846d9533bed77c0249b35a6a5d3c0147948fa30d22')
+sha256sums=('7cab61ded58efda9b3b10b45ccb9b5e6d76cd4d23fbf7577b34164580ab1d781')
 
 package() {
   install -dm755 "${pkgdir}/usr/lib/tronbrowser"
