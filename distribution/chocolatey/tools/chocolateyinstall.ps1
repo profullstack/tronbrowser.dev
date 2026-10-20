@@ -4,8 +4,8 @@ $toolsDir = "$(Split-Path -parent $MyInvocation.MyCommand.Definition)"
 $packageArgs = @{
   packageName    = 'tronbrowser'
   unzipLocation  = $toolsDir
-  url64bit       = 'https://github.com/profullstack/tronbrowser.dev/releases/download/v3.19.2/tronbrowser-win-x64.zip'
-  checksum64     = '79d16c29e59701d41d18fe9079cee77dfecca815ed72456e24f07fa84b5a0fc4'
+  url64bit       = 'https://github.com/profullstack/tronbrowser.dev/releases/download/v3.19.4/tronbrowser-win-x64.zip'
+  checksum64     = '4d00b55abdd8cd166e16311e8ab8f71c18c2ef660cd7cfd07165901dae775888'
   checksumType64 = 'sha256'
 }
 Install-ChocolateyZipPackage @packageArgs
