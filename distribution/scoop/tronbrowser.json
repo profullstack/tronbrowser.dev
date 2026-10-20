@@ -1,12 +1,12 @@
 {
-  "version": "3.18.0",
+  "version": "3.19.2",
   "description": "Open-source, privacy-first, AI-native browser (Ungoogled Chromium fork).",
   "homepage": "https://tronbrowser.dev",
   "license": "MIT",
   "architecture": {
     "64bit": {
-      "url": "https://github.com/profullstack/tronbrowser.dev/releases/download/v3.18.0/tronbrowser-win-x64.zip",
-      "hash": "3c55d427ded61cfa955d19ce6d6fe7616000a041da6dcbcab21c29094f7d1a65"
+      "url": "https://github.com/profullstack/tronbrowser.dev/releases/download/v3.19.2/tronbrowser-win-x64.zip",
+      "hash": "79d16c29e59701d41d18fe9079cee77dfecca815ed72456e24f07fa84b5a0fc4"
     }
   },
   "bin": [["tronbrowser/tronbrowser.cmd", "tron"], ["tronbrowser/tronbrowser.cmd", "tronbrowser"]],
@@ -14,7 +14,7 @@
   "autoupdate": {
     "architecture": {
       "64bit": {
-        "url": "https://github.com/profullstack/tronbrowser.dev/releases/download/v3.18.0/tronbrowser-win-x64.zip"
+        "url": "https://github.com/profullstack/tronbrowser.dev/releases/download/v3.19.2/tronbrowser-win-x64.zip"
       }
     }
   }
