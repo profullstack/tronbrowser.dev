@@ -18,6 +18,7 @@ import { safeRedirect } from './redirect.js';
 import { extLoginTarget } from './ext-login.js';
 import { assertDatabaseUrl, db } from './db.js';
 import { pushService } from './push/routes.js';
+import { createCrawlGate, crawlCheck } from './crawl-gate.js';
 
 // Fail fast: a missing or non-Postgres DATABASE_URL is a deploy error, not a
 // condition to limp along under (there is no file-database fallback).
@@ -58,6 +59,12 @@ async function startSession(c: any, userId: string, redirect?: string) {
 }
 
 app.get('/api/healthz', (c) => c.json({ ok: true }));
+
+/* ---------- x402 crawl gateway: /crawl sales page + Caddy forward_auth check ---------- */
+const crawlGate = createCrawlGate();
+app.all('/api/crawl-gate', (c) => crawlCheck(crawlGate, c.req.raw, APP_URL));
+app.all('/crawl', async (c) => (crawlGate && (await crawlGate.handle(c.req.raw))) || c.notFound());
+app.all('/crawl/*', async (c) => (crawlGate && (await crawlGate.handle(c.req.raw))) || c.notFound());
 
 /* ---------- Web Push service: tronbrowser.dev/api/1/push ---------- */
 // ungoogled-chromium has no push service; the bundled extension registers

@@ -303,6 +303,9 @@ importers:
       '@profullstack/libsql-pg':
         specifier: ^0.1.1
         version: 0.1.1(@libsql/client@0.14.0)
+      '@profullstack/x402-gateway':
+        specifier: ^0.11.0
+        version: 0.11.0
       '@tronbrowser/sdk':
         specifier: workspace:*
         version: link:../../packages/sdk
@@ -1264,6 +1267,10 @@ packages:
   '@profullstack/emailer@1.0.1':
     resolution: {integrity: sha512-/uhHJJGH+1xSSz3mJn6X+m6aruYjMD3JOaRp/d4R/YWlzpy07H9z0/JUleIyRyBPNmaANSIwjTZ7aVjaukOEpg==}
 
+  '@profullstack/keys@0.1.0':
+    resolution: {integrity: sha512-Vys47LvS5ivhdZu4SYOxh9Le3DEmWhjP0+CtrU45RhXAbY0ZFG/2Dk9V1bIIUGDp8UWMJqctvUD21JrNjfh04w==}
+    engines: {node: '>=20.11'}
+
   '@profullstack/libsql-pg@0.1.1':
     resolution: {integrity: sha512-KD4+bCDM31hwheWYxOyn6zxRw1hTqhEqAl/LXfgoQNbZ88ODbDNJViDtxPWCCv7IPgXAMWsh2kbkrjRiT7Sn1Q==}
     engines: {node: '>=20'}
@@ -1301,6 +1308,10 @@ packages:
         optional: true
       react:
         optional: true
+
+  '@profullstack/x402-gateway@0.11.0':
+    resolution: {integrity: sha512-Lfrz+SRTwQZfcoCaVtaaMNPJx74Lp/5oyS7vJJAEuJmH1TjBzhE7dWquISkj1p42oc+VW5I9xH9p7YhEKqmr4Q==}
+    engines: {node: '>=20.11'}
 
   '@react-native/assets-registry@0.86.2':
     resolution: {integrity: sha512-vcX/mBjWAVnWofu7KecotquI2unZ/tITwA7OGdq/mdY/zmGXIEvYhfEYyOQij/LRqi9WAL+iizInTBWnxDhK/Q==}
@@ -5023,6 +5034,8 @@ snapshots:
 
   '@profullstack/emailer@1.0.1': {}
 
+  '@profullstack/keys@0.1.0': {}
+
   '@profullstack/libsql-pg@0.1.1(@libsql/client@0.14.0)':
     dependencies:
       pg: 8.23.0
@@ -5043,6 +5056,10 @@ snapshots:
       '@profullstack/referrals': 0.1.0(react@19.2.7)
     optionalDependencies:
       react: 19.2.7
+
+  '@profullstack/x402-gateway@0.11.0':
+    dependencies:
+      '@profullstack/keys': 0.1.0
 
   '@react-native/assets-registry@0.86.2': {}
 
