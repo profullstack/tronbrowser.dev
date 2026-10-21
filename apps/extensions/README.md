@@ -41,7 +41,7 @@ one-click off-store install.
 1. `POST /api/store/extensions` — create a draft (auth required).
 2. `POST /api/store/extensions/:id/versions` — submit the MV3 manifest + bundle
    URL(s). Rejected unless it's valid Manifest V3.
-3. `POST /api/store/extensions/:id/checkout` — pay the $1 fee on a
+3. `POST /api/store/extensions/:id/checkout`: pay the $1 fee on a
    **CoinPay** hosted checkout (any supported coin, or PayPal).
 4. On payment the listing flips to **live**, is mirrored to the git registry,
    and a **vu1nz.com** security scan runs asynchronously (badge on the listing).

@@ -28,7 +28,7 @@ exactly as Chromium expects.
 
 - `extensions` — listing (slug, owner, status `draft|live|removed`)
 - `extension_versions` — per-version MV3 manifest + bundle/CRX URLs (`manifest_version` enforced = 3 at the app layer)
-- `extension_payments` — the $1 fee; `coinpay` (older rows may say `stripe`/`x402`); `pending|paid|failed`
+- `extension_payments`: the $1 fee; `coinpay` (older rows may say `stripe`/`x402`); `pending|paid|failed`
 - `extension_scans` — async vu1nz results; non-gating badge
 - `extension_flags` — community flagging
 
