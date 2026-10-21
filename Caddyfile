@@ -17,6 +17,20 @@
 	@api path /api/* /api
 	reverse_proxy @api localhost:8090
 
+	# x402 crawl gateway (services/api/src/crawl-gate.ts). /crawl is the day-pass
+	# sales page and checkout, answered by the API. Every other page read is
+	# checked there first: AI training crawlers get the 402 offer, everyone else
+	# (people, search crawlers, AI chat fetchers) gets the page.
+	@crawl path /crawl /crawl/*
+	reverse_proxy @crawl localhost:8090
+	@pages {
+		method GET HEAD
+		not path /api/* /api /mcp/* /mcp /crawl /crawl/*
+	}
+	forward_auth @pages localhost:8090 {
+		uri /api/crawl-gate
+	}
+
 	# OpenMCP relay (tronbrowser.dev/mcp/tron): same API process. Its descriptor
 	# is the static /.well-known/openmcp.json below, which is what makes the
 	# listing "verified" on a catalog (served from this origin, not registered).
@@ -34,9 +48,13 @@
 		X-Frame-Options "DENY"
 		Referrer-Policy "strict-origin-when-cross-origin"
 		Permissions-Policy "camera=(), microphone=(), geolocation=(), browsing-topics=()"
-		Content-Security-Policy "default-src 'self'; script-src 'self' https://crawlproof.com https://cdn.jsdelivr.net; connect-src 'self' https://crawlproof.com https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; frame-src 'self' https://crawlproof.com; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
 		-Server
 	}
+
+	# The crawl pass pages get no CSP: their Buy button posts to /crawl/checkout,
+	# which redirects to coinpayportal.com, and form-action 'self' would block it.
+	@notcrawl not path /crawl /crawl/*
+	header @notcrawl Content-Security-Policy "default-src 'self'; script-src 'self' https://crawlproof.com https://cdn.jsdelivr.net; connect-src 'self' https://crawlproof.com https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; frame-src 'self' https://crawlproof.com; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
 
 	# Correct content types for machine-readable files.
 	@plain path /robots.txt /llms.txt /llms-full.txt /.well-known/security.txt
