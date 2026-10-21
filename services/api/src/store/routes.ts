@@ -1,7 +1,7 @@
 // Extension store routes, mounted at /api/store by services/api/src/index.ts.
 //
-// Flow: create draft -> submit MV3 version (upload or PR) -> pay $1 (Stripe or
-// CoinPay/x402) -> listing goes LIVE instantly + git mirror + async vu1nz scan.
+// Flow: create draft -> submit MV3 version (upload or PR) -> pay $1 (CoinPay
+// hosted checkout: any coin or PayPal) -> listing goes LIVE instantly + git mirror + async vu1nz scan.
 // Chromium install/auto-update keeps working via /api/store/updates.xml.
 import { Hono } from 'hono';
 import { getCookie } from 'hono/cookie';
@@ -9,7 +9,7 @@ import { userBySession, type User } from '../db.js';
 import {
   createExtension, extensionById, extensionBySlug, slugTaken, listLiveExtensions,
   setExtensionStatus, addVersion, latestVersion, createPayment, setPaymentRef,
-  markPaidByRef, hasPaidListing, latestScan, addFlag, openFlagCount,
+  markPaidByRef, markPaidById, hasPaidListing, latestScan, addFlag, openFlagCount,
   publisherKey, handleTaken, upsertPublisherKey,
   createPublisherToken, userByPublisherToken, listPublisherTokens, revokePublisherToken,
   updateExtension, signingKeyFor, insertSigningKey,
@@ -18,10 +18,7 @@ import { validateManifest, slugify } from './manifest.js';
 import {
   provisionPublisher, generateKeypair, publicUrlFor, scpCommand, artifactExists, SCP_TARGET,
 } from './fileshost.js';
-import {
-  createStripeCheckout, verifyStripeWebhook, listingPaymentRequirements,
-  confirmCoinPaySettlement, LISTING_FEE_CENTS,
-} from './payments.js';
+import { createListingCheckout, listingSessionPaid, readListingWebhook } from './payments.js';
 import { enqueueScan } from './vu1nz.js';
 import { mirrorListing } from './mirror.js';
 import { fetchArtifact, artifactToZip, extractListingFromCrx, stampUpdateUrl } from './crx.js';
@@ -516,65 +513,63 @@ store.post('/extensions/:id/checkout', async (c) => {
   if (!(await latestVersion(ext.id))) return c.json({ error: 'submit a version before paying' }, 400);
   if (await hasPaidListing(ext.id)) return c.json({ error: 'already paid', alreadyLive: true }, 409);
 
-  const method = (await c.req.json().catch(() => ({}))).method || 'stripe';
+  // A `method` field is tolerated and ignored: there is one rail (CoinPay's hosted
+  // checkout, where the buyer picks any coin or PayPal), so it is ignored.
+  await c.req.json().catch(() => ({}));
 
-  if (method === 'stripe') {
-    const paymentId = await createPayment({ extensionId: ext.id, userId: user.id, method: 'stripe' });
-    try {
-      const session = await createStripeCheckout({
-        extensionId: ext.id,
-        paymentId,
-        successUrl: `${APP_URL}/store/extension.html?slug=${ext.slug}&paid=1`,
-        cancelUrl: `${APP_URL}/store/submit.html?ext=${ext.id}&canceled=1`,
-      });
-      await setPaymentRef(paymentId, session.id);
-      return c.json({ method: 'stripe', checkoutUrl: session.url });
-    } catch (e: any) {
-      return c.json({ error: e.message }, 502);
-    }
+  const paymentId = await createPayment({ extensionId: ext.id, userId: user.id, method: 'coinpay' });
+  try {
+    const slug = encodeURIComponent(ext.slug);
+    const session = await createListingCheckout({
+      extensionId: ext.id,
+      paymentId,
+      slug: ext.slug,
+      userId: user.id,
+      // CoinPay requires an email; wallet-only accounts get a stable per-user address.
+      email: user.email || `${user.id}@users.tronbrowser.dev`,
+      successUrl: `${APP_URL}/store/extension.html?slug=${slug}&paid=1`,
+      cancelUrl: `${APP_URL}/store/extension.html?slug=${slug}&canceled=1`,
+    });
+    await setPaymentRef(paymentId, session.id);
+    return c.json({ method: 'coinpay', paymentId, sessionId: session.id, checkoutUrl: session.url });
+  } catch (e: any) {
+    return c.json({ error: e.message }, 502);
   }
-
-  if (method === 'coinpay' || method === 'x402') {
-    const resource = `${APP_URL}/api/store/extensions/${ext.id}/checkout`;
-    const reqs = listingPaymentRequirements(resource);
-    // Record a pending payment the client confirms via /confirm.
-    const paymentId = await createPayment({ extensionId: ext.id, userId: user.id, method: 'x402' });
-    return c.json({ method: 'x402', paymentId, amountCents: LISTING_FEE_CENTS, ...reqs }, 402);
-  }
-
-  return c.json({ error: 'unknown payment method' }, 400);
 });
 
-/* ---------- CoinPay/x402 settlement confirm ---------- */
+/* ---------- reconcile a checkout session (optional; the webhook is primary) ---------- */
 store.post('/extensions/:id/confirm', async (c) => {
   const user = await currentUser(c);
   if (!user) return c.json({ error: 'unauthorized' }, 401);
   const ext = await extensionById(c.req.param('id'));
   if (!ext) return c.json({ error: 'not found' }, 404);
   if (ext.owner_user_id !== user.id) return c.json({ error: 'forbidden' }, 403);
+  if (await hasPaidListing(ext.id)) return c.json({ ok: true, live: true });
 
-  const { paymentId, reference } = await c.req.json().catch(() => ({}));
-  if (!paymentId || !reference) return c.json({ error: 'paymentId and reference required' }, 400);
-  if (!(await confirmCoinPaySettlement(reference))) return c.json({ error: 'settlement not verified' }, 402);
+  const { sessionId, reference } = await c.req.json().catch(() => ({}));
+  const ref = sessionId || reference;
+  if (!ref) return c.json({ error: 'sessionId required' }, 400);
+  if (!(await listingSessionPaid(ref))) return c.json({ error: 'payment not received yet' }, 402);
 
-  await setPaymentRef(paymentId, reference);
-  const extId = await markPaidByRef(reference);
+  // Only a session we created for this extension can settle it.
+  const extId = await markPaidByRef(ref);
+  if (extId && extId !== ext.id) return c.json({ error: 'session belongs to another listing' }, 409);
   if (extId) await publish(extId);
-  return c.json({ ok: true, live: true });
+  return c.json({ ok: true, live: await hasPaidListing(ext.id) });
 });
 
-/* ---------- Stripe webhook (raw body) ---------- */
-store.post('/payments/stripe/webhook', async (c) => {
+/* ---------- CoinPay webhook (signature over the raw body) ---------- */
+store.post('/payments/coinpay/webhook', async (c) => {
   const raw = await c.req.text();
-  const event = verifyStripeWebhook(raw, c.req.header('stripe-signature'));
-  if (!event) return c.json({ error: 'invalid signature' }, 400);
+  const ev = readListingWebhook(raw, c.req.header('x-coinpay-signature'));
+  if (!ev) return c.json({ error: 'invalid signature' }, 401);
 
-  if (event.type === 'checkout.session.completed') {
-    const sessionId = event.data?.object?.id;
-    if (sessionId) {
-      const extId = await markPaidByRef(sessionId);
-      if (extId) await publish(extId);
-    }
+  if (ev.paid && ev.sessionId) {
+    // confirmed and forwarded can both arrive for one session: markPaid* only
+    // flips a pending row, so the second event is a no-op.
+    let extId = await markPaidByRef(ev.sessionId);
+    if (!extId && ev.localPaymentId) extId = await markPaidById(ev.localPaymentId, ev.sessionId);
+    if (extId) await publish(extId);
   }
   return c.json({ received: true });
 });
