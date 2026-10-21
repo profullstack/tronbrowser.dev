@@ -184,16 +184,6 @@
   </header>
 
   <main>
-    <!-- CrawlProof ad: one script-free cross-origin frame (/api/ads/frame), not ad.js.
-         ad.js fills a srcdoc frame that inherits this page's CSP, and img-src 'self' would
-         blank the creative. text_link is the fluid format (40px at any width), so one unit
-         fits every viewport; it carries its own "Sponsored" mark. CSP cost: frame-src. -->
-    <aside class="cp-ad" aria-label="Advertisement" style="max-width:72rem;margin:0 auto 2rem;padding:0 1rem">
-      <iframe src="https://crawlproof.com/api/ads/frame?slot=42d8cb56-9003-4a80-ab9b-17704a86714c&amp;format=text_link"
-        title="Advertisement" height="40" loading="lazy" scrolling="no"
-        style="display:block;width:100%;height:40px;border:0"
-        sandbox="allow-popups allow-popups-to-escape-sandbox allow-top-navigation-by-user-activation"></iframe>
-    </aside>
     <p class="lede">
       TronBrowser is an open-source, privacy-first, AI-native web browser built on
       <strong>Ungoogled Chromium</strong>. No telemetry, no ads, no sponsored tabs —
