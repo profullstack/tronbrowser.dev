@@ -243,7 +243,7 @@ export async function latestVersion(extensionId: string): Promise<ExtensionVersi
 export async function createPayment(p: {
   extensionId: string;
   userId: string;
-  method: 'stripe' | 'coinpay' | 'x402';
+  method: 'coinpay';
   amountCents?: number;
   currency?: string;
   providerRef?: string | null;
@@ -266,6 +266,20 @@ export async function markPaidByRef(providerRef: string): Promise<string | null>
     sql: `UPDATE extension_payments SET status = 'paid', paid_at = datetime('now')
           WHERE provider_ref = ? AND status != 'paid' RETURNING extension_id`,
     args: [providerRef],
+  });
+  return (r.rows[0]?.extension_id as string) ?? null;
+}
+
+/**
+ * Fallback for a webhook whose session id never made it into provider_ref: mark
+ * our row (from the session metadata) paid, but only if it is unpaid and either
+ * has no ref yet or already carries this session. Idempotent.
+ */
+export async function markPaidById(id: string, providerRef: string): Promise<string | null> {
+  const r = await db().execute({
+    sql: `UPDATE extension_payments SET status = 'paid', paid_at = datetime('now'), provider_ref = ?
+          WHERE id = ? AND status != 'paid' AND (provider_ref IS NULL OR provider_ref = ?) RETURNING extension_id`,
+    args: [providerRef, id, providerRef],
   });
   return (r.rows[0]?.extension_id as string) ?? null;
 }

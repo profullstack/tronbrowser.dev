@@ -301,6 +301,7 @@ async function initDetail() {
   const root = document.getElementById('detail');
   if (!slug) { root.innerHTML = '<p class="error">No extension specified.</p>'; return; }
   if (qs('paid')) document.getElementById('paidNote')?.classList.remove('hidden');
+  if (qs('canceled')) document.getElementById('canceledNote')?.classList.remove('hidden');
   try {
     await renderDetail(slug, root);
   } catch (e) {
@@ -334,6 +335,7 @@ async function renderDetail(slug, root) {
         <a class="btn" id="installBtn" href="${esc(dl)}">⬇ Install / Download</a>
         <a class="btn secondary" href="/store/install-guide.html">How to install</a>
         <button class="btn ghost" id="flagBtn">⚑ Report</button>
+        ${ext.isOwner && ext.status !== 'live' ? '<button class="btn" id="payBtn">Pay $1 to list</button>' : ''}
         ${ext.isOwner ? '<button class="btn secondary" id="editBtn">✎ Edit listing</button>' : ''}
         ${ext.isOwner ? '<button class="btn ghost" id="rescanBtn">🛡 Re-scan</button>' : ''}
         ${ext.isOwner && !ext.crxId ? '<button class="btn ghost" id="keyBtn">🔑 Generate signing key</button>' : ''}
@@ -391,6 +393,14 @@ async function renderDetail(slug, root) {
 
     // Scans are recorded at publish time, so a listing published before its
     // bundle could be scanned needs one re-run to earn a badge.
+    document.getElementById('payBtn')?.addEventListener('click', async (e) => {
+      const btn = e.currentTarget;
+      btn.disabled = true;
+      const pay = await startListingCheckout(ext.id);
+      if (pay.checkoutUrl) { location.href = pay.checkoutUrl; return; }
+      btn.disabled = false;
+      await uiConfirm('Payment', pay.alreadyLive ? 'This listing is already paid.' : `Payment could not be started: ${pay.error || 'unknown'}`, { confirmLabel: 'OK' });
+    });
     document.getElementById('rescanBtn')?.addEventListener('click', async (e) => {
       const btn = e.currentTarget;
       btn.disabled = true;
@@ -479,7 +489,6 @@ async function initSubmit() {
     let manifest;
     try { manifest = JSON.parse(fd.get('manifest')); }
     catch { out.innerHTML = '<p class="error">manifest.json is not valid JSON.</p>'; return; }
-    const method = fd.get('method');
     const files = {};
     if (fd.get('crxFile')) files.crx = fd.get('crxFile').trim();
     if (fd.get('zipFile')) files.zip = fd.get('zipFile').trim();
@@ -497,10 +506,10 @@ async function initSubmit() {
         out.innerHTML = `<p class="success">Draft created: <b>${esc(draft.slug)}</b>. Upload your bundle, then finish:</p>
           <pre>scp ${esc(files.crx || files.zip)} ${esc(SCP_TARGET)}:/public/extensions/${esc(draft.slug)}/</pre>
           <button class="btn" id="finishBtn">I've uploaded — validate &amp; pay $1 →</button>`;
-        document.getElementById('finishBtn').addEventListener('click', () => finishPublish(draft, manifest, method, files, urls, out));
+        document.getElementById('finishBtn').addEventListener('click', () => finishPublish(draft, manifest, files, urls, out));
         return;
       }
-      await finishPublish(draft, manifest, method, files, urls, out);
+      await finishPublish(draft, manifest, files, urls, out);
     } catch (err) {
       const extra = err.data?.errors ? '<br>• ' + err.data.errors.map(esc).join('<br>• ') : '';
       out.innerHTML = `<p class="error">${esc(err.message)}${extra}</p>`;
@@ -509,7 +518,7 @@ async function initSubmit() {
 }
 
 // Submit the MV3 version (HEAD-checks uploaded files) then start payment.
-async function finishPublish(draft, manifest, method, files, urls, out) {
+async function finishPublish(draft, manifest, files, urls, out) {
   try {
     out.innerHTML = '<p class="muted">Validating…</p>';
     const ver = await api(`/extensions/${draft.id}/versions`, {
@@ -522,28 +531,21 @@ async function finishPublish(draft, manifest, method, files, urls, out) {
     });
     const warn = (ver.warnings || []).length ? `<p class="hint">⚠ ${ver.warnings.map(esc).join('<br>⚠ ')}</p>` : '';
     out.innerHTML = `<p class="success">Validated MV3 ✓ (v${esc(ver.version)}). Starting payment…</p>${warn}`;
-    const pay = await api(`/extensions/${draft.id}/checkout`, {
-      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ method }),
-    }).catch((err) => err.data || {});
+    const pay = await startListingCheckout(draft.id);
     if (pay.checkoutUrl) { location.href = pay.checkoutUrl; return; }
-    if (pay.x402Version) {
-      out.innerHTML += `<p class="success">Pay 1 USDC via your CoinPay wallet, then confirm. Pay-to: <code>${esc(pay.accepts?.[0]?.payTo || '(configure STORE_X402_PAY_TO)')}</code></p>
-        <div class="field"><label>Settlement reference</label><input type="text" id="x402ref" placeholder="CoinPay reference" /></div>
-        <button class="btn" id="x402confirm">Confirm payment</button>`;
-      document.getElementById('x402confirm').addEventListener('click', async () => {
-        const reference = document.getElementById('x402ref').value.trim();
-        try {
-          await api(`/extensions/${draft.id}/confirm`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ paymentId: pay.paymentId, reference }) });
-          location.href = `/store/extension.html?slug=${encodeURIComponent(draft.slug)}&paid=1`;
-        } catch (err) { out.innerHTML += `<p class="error">${esc(err.message)}</p>`; }
-      });
-      return;
-    }
     out.innerHTML += `<p class="error">Payment could not be started: ${esc(pay.error || 'unknown')}</p>`;
   } catch (err) {
     const extra = err.data?.errors ? '<br>• ' + err.data.errors.map(esc).join('<br>• ') : '';
     out.innerHTML = `<p class="error">${esc(err.message)}${extra}</p>`;
   }
+}
+
+// The $1 listing fee: the API makes a CoinPay hosted checkout session and we
+// send the publisher there (any coin or PayPal); CoinPay's webhook lists it.
+async function startListingCheckout(extId) {
+  return api(`/extensions/${encodeURIComponent(extId)}/checkout`, {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}',
+  }).catch((err) => err.data || { error: err.message });
 }
 
 /* ---------- tabs (install-guide.html) ---------- */

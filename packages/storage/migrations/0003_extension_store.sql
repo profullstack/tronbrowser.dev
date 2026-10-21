@@ -50,7 +50,7 @@ CREATE TABLE IF NOT EXISTS extension_versions (
 
 CREATE INDEX IF NOT EXISTS idx_ext_versions_ext ON extension_versions (extension_id, created_at DESC);
 
--- The $1 pay-to-list fee. Paid via Stripe OR CoinPay/x402. A listing only goes
+-- The $1 pay-to-list fee. Paid via CoinPay. A listing only goes
 -- 'live' once a matching row reaches status 'paid'.
 CREATE TABLE IF NOT EXISTS extension_payments (
   id           TEXT    PRIMARY KEY,
@@ -58,9 +58,9 @@ CREATE TABLE IF NOT EXISTS extension_payments (
   user_id      TEXT    NOT NULL,
   amount_cents INTEGER NOT NULL DEFAULT 100,          -- $1.00
   currency     TEXT    NOT NULL DEFAULT 'usd',
-  method       TEXT    NOT NULL,                      -- 'stripe' | 'coinpay' | 'x402'
+  method       TEXT    NOT NULL,                      -- 'coinpay' (legacy rows: other values)
   status       TEXT    NOT NULL DEFAULT 'pending',    -- 'pending' | 'paid' | 'failed'
-  provider_ref TEXT,                                  -- stripe session id / coinpay reference
+  provider_ref TEXT,                                  -- CoinPay checkout session id (cs_...)
   paid_at      TEXT,
   created_at   TEXT    NOT NULL DEFAULT (datetime('now')),
   FOREIGN KEY (extension_id) REFERENCES extensions(id),

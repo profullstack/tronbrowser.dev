@@ -28,7 +28,7 @@ exactly as Chromium expects.
 
 - `extensions` — listing (slug, owner, status `draft|live|removed`)
 - `extension_versions` — per-version MV3 manifest + bundle/CRX URLs (`manifest_version` enforced = 3 at the app layer)
-- `extension_payments` — the $1 fee; `stripe|coinpay|x402`; `pending|paid|failed`
+- `extension_payments` — the $1 fee; `coinpay` (older rows may say `stripe`/`x402`); `pending|paid|failed`
 - `extension_scans` — async vu1nz results; non-gating badge
 - `extension_flags` — community flagging
 
@@ -37,8 +37,8 @@ exactly as Chromium expects.
 ```
 create draft ─▶ submit MV3 version ─▶ pay $1 ─▶ LIVE (instant)
   POST /extensions   POST .../versions   POST .../checkout      │
-                     (validateManifest)   Stripe or x402         ├─▶ git mirror (registry/)
-                                          webhook/confirm        └─▶ vu1nz scan (async badge)
+                     (validateManifest)   CoinPay checkout       ├─▶ git mirror (registry/)
+                                          CoinPay webhook        └─▶ vu1nz scan (async badge)
 ```
 
 Two publish paths (both supported):
@@ -50,14 +50,17 @@ Publishing is **instant after payment** — the vu1nz scan and git mirror happen
 out of band and never block going live ("scan + community flagging", not
 pre-review).
 
-## Payments (`store/payments.ts`, dependency-free)
+## Payments (`store/payments.ts`)
 
-- **Stripe** — Checkout Session created server-side; `checkout.session.completed`
-  webhook (HMAC-verified, replay-protected) marks the payment paid → publish.
-- **CoinPay / x402** — `/checkout` returns an HTTP-402 challenge (1 USDC); the
-  client settles via the CoinPay wallet and calls `/confirm` with the reference.
-  Real settlement verification (`confirmCoinPaySettlement`) lands post-stub; it
-  refuses to mark paid without a verified settlement unless `STORE_X402_TRUST_CLIENT=1` (dev).
+One rail: a **CoinPay hosted checkout session** (`@profullstack/coinpay-onboard`).
+`/checkout` records a pending `extension_payments` row, creates a session for $1
+(customer_email = owner email, account_id = user id, property `tronbrowser.dev`,
+metadata `{extension_id, payment_id, slug}`), stores the `cs_...` id as
+`provider_ref` and returns `checkoutUrl`. The publisher picks any coin or PayPal
+on CoinPay's page. CoinPay posts `payment.confirmed` / `payment.forwarded` to
+`/payments/coinpay/webhook` (X-CoinPay-Signature, HMAC over the raw body); that
+marks the row paid (idempotent) and publishes. `/confirm` with `{sessionId}`
+reconciles by reading the session back with the API key.
 
 ## Security scan — vu1nz.com (`store/vu1nz.ts`)
 
@@ -76,16 +79,16 @@ GitHub Action check on the PR path.
 | POST | `/extensions` | create draft (auth) |
 | POST | `/extensions/:id/versions` | submit MV3 version (auth) |
 | POST | `/extensions/:id/checkout` | start $1 payment (auth) |
-| POST | `/extensions/:id/confirm` | confirm x402 settlement (auth) |
-| POST | `/payments/stripe/webhook` | Stripe webhook |
+| POST | `/extensions/:id/confirm` | reconcile a CoinPay checkout session (auth) |
+| POST | `/payments/coinpay/webhook` | CoinPay webhook |
 | POST | `/extensions/:slug/flag` | community flag |
 | GET | `/updates.xml?id=` | Chromium gupdate manifest (auto-update) |
 | GET | `/extensions/:slug/download` | redirect to CRX/bundle |
 
 ## Env
 
-See `.env.example` (Extension store section): `APP_URL`, `STRIPE_SECRET_KEY`,
-`STRIPE_WEBHOOK_SECRET`, `STORE_X402_NETWORK`, `STORE_X402_PAY_TO`,
+See `.env.example` (Extension store section): `APP_URL`, `COINPAY_API_URL`,
+`COINPAY_API_KEY`, `COINPAY_WEBHOOK_SECRET`,
 `VU1NZ_API_URL`, `VU1NZ_API_KEY`, `STORE_REGISTRY_REPO`, `GITHUB_TOKEN`.
 
 ## Bundle hosting — files.profullstack.com (AgentBBS Files)
@@ -119,6 +122,5 @@ the Dockerfile.
 - **Browser file upload** (multipart straight through the API to files) so devs
   don't need an SCP client at all — today they `scp` (or use FileZilla).
 - **Server-side CRX3 signing** from an uploaded `.zip`.
-- **Real CoinPay settlement verification** + Stripe live keys.
 - **TronBrowser one-click** deep-link handler in the desktop app.
 - **Admin/moderation UI** for resolving flags.
