@@ -303,6 +303,9 @@ importers:
       '@profullstack/libsql-pg':
         specifier: ^0.1.1
         version: 0.1.1(@libsql/client@0.14.0)
+      '@profullstack/profile':
+        specifier: 0.1.3
+        version: 0.1.3(@libsql/client@0.14.0)(react@19.2.7)
       '@profullstack/x402-gateway':
         specifier: ^0.11.0
         version: 0.11.0
@@ -1284,6 +1287,22 @@ packages:
   '@profullstack/notifications@0.1.3':
     resolution: {integrity: sha512-BtP67qx/+AQuKNtgIoxZWS2cTr1zc2hKTP7mqPhVpiEoxAgCEYHqtr+5aMRRAu+mmElXQSKjaU7ydbGKzG+WPg==}
     engines: {node: '>=20.11'}
+
+  '@profullstack/profile@0.1.3':
+    resolution: {integrity: sha512-P+VdOqCnNGWa5W8EGLU/ls3hwovRcY8bOBOhWZp3h23sW2LDMFyeWF/pUfO+iiYH3E2Tie2/9xyUnpO4ctwSHw==}
+    engines: {node: '>=20'}
+    hasBin: true
+    peerDependencies:
+      '@libsql/client': '>=0.6.0'
+      postgres: ^3.4.0
+      react: '>=18'
+    peerDependenciesMeta:
+      '@libsql/client':
+        optional: true
+      postgres:
+        optional: true
+      react:
+        optional: true
 
   '@profullstack/referrals@0.1.0':
     resolution: {integrity: sha512-u66SdBVpsv3kc0N+NWISPoYD5vjCERyv5wfD07iSkZwQeC2IA+ihX5jNA4e7Xr+Y4AUvxLycG+3b4VaROqzgRg==}
@@ -5045,6 +5064,11 @@ snapshots:
       - pg-native
 
   '@profullstack/notifications@0.1.3': {}
+
+  '@profullstack/profile@0.1.3(@libsql/client@0.14.0)(react@19.2.7)':
+    optionalDependencies:
+      '@libsql/client': 0.14.0
+      react: 19.2.7
 
   '@profullstack/referrals@0.1.0(react@19.2.7)':
     optionalDependencies:

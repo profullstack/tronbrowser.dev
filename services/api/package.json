@@ -22,6 +22,7 @@
     "@logicsrc/agentswarm": "^0.1.0",
     "@profullstack/coinpay-onboard": "0.2.0",
     "@profullstack/libsql-pg": "^0.1.1",
+    "@profullstack/profile": "0.1.3",
     "@profullstack/x402-gateway": "^0.11.0",
     "@tronbrowser/sdk": "workspace:*",
     "deepagents": "^1.10.5",

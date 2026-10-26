@@ -26,6 +26,11 @@
   .msg{margin-top:12px;font-size:13px;min-height:18px}
   .ok{color:var(--cyan)} .err{color:#ff8a9b}
   a{color:var(--cyan)} .home{display:block;text-align:center;margin-top:16px;font-size:12px}
+  /* The shared signup fields (@profullstack/profile): the label/input rules above style them. */
+  .pfs-profile{border:0;padding:0;margin:0;min-width:0}
+  .pfs-profile__optional{opacity:.7}
+  .pfs-profile input[aria-invalid=true]{border-color:#ff8a9b}
+  .pfs-profile__error{color:#ff8a9b;font-size:12px;margin:4px 0 0}
 </style></head>
 <body>
   <div class="card">
@@ -37,6 +42,7 @@
     <input id="email" type="email" autocomplete="email" />
     <label for="password">Password</label>
     <input id="password" type="password" autocomplete="current-password" />
+    <div id="signup-fields" hidden></div>
     <div class="row">
       <button id="login" class="primary">Log in</button>
       <button id="signup">Sign up</button>
@@ -44,6 +50,7 @@
     <div id="msg" class="msg"></div>
     <a class="home" href="/">← back to tronbrowser.dev</a>
   </div>
+  <script src="/api/v1/profile/signup-fields.js"></script>
   <script src="/login.js"></script>
 <!--pit-footer--><!--/pit-footer-->
 </body></html>
