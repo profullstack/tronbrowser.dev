@@ -11,13 +11,13 @@ ARG OBSCURA_VERSION=0.2.2
 # The API runs on Bun (fleet Node -> Bun migration). The repo itself stays a
 # pnpm workspace on Node 24 (desktop, mobile, extensions and release builds use
 # it), so pnpm still builds the API below; only the container's runtime moves.
-ARG BUN_IMAGE=oven/bun:1.4.0-slim
+ARG BUN_IMAGE=oven/bun:1.4.4-slim
 
 FROM ${BUN_IMAGE} AS bun
 
 # --- build the API (a pnpm workspace member: it imports @tronbrowser/sdk) ---
 FROM node:24-bookworm-slim AS api
-RUN corepack enable && corepack prepare pnpm@9.12.0 --activate
+RUN corepack enable && corepack prepare pnpm@9.15.9 --activate
 WORKDIR /repo
 COPY package.json pnpm-workspace.yaml pnpm-lock.yaml tsconfig.base.json ./
 COPY packages/browser-core/package.json packages/browser-core/

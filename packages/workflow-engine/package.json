@@ -22,7 +22,7 @@
     "@tronbrowser/sdk": "workspace:*"
   },
   "devDependencies": {
-    "typescript": "^5.6.3",
-    "vitest": "^2.1.4"
+    "typescript": "^6.0.3",
+    "vitest": "^5.0.5"
   }
 }

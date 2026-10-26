@@ -197,7 +197,7 @@ async function fetchGitHubJson(fetchImpl, path, label) {
       },
     });
   } catch (error) {
-    throw new Error(`${label}: request failed: ${error?.message ?? String(error)}`);
+    throw new Error(`${label}: request failed: ${error?.message ?? String(error)}`, { cause: error });
   }
 
   if (!response || response.ok !== true) {
@@ -209,7 +209,7 @@ async function fetchGitHubJson(fetchImpl, path, label) {
   try {
     payload = await response.json();
   } catch (error) {
-    throw new Error(`${label}: invalid JSON response: ${error?.message ?? String(error)}`);
+    throw new Error(`${label}: invalid JSON response: ${error?.message ?? String(error)}`, { cause: error });
   }
   if (payload === null || typeof payload !== 'object' || Array.isArray(payload)) {
     throw new Error(`${label}: GitHub API response must be an object`);

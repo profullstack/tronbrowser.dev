@@ -14,25 +14,25 @@
     "migrate": "node ../../scripts/db-migrate.mjs"
   },
   "dependencies": {
-    "@hono/node-server": "^1.13.7",
+    "@hono/node-server": "^1.19.17",
     "@hono/node-ws": "^1.3.1",
-    "@langchain/anthropic": "^1.5.1",
-    "@langchain/langgraph": "^1.4.6",
-    "@langchain/openai": "^1.5.3",
+    "@langchain/anthropic": "^1.6.0",
+    "@langchain/langgraph": "^1.5.2",
+    "@langchain/openai": "^1.7.0",
     "@logicsrc/agentswarm": "^0.1.0",
     "@profullstack/coinpay-onboard": "0.2.0",
-    "@profullstack/libsql-pg": "^0.1.1",
-    "@profullstack/profile": "0.1.3",
-    "@profullstack/x402-gateway": "^0.11.0",
+    "@profullstack/libsql-pg": "^0.1.4",
+    "@profullstack/profile": "0.1.6",
+    "@profullstack/x402-gateway": "^0.13.1",
     "@tronbrowser/sdk": "workspace:*",
-    "deepagents": "^1.10.5",
+    "deepagents": "^1.15.1",
     "fflate": "^0.8.3",
-    "hono": "^4.6.14"
+    "hono": "^4.13.14"
   },
   "devDependencies": {
-    "@libsql/client": "^0.14.0",
-    "@profullstack/notifications": "^0.1.3",
-    "typescript": "^5.6.3",
-    "vitest": "^2.1.4"
+    "@libsql/client": "^0.18.0",
+    "@profullstack/notifications": "^0.1.4",
+    "typescript": "^6.0.3",
+    "vitest": "^5.0.5"
   }
 }
