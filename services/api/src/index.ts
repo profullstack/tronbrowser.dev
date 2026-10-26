@@ -19,6 +19,7 @@ import { extLoginTarget } from './ext-login.js';
 import { assertDatabaseUrl, db } from './db.js';
 import { pushService } from './push/routes.js';
 import { createCrawlGate, crawlCheck } from './crawl-gate.js';
+import { mountProfile, profileStore, saveSignup, signupProfileErrors } from './profile.js';
 
 // Fail fast: a missing or non-Postgres DATABASE_URL is a deploy error, not a
 // condition to limp along under (there is no file-database fallback).
@@ -170,11 +171,16 @@ app.get('/api/auth/coinpay/callback', async (c) => {
 
 /* ---------- Email + password ---------- */
 app.post('/api/auth/signup', async (c) => {
-  const { email, password } = await c.req.json().catch(() => ({}));
+  const body = await c.req.json().catch(() => ({}));
+  const { email, password } = body;
   if (!email || !password || password.length < 8) return c.json({ error: 'email and 8+ char password required' }, 400);
+  // The shared profile fields (first + last name required), checked before any account exists.
+  const invalid = signupProfileErrors(body);
+  if (invalid) return c.json(invalid, 400);
   if (await userByEmail(email)) return c.json({ error: 'email already registered' }, 409);
   const id = uuid();
   await createUser({ id, authMethod: 'password', email, passwordHash: hashPassword(password), emailVerified: false });
+  await saveSignup(profileStore(), id, body, email);
   const vtok = token();
   await putEmailToken(vtok, id, 'verify', EMAIL_TOKEN_TTL);
   const link = `${baseUrl(c)}/api/auth/verify?token=${vtok}`;
@@ -211,6 +217,9 @@ app.get('/api/auth/me', async (c) => {
   if (!user) return c.json({ signedIn: false });
   return c.json({ signedIn: true, id: user.id, authMethod: user.auth_method, email: user.email, emailVerified: !!user.email_verified });
 });
+
+/* ---------- Shared profile (@profullstack/profile): /api/v1/me/profile ---------- */
+mountProfile(app, { currentUser });
 
 /* ---------- Settings sync ---------- */
 app.get('/api/settings', async (c) => {
