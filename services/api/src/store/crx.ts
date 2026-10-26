@@ -88,7 +88,7 @@ export function stampUpdateUrl(zip: Uint8Array, updateUrl: string): Uint8Array {
   try {
     manifest = JSON.parse(strFromU8(manifestBytes));
   } catch (e: any) {
-    throw new Error(`manifest.json is not valid JSON: ${e.message}`);
+    throw new Error(`manifest.json is not valid JSON: ${e.message}`, { cause: e });
   }
   if (manifest.update_url === updateUrl) return zip; // already ours — don't re-zip
   manifest.update_url = updateUrl;
@@ -137,7 +137,7 @@ export function extractListingFromCrx(buf: Uint8Array): IngestedListing {
   try {
     manifest = JSON.parse(manifestJson);
   } catch (e: any) {
-    throw new Error(`manifest.json is not valid JSON: ${e.message}`);
+    throw new Error(`manifest.json is not valid JSON: ${e.message}`, { cause: e });
   }
   if (manifest.manifest_version !== 3) {
     throw new Error(`the store is MV3-only (crx manifest_version = ${manifest.manifest_version})`);
