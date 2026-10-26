@@ -153,7 +153,7 @@ async function fetchFeed(feed) {
     const items = parseFeed(await res.text()).slice(0, 6);
     return { ...feed, items };
   } catch (e) {
-    throw new Error(e.name === 'AbortError' ? 'timed out' : e.message);
+    throw new Error(e.name === 'AbortError' ? 'timed out' : e.message, { cause: e });
   } finally {
     clearTimeout(t);
   }

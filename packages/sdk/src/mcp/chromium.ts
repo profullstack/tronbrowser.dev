@@ -240,7 +240,7 @@ export class DirectChromium {
     } catch (err) {
       proc.kill('SIGKILL');
       await rm(dataDir, { recursive: true, force: true }).catch(() => {});
-      throw new Error(`${err instanceof Error ? err.message : String(err)}${stderr ? `\n${stderr.trim().split('\n').slice(-5).join('\n')}` : ''}`);
+      throw new Error(`${err instanceof Error ? err.message : String(err)}${stderr ? `\n${stderr.trim().split('\n').slice(-5).join('\n')}` : ''}`, { cause: err });
     }
   }
 

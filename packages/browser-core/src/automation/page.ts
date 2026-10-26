@@ -243,7 +243,7 @@ export async function selectRef(
   return { ok: true, chosen: text(hit), x: r.left + r.width / 2, y: r.top + r.height / 2 };
 })()`;
   const deadline = Date.now() + (options.timeoutMs ?? 5000);
-  let last: { ok: boolean; chosen?: string; seen?: string[]; x?: number; y?: number } = { ok: false };
+  let last: { ok: boolean; chosen?: string; seen?: string[]; x?: number; y?: number };
   for (;;) {
     last = await evaluate(conn, find);
     if (last.ok && last.x !== undefined && last.y !== undefined) {
