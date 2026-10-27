@@ -84,6 +84,11 @@ export async function createUser(u: {
   });
 }
 
+/** Drop an unverified email from an account (see releasableEmailHolder). */
+export async function releaseEmail(userId: string): Promise<void> {
+  await db().execute({ sql: "UPDATE users SET email = NULL, updated_at = datetime('now') WHERE id = ? AND email_verified = 0", args: [userId] });
+}
+
 export async function setEmailVerified(userId: string): Promise<void> {
   await db().execute({ sql: 'UPDATE users SET email_verified = 1, updated_at = datetime(\'now\') WHERE id = ?', args: [userId] });
 }

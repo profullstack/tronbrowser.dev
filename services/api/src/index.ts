@@ -5,7 +5,7 @@ import { cors } from 'hono/cors';
 import { getCookie, setCookie, deleteCookie } from 'hono/cookie';
 import {
   createUser, userByCoinpaySub, userByEmail, createSession, userBySession,
-  deleteSession, putEmailToken, consumeEmailToken, setEmailVerified,
+  deleteSession, putEmailToken, consumeEmailToken, setEmailVerified, releaseEmail,
   getSettings, putSettings, type User,
 } from './db.js';
 import { token, uuid, hashPassword, verifyPassword, SESSION_TTL, EMAIL_TOKEN_TTL } from './auth.js';
@@ -16,6 +16,7 @@ import { dnsRoutes } from './dns.js';
 import { tronRelay } from './mcp/tron.js';
 import { safeRedirect } from './redirect.js';
 import { extLoginTarget } from './ext-login.js';
+import { resolveCoinpayUser, releasableEmailHolder } from './coinpay-login.js';
 import { assertDatabaseUrl, db } from './db.js';
 import { pushService } from './push/routes.js';
 import { createCrawlGate, crawlCheck } from './crawl-gate.js';
@@ -157,13 +158,9 @@ app.get('/api/auth/coinpay/callback', async (c) => {
   const sub = info.sub || info.id || tok.sub;
   if (!sub) return c.text('coinpay userinfo missing subject', 502);
 
-  const emailVerified = info.email_verified ?? !!info.email;
-  let user = await userByCoinpaySub(String(sub));
-  if (!user) {
-    const id = uuid();
-    await createUser({ id, authMethod: 'coinpay', coinpaySub: String(sub), email: info.email ?? null, emailVerified });
-    user = { id, auth_method: 'coinpay', coinpay_sub: String(sub), email: info.email ?? null, email_verified: emailVerified ? 1 : 0 };
-  }
+  // Bound to the CoinPay sub only. CoinPay never verifies emails, so its email
+  // never links to an existing account and is never marked verified.
+  const user = await resolveCoinpayUser({ userByCoinpaySub, userByEmail, createUser, newId: uuid }, String(sub), info);
   deleteCookie(c, 'cp_state'); deleteCookie(c, 'cp_redirect');
   const r = await startSession(c, user.id, redirect);
   return redirect ? r : c.redirect(`${APP_URL}/?signedin=1`);
@@ -177,7 +174,11 @@ app.post('/api/auth/signup', async (c) => {
   // The shared profile fields (first + last name required), checked before any account exists.
   const invalid = signupProfileErrors(body);
   if (invalid) return c.json(invalid, 400);
-  if (await userByEmail(email)) return c.json({ error: 'email already registered' }, 409);
+  const holder = await userByEmail(email);
+  if (holder && !releasableEmailHolder(holder)) return c.json({ error: 'email already registered' }, 409);
+  // A CoinPay-only account holding this address on CoinPay's unverified word
+  // gives it up; the new account still has to verify it by email.
+  if (holder) await releaseEmail(holder.id);
   const id = uuid();
   await createUser({ id, authMethod: 'password', email, passwordHash: hashPassword(password), emailVerified: false });
   await saveSignup(profileStore(), id, body, email);
