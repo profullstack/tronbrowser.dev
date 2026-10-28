@@ -94,7 +94,7 @@
     return subtle().importKey('raw', dek, { name: 'AES-GCM' }, false, ['encrypt', 'decrypt']);
   }
   async function checkDek(dek, seal, userId) {
-    try { return dec.decode(await gcmDec(await dekKey(dek), seal.key_check, aad(userId, 'key_check'))) === CHECK; } catch (e) { return false; }
+    try { return dec.decode(await gcmDec(await dekKey(dek), seal.key_check, aad(userId, 'key_check'))) === CHECK; } catch { return false; }
   }
 
   /** First-time setup. Returns { seal, dek (base64), recoveryKey (show once) }. */
@@ -124,7 +124,7 @@
       dek = opts && opts.recovery
         ? await gcmDec(await recoveryKek(secret), seal.recovery_wrapped_dek, aad(userId, 'dek:recovery'))
         : await gcmDec(await kek(secret, seal.kdf), seal.wrapped_dek, aad(userId, 'dek:passphrase'));
-    } catch (e) {
+    } catch {
       throw Object.assign(new Error(opts && opts.recovery ? 'wrong recovery key' : 'wrong passphrase'), { name: 'WrongPassphraseError' });
     }
     if (!(await checkDek(dek, seal, userId))) throw Object.assign(new Error('wrong passphrase'), { name: 'WrongPassphraseError' });

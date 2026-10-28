@@ -30,9 +30,7 @@ async function main(): Promise<void> {
     const url = ver.crx_url || ver.bundle_url;
     if (!url) { skipped++; continue; }
     const zip = stampUpdateUrl(artifactToZip(await fetchArtifact(url)), `${APP_URL}/api/store/updates.xml?id=${row.extension_id}`);
-    let pem: string | null = legacyDecryptPrivateKey(row.private_key_enc);
-    const crx = packCrx(zip, pem, Buffer.from(row.public_key_der, 'base64'));
-    pem = null;
+    const crx = packCrx(zip, legacyDecryptPrivateKey(row.private_key_enc), Buffer.from(row.public_key_der, 'base64'));
     await saveSignedCrx({ versionId: ver.id, extensionId: row.extension_id, version: ver.version, crx });
     packed++;
   }

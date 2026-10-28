@@ -211,13 +211,9 @@ async function signLatest(ext: { id: string; slug: string }, userId: string, dek
   if (!key) return { signed: false, error: 'no signing key' };
   const ver = await latestVersion(ext.id);
   if (!ver) return { signed: false, error: 'no version yet' };
-  let pem: string | null = openPrivateKey(key.private_key_enc, dek, userId, ext.id);
-  try {
-    await packAndStore(ext, ver, pem, key.public_key_der);
-    return { signed: true, version: ver.version };
-  } finally {
-    pem = null;
-  }
+  // Opened for this request only; the PEM string goes out of scope on return.
+  await packAndStore(ext, ver, openPrivateKey(key.private_key_enc, dek, userId, ext.id), key.public_key_der);
+  return { signed: true, version: ver.version };
 }
 
 store.get('/publisher/seal', async (c) => {
@@ -253,9 +249,10 @@ store.post('/publisher/seal', async (c) => {
       if (!isSealedKey(key.private_key_enc)) {
         if (!legacyMigrationEnabled()) continue;
         try {
-          let pem: string | null = legacyDecryptPrivateKey(key.private_key_enc);
-          await replaceSigningKeyCiphertext(ext.id, sealPrivateKey(pem, dek, user.id, ext.id));
-          pem = null;
+          await replaceSigningKeyCiphertext(
+            ext.id,
+            sealPrivateKey(legacyDecryptPrivateKey(key.private_key_enc), dek, user.id, ext.id),
+          );
           migrated++;
         } catch {
           failed++;
