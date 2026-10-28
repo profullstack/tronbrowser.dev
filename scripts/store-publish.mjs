@@ -19,6 +19,12 @@
  *   --store <base url>   defaults to https://tronbrowser.dev
  *   --dry-run            resolve and validate, write nothing
  *
+ * Signing: set TRON_SIGNING_PASSPHRASE to sign the release in the same request.
+ * The data key is derived here (apps/extensions/public/seal.js) and only that
+ * is sent; the store opens the signing key inside the request and forgets it.
+ * Without it the version is listed but installs keep the last signed release
+ * until the publisher signs it from the listing page.
+ *
  * Auth: TRONBROWSER_STORE_TOKEN, a `tbpub_` publisher token. Minted once from a
  * signed-in browser session at tronbrowser.dev — the API refuses to mint one
  * from a token, deliberately, so a leaked CI token cannot mint more.
@@ -132,6 +138,17 @@ if (DRY) {
   process.exit(0);
 }
 
+if (process.env.TRON_SIGNING_PASSPHRASE) {
+  await import('../apps/extensions/public/seal.js');
+  const sealed = await api('/publisher/seal', { method: 'GET' });
+  if (!sealed.ok || !sealed.body?.seal) die('TRON_SIGNING_PASSPHRASE is set but the publisher has no signing passphrase yet');
+  try {
+    payload.dek = await globalThis.TronSeal.unlock(sealed.body.seal, process.env.TRON_SIGNING_PASSPHRASE, sealed.body.userId);
+  } catch (e) {
+    die(`signing passphrase: ${e.message}`);
+  }
+}
+
 const published = await api(`/extensions/${listing.id}/versions`, {
   method: 'POST',
   body: JSON.stringify(payload),
@@ -150,6 +167,9 @@ if (!published.ok) {
 }
 
 console.log(`  published ${manifest.name} ${manifest.version} to ${STORE}/store/`);
+if (published.body?.signed && !published.body.signed.signed && published.body.signed.error) {
+  console.log(`  not signed yet: ${published.body.signed.error}`);
+}
 if (published.body?.scan) {
   console.log(`  scan: ${JSON.stringify(published.body.scan)}`);
 }

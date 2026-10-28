@@ -18,7 +18,7 @@ export interface SigningKeyMaterial {
   crxId: string;
   /** base64 SPKI DER. */
   publicKeyDer: string;
-  /** PKCS#8 PEM — encrypt before it goes anywhere near storage. */
+  /** PKCS#8 PEM — seal (sealPrivateKey) before it goes anywhere near storage. */
   privateKeyPem: string;
 }
 
@@ -43,29 +43,107 @@ export function generateSigningKey(): SigningKeyMaterial {
   };
 }
 
-/* ---------- encryption at rest ---------- */
+/* ---------- sealing (seal v2) ----------
+   The store holds no key that opens a signing key. Each publisher has a seal
+   record (apps/extensions/public/seal.js): passphrase -> PBKDF2 600k -> HKDF
+   -> KEK, which wraps a random data key (DEK). The browser/script derives the
+   DEK and sends it with the one request that needs the signing key (create,
+   migrate, sign a release); the key is opened inside that request and dropped.
+   private_key_enc = "v2:" iv:tag:ciphertext under the DEK, AAD binds the
+   publisher and the extension. */
 
-function secretKey(): Buffer {
-  const secret = process.env.CRX_KEY_SECRET;
-  if (!secret || secret.length < 16) {
-    throw new Error('CRX_KEY_SECRET must be set (32+ random chars) to generate or use signing keys');
+export interface PublisherSeal {
+  v: 2;
+  kdf: { alg: 'PBKDF2-SHA256'; iterations: number; salt: string };
+  wrapped_dek: { ciphertext: string; iv: string; tag: string };
+  recovery_wrapped_dek: { ciphertext: string; iv: string; tag: string } | null;
+  key_check: { ciphertext: string; iv: string; tag: string };
+}
+
+const KEY_CHECK = 'tronbrowser-key-check-v2';
+
+function isBlob(v: unknown): v is { ciphertext: string; iv: string; tag: string } {
+  const b = v as Record<string, unknown> | null;
+  return !!b && typeof b.ciphertext === 'string' && typeof b.iv === 'string' && typeof b.tag === 'string';
+}
+
+export function isPublisherSeal(v: unknown): v is PublisherSeal {
+  const s = v as Record<string, any> | null;
+  return !!s && s.v === 2 && s.kdf?.alg === 'PBKDF2-SHA256' && Number(s.kdf?.iterations) >= 600_000
+    && typeof s.kdf?.salt === 'string' && isBlob(s.wrapped_dek) && isBlob(s.key_check)
+    && (s.recovery_wrapped_dek === null || isBlob(s.recovery_wrapped_dek));
+}
+
+function aad(userId: string, field: string): Buffer {
+  return Buffer.from(`tronbrowser:v2:${userId}:${field}`, 'utf8');
+}
+
+/** True when `dek` (32 bytes) is this publisher's data key. */
+export function verifyDataKey(dek: Buffer, seal: PublisherSeal, userId: string): boolean {
+  if (dek.length !== 32) return false;
+  try {
+    const d = createDecipheriv('aes-256-gcm', dek, Buffer.from(seal.key_check.iv, 'base64'), { authTagLength: 16 });
+    d.setAAD(aad(userId, 'key_check'));
+    d.setAuthTag(Buffer.from(seal.key_check.tag, 'base64'));
+    const out = Buffer.concat([d.update(Buffer.from(seal.key_check.ciphertext, 'base64')), d.final()]);
+    return out.toString('utf8') === KEY_CHECK;
+  } catch {
+    return false;
   }
-  // Fixed salt: the secret is already high-entropy and the DB row is the only
-  // ciphertext, so a per-row salt would buy nothing but a schema column.
+}
+
+export function isSealedKey(stored: string): boolean {
+  return stored.startsWith('v2:');
+}
+
+export function sealPrivateKey(pem: string, dek: Buffer, userId: string, extensionId: string): string {
+  const iv = randomBytes(12);
+  const cipher = createCipheriv('aes-256-gcm', dek, iv, { authTagLength: 16 });
+  cipher.setAAD(aad(userId, `signing_key:${extensionId}`));
+  const ct = Buffer.concat([cipher.update(pem, 'utf8'), cipher.final()]);
+  return 'v2:' + [iv.toString('base64'), cipher.getAuthTag().toString('base64'), ct.toString('base64')].join(':');
+}
+
+export function openPrivateKey(stored: string, dek: Buffer, userId: string, extensionId: string): string {
+  if (!isSealedKey(stored)) throw new Error('signing key is not sealed yet (migrate it first)');
+  const [ivB64, tagB64, ctB64] = stored.slice(3).split(':');
+  if (!ivB64 || !tagB64 || !ctB64) throw new Error('malformed sealed signing key');
+  const d = createDecipheriv('aes-256-gcm', dek, Buffer.from(ivB64, 'base64'), { authTagLength: 16 });
+  d.setAAD(aad(userId, `signing_key:${extensionId}`));
+  d.setAuthTag(Buffer.from(tagB64, 'base64'));
+  return Buffer.concat([d.update(Buffer.from(ctB64, 'base64')), d.final()]).toString('utf8');
+}
+
+/* ---------- legacy (CRX_KEY_SECRET) ----------
+   Readable ONLY by the publisher's one-shot migration and the one-time
+   pre-pack of already-published releases (scripts/prepack-legacy-crx). Off
+   when LEGACY_KEY_MIGRATION=off; the key itself stays in env until Anthony's
+   dated cutoff. */
+
+export function legacyMigrationEnabled(): boolean {
+  const v = (process.env.LEGACY_KEY_MIGRATION ?? 'on').trim().toLowerCase();
+  return !(v === 'off' || v === '0' || v === 'false');
+}
+
+function legacySecretKey(): Buffer {
+  const secret = process.env.CRX_KEY_SECRET;
+  if (!secret || secret.length < 16) throw new Error('legacy CRX_KEY_SECRET is not set');
   return scryptSync(secret, 'tronbrowser-crx-signing', 32);
 }
 
-export function encryptPrivateKey(pem: string): string {
+/** Test fixture only: a legacy-format ciphertext. */
+export function legacyEncryptForTests(pem: string): string {
   const iv = randomBytes(12);
-  const cipher = createCipheriv('aes-256-gcm', secretKey(), iv);
+  const cipher = createCipheriv('aes-256-gcm', legacySecretKey(), iv);
   const ct = Buffer.concat([cipher.update(pem, 'utf8'), cipher.final()]);
   return [iv.toString('base64'), cipher.getAuthTag().toString('base64'), ct.toString('base64')].join(':');
 }
 
-export function decryptPrivateKey(stored: string): string {
+export function legacyDecryptPrivateKey(stored: string): string {
+  if (!legacyMigrationEnabled()) throw new Error('legacy key migration is off');
   const [ivB64, tagB64, ctB64] = stored.split(':');
   if (!ivB64 || !tagB64 || !ctB64) throw new Error('malformed encrypted signing key');
-  const decipher = createDecipheriv('aes-256-gcm', secretKey(), Buffer.from(ivB64, 'base64'));
+  const decipher = createDecipheriv('aes-256-gcm', legacySecretKey(), Buffer.from(ivB64, 'base64'), { authTagLength: 16 });
   decipher.setAuthTag(Buffer.from(tagB64, 'base64'));
   return Buffer.concat([decipher.update(Buffer.from(ctB64, 'base64')), decipher.final()]).toString('utf8');
 }
