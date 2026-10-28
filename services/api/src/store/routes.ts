@@ -13,6 +13,8 @@ import {
   publisherKey, handleTaken, upsertPublisherKey,
   createPublisherToken, userByPublisherToken, listPublisherTokens, revokePublisherToken,
   updateExtension, signingKeyFor, insertSigningKey,
+  publisherSeal, savePublisherSeal, replaceSigningKeyCiphertext, extensionsOwnedBy,
+  saveSignedCrx, latestSignedCrx,
 } from './db.js';
 import { validateManifest, slugify } from './manifest.js';
 import {
@@ -23,7 +25,10 @@ import { enqueueScan } from './vu1nz.js';
 import { mirrorListing } from './mirror.js';
 import { fetchArtifact, artifactToZip, extractListingFromCrx, stampUpdateUrl } from './crx.js';
 import { scanArtifact, type ExtensionScanResult } from './scanner.js';
-import { generateSigningKey, encryptPrivateKey, decryptPrivateKey, packCrx } from './signing.js';
+import {
+  generateSigningKey, packCrx, isPublisherSeal, verifyDataKey, sealPrivateKey, openPrivateKey,
+  isSealedKey, legacyDecryptPrivateKey, legacyMigrationEnabled, type PublisherSeal,
+} from './signing.js';
 import { createScan, updateScan } from './db.js';
 
 const APP_URL = process.env.APP_URL || 'https://tronbrowser.dev';
@@ -161,11 +166,121 @@ store.patch('/extensions/:id', async (c) => {
   return c.json({ ok: true, listing: await listingView(updated) });
 });
 
+/* ---------- publisher: key seal (seal v2) ----------
+   The publisher's CRX signing keys are sealed under a passphrase only they
+   know (apps/extensions/public/seal.js). The browser or script derives the
+   data key (DEK) locally and sends it, never the passphrase, with the one
+   request that needs a signing key: create one, migrate one, or sign a
+   release. The key is opened inside that request and dropped; the packed .crx
+   is stored, so downloads and updates never need the key. */
+
+type DekResult = { ok: true; dek: Buffer; seal: PublisherSeal } | { ok: false; status: 400 | 403 | 409; error: string };
+
+async function publisherDek(userId: string, dekB64: unknown): Promise<DekResult> {
+  const seal = await publisherSeal(userId);
+  if (!isPublisherSeal(seal)) {
+    return { ok: false, status: 409, error: 'set a signing passphrase first (store: Signing passphrase)' };
+  }
+  if (typeof dekB64 !== 'string' || !dekB64) {
+    return { ok: false, status: 400, error: 'signing passphrase required: send the derived key as "dek"' };
+  }
+  const dek = Buffer.from(dekB64, 'base64');
+  if (!verifyDataKey(dek, seal, userId)) {
+    dek.fill(0);
+    return { ok: false, status: 403, error: 'wrong signing passphrase' };
+  }
+  return { ok: true, dek, seal };
+}
+
+/** Pack the version's artifact with the (already opened) key and store the .crx. */
+async function packAndStore(ext: { id: string; slug: string }, ver: { id: string; version: string; crx_url?: string | null; bundle_url?: string | null }, pem: string, publicKeyDer: string): Promise<void> {
+  const url = ver.crx_url || ver.bundle_url;
+  if (!url) throw new Error('version has no artifact');
+  const buf = await fetchArtifact(url);
+  // Stamp our gupdate feed in before signing, or the install pins itself to
+  // this version forever: Chromium polls the manifest's own update_url and
+  // most publishers never set one. See stampUpdateUrl.
+  const zip = stampUpdateUrl(artifactToZip(buf), `${APP_URL}/api/store/updates.xml?id=${ext.id}`);
+  const crx = packCrx(zip, pem, Buffer.from(publicKeyDer, 'base64'));
+  await saveSignedCrx({ versionId: ver.id, extensionId: ext.id, version: ver.version, crx });
+}
+
+/** Open the listing's key with the DEK and sign its latest version. */
+async function signLatest(ext: { id: string; slug: string }, userId: string, dek: Buffer): Promise<{ signed: boolean; version?: string; error?: string }> {
+  const key = await signingKeyFor(ext.id);
+  if (!key) return { signed: false, error: 'no signing key' };
+  const ver = await latestVersion(ext.id);
+  if (!ver) return { signed: false, error: 'no version yet' };
+  let pem: string | null = openPrivateKey(key.private_key_enc, dek, userId, ext.id);
+  try {
+    await packAndStore(ext, ver, pem, key.public_key_der);
+    return { signed: true, version: ver.version };
+  } finally {
+    pem = null;
+  }
+}
+
+store.get('/publisher/seal', async (c) => {
+  const user = await currentUser(c);
+  if (!user) return c.json({ error: 'unauthorized' }, 401);
+  const seal = await publisherSeal(user.id);
+  return c.json({ userId: user.id, seal: isPublisherSeal(seal) ? seal : null, legacyMigration: legacyMigrationEnabled() });
+});
+
+/* Set the passphrase (or reset it after losing it and the recovery key), then
+   migrate this publisher's legacy keys in the same request and sign each
+   listing's latest version. */
+store.post('/publisher/seal', async (c) => {
+  const user = await currentUser(c);
+  if (!user) return c.json({ error: 'unauthorized' }, 401);
+  const body = await c.req.json().catch(() => ({} as any));
+  if (!isPublisherSeal(body.seal) || typeof body.dek !== 'string') return c.json({ error: 'invalid seal' }, 400);
+  const dek = Buffer.from(body.dek, 'base64');
+  try {
+    if (!verifyDataKey(dek, body.seal, user.id)) return c.json({ error: 'seal does not match the key' }, 400);
+    const existing = await publisherSeal(user.id);
+    if (isPublisherSeal(existing) && body.reset !== true) {
+      return c.json({ error: 'a signing passphrase is already set (reset loses every key sealed under it)' }, 409);
+    }
+    await savePublisherSeal(user.id, body.seal);
+
+    let migrated = 0;
+    let failed = 0;
+    const signed: string[] = [];
+    for (const ext of await extensionsOwnedBy(user.id)) {
+      const key = await signingKeyFor(ext.id);
+      if (!key) continue;
+      if (!isSealedKey(key.private_key_enc)) {
+        if (!legacyMigrationEnabled()) continue;
+        try {
+          let pem: string | null = legacyDecryptPrivateKey(key.private_key_enc);
+          await replaceSigningKeyCiphertext(ext.id, sealPrivateKey(pem, dek, user.id, ext.id));
+          pem = null;
+          migrated++;
+        } catch {
+          failed++;
+          continue;
+        }
+      }
+      try {
+        const r = await signLatest(ext, user.id, dek);
+        if (r.signed) signed.push(ext.slug);
+      } catch {
+        // A key sealed under a previous (reset) passphrase stays unreadable.
+      }
+    }
+    return c.json({ ok: true, migrated, failed, signed });
+  } finally {
+    dek.fill(0);
+  }
+});
+
 /* ---------- publisher: signing key ----------
    Chromium only installs a signed .crx; a .zip is sideload-only. Generating the
    key here (rather than making publishers run openssl and guard a .pem) is what
    turns "Install" into a real install. The key is the extension's identity, so
-   this is create-once — there is deliberately no rotate or delete. */
+   this is create-once — there is deliberately no rotate or delete. It is sealed
+   under the publisher's passphrase before it is stored. */
 store.post('/extensions/:id/signing-key', async (c) => {
   const user = await currentUser(c);
   if (!user) return c.json({ error: 'unauthorized' }, 401);
@@ -182,53 +297,73 @@ store.post('/extensions/:id/signing-key', async (c) => {
     }, 409);
   }
 
+  const body = await c.req.json().catch(() => ({} as any));
+  const auth = await publisherDek(user.id, body.dek);
+  if (!auth.ok) return c.json({ error: auth.error }, auth.status);
   try {
     const key = generateSigningKey();
     await insertSigningKey({
       extensionId: ext.id,
       crxId: key.crxId,
       publicKeyDer: key.publicKeyDer,
-      privateKeyEnc: encryptPrivateKey(key.privateKeyPem),
+      privateKeyEnc: sealPrivateKey(key.privateKeyPem, auth.dek, user.id, ext.id),
     });
-    // The private key is never returned — the store signs on the publisher's behalf.
+    const ver = await latestVersion(ext.id);
+    let signed = false;
+    if (ver) {
+      try {
+        await packAndStore(ext, ver, key.privateKeyPem, key.publicKeyDer);
+        signed = true;
+      } catch { /* the publisher can sign again from the listing */ }
+    }
     // The private key is never returned — the store signs on the publisher's
-    // behalf. The PUBLIC half is not secret, and is what pins the extension id:
-    // dropped into manifest.json's "key" field it makes an unpacked install
-    // resolve to the same id as the store-packed .crx, which anything keyed off
-    // that id (an OAuth redirect URI, for one) depends on.
-    return c.json({ ok: true, crxId: key.crxId, publicKey: key.publicKeyDer });
+    // behalf while they are present. The PUBLIC half is not secret, and is
+    // what pins the extension id: dropped into manifest.json's "key" field it
+    // makes an unpacked install resolve to the same id as the store-packed .crx.
+    return c.json({ ok: true, crxId: key.crxId, publicKey: key.publicKeyDer, signed });
   } catch (e: any) {
     return c.json({ error: e?.message || 'could not generate signing key' }, 500);
+  } finally {
+    auth.dek.fill(0);
+  }
+});
+
+/* ---------- publisher: sign the latest version ----------
+   For a release submitted without the passphrase (a script, a PR mirror),
+   or a listing whose key was just migrated. */
+store.post('/extensions/:id/sign', async (c) => {
+  const user = await currentUser(c);
+  if (!user) return c.json({ error: 'unauthorized' }, 401);
+  const ext = await extensionById(c.req.param('id'));
+  if (!ext) return c.json({ error: 'not found' }, 404);
+  if (ext.owner_user_id !== user.id) return c.json({ error: 'forbidden' }, 403);
+  const body = await c.req.json().catch(() => ({} as any));
+  const auth = await publisherDek(user.id, body.dek);
+  if (!auth.ok) return c.json({ error: auth.error }, auth.status);
+  try {
+    const r = await signLatest(ext, user.id, auth.dek);
+    if (!r.signed) return c.json({ error: r.error }, 409);
+    return c.json({ ok: true, version: r.version });
+  } catch (e: any) {
+    return c.json({ error: `could not sign: ${e?.message || e}` }, 422);
+  } finally {
+    auth.dek.fill(0);
   }
 });
 
 /* ---------- signed .crx download ----------
-   Packs the published .zip on the fly, so a listing becomes installable the
-   moment it has a key — no re-upload, no separate .crx artifact to keep in
-   sync with the bundle. */
+   Serves the .crx packed when the publisher last signed. The store holds no
+   key that could pack one now. */
 store.get('/extensions/:slug/download.crx', async (c) => {
   const ext = await extensionBySlug(c.req.param('slug'));
   if (!ext || ext.status !== 'live') return c.json({ error: 'not found' }, 404);
-  const key = await signingKeyFor(ext.id);
-  if (!key) return c.json({ error: 'this extension has no signing key yet' }, 404);
-  const ver = await latestVersion(ext.id);
-  const url = ver?.crx_url || ver?.bundle_url;
-  if (!url) return c.json({ error: 'no artifact' }, 404);
-
-  try {
-    const buf = await fetchArtifact(url);
-    // Stamp our gupdate feed in before signing, or the install pins itself to
-    // this version forever: Chromium polls the manifest's own update_url and
-    // most publishers never set one. See stampUpdateUrl.
-    const zip = stampUpdateUrl(artifactToZip(buf), `${APP_URL}/api/store/updates.xml?id=${ext.id}`);
-    const crx = packCrx(zip, decryptPrivateKey(key.private_key_enc), Buffer.from(key.public_key_der, 'base64'));
-    c.header('content-type', 'application/x-chrome-extension');
-    c.header('content-disposition', `attachment; filename="${ext.slug}-${ver!.version}.crx"`);
-    // Hono wants an ArrayBuffer, not a Node Buffer view over a pooled one.
-    return c.body(crx.buffer.slice(crx.byteOffset, crx.byteOffset + crx.byteLength) as ArrayBuffer);
-  } catch (e: any) {
-    return c.json({ error: `could not pack .crx: ${e?.message || e}` }, 500);
-  }
+  const signed = await latestSignedCrx(ext.id);
+  if (!signed) return c.json({ error: 'no signed release yet: the publisher signs one with their passphrase' }, 404);
+  const crx = Buffer.from(signed.crx_b64, 'base64');
+  c.header('content-type', 'application/x-chrome-extension');
+  c.header('content-disposition', `attachment; filename="${ext.slug}-${signed.version}.crx"`);
+  // Hono wants an ArrayBuffer, not a Node Buffer view over a pooled one.
+  return c.body(crx.buffer.slice(crx.byteOffset, crx.byteOffset + crx.byteLength) as ArrayBuffer);
 });
 
 /* ---------- publisher: re-scan the current version ----------
@@ -500,7 +635,26 @@ store.post('/extensions/:id/versions', async (c) => {
     await enqueueScan(ext.id, version);
   }
 
-  return c.json({ ok: true, versionId: version.id, version: version.version, warnings: v.warnings, scan: scanResult });
+  // Sign now when the publisher sent their signing key (derived from the
+  // passphrase); otherwise the release waits for POST /extensions/:id/sign and
+  // installs keep getting the last signed one.
+  let signed: { signed: boolean; error?: string } = { signed: false };
+  if (await signingKeyFor(ext.id)) {
+    const auth = body.dek ? await publisherDek(user.id, body.dek) : null;
+    if (auth?.ok) {
+      try {
+        signed = await signLatest(ext, user.id, auth.dek);
+      } catch (e: any) {
+        signed = { signed: false, error: e?.message || String(e) };
+      } finally {
+        auth.dek.fill(0);
+      }
+    } else {
+      signed = { signed: false, error: auth ? auth.error : 'not signed: send "dek" or sign it from the listing' };
+    }
+  }
+
+  return c.json({ ok: true, versionId: version.id, version: version.version, warnings: v.warnings, scan: scanResult, signed });
 });
 
 /* ---------- pay the $1 listing fee ---------- */
@@ -595,13 +749,14 @@ store.get('/updates.xml', async (c) => {
   const ext = id ? await extensionById(id) : null;
   const ver = ext && ext.status === 'live' ? await latestVersion(ext.id) : null;
   const key = ext ? await signingKeyFor(ext.id) : null;
+  const signed = key && ext ? await latestSignedCrx(ext.id) : null;
 
-  // Chromium can only install a signed .crx, so only ever advertise one. This
-  // used to fall back to the .zip bundle, which meant zip-only listings served
-  // an update whose codebase the browser could do nothing with.
-  const codebase = key && ver
+  // Chromium can only install a signed .crx, so only ever advertise one: the
+  // release the publisher last signed (its version, not an unsigned newer one).
+  const codebase = signed
     ? `${APP_URL}/api/store/extensions/${ext!.slug}/download.crx`
-    : ver?.crx_url || null;
+    : key ? null : ver?.crx_url || null;
+  const advertised = signed ? signed.version : ver?.version;
 
   c.header('content-type', 'application/xml; charset=utf-8');
   if (!ext || !ver || !codebase) {
@@ -613,7 +768,7 @@ store.get('/updates.xml', async (c) => {
     // appid must be the Chromium extension id (derived from the signing key),
     // not our internal uuid — the browser matches updates on the former.
     `  <app appid='${xmlEscape(key?.crx_id || ext.id)}'>\n` +
-    `    <updatecheck codebase='${xmlEscape(codebase)}' version='${xmlEscape(ver.version)}' />\n` +
+    `    <updatecheck codebase='${xmlEscape(codebase)}' version='${xmlEscape(advertised ?? ver.version)}' />\n` +
     `  </app>\n` +
     `</gupdate>\n`,
   );
@@ -628,7 +783,7 @@ store.get('/extensions/:slug/download', async (c) => {
   if (!url) return c.json({ error: 'no artifact' }, 404);
   // Hand over an installable .crx when the listing has a key; the raw .zip is
   // a sideload artifact the browser can only save to disk.
-  if (await signingKeyFor(ext.id)) {
+  if (await latestSignedCrx(ext.id)) {
     return c.redirect(`${APP_URL}/api/store/extensions/${ext.slug}/download.crx`);
   }
   return c.redirect(url);

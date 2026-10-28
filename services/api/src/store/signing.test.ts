@@ -3,7 +3,8 @@ import { zipSync, strToU8 } from 'fflate';
 import { createHash, createVerify } from 'node:crypto';
 import {
   generateSigningKey, crxIdFromPublicKey, packCrx,
-  encryptPrivateKey, decryptPrivateKey,
+  sealPrivateKey, openPrivateKey, verifyDataKey, isPublisherSeal, isSealedKey,
+  legacyEncryptForTests, legacyDecryptPrivateKey,
 } from './signing.js';
 import { artifactToZip } from './crx.js';
 import { scanArtifact } from './scanner.js';
@@ -87,33 +88,59 @@ describe('packCrx', () => {
   });
 });
 
-describe('private key encryption at rest', () => {
-  beforeEach(() => vi.stubEnv('CRX_KEY_SECRET', 'x'.repeat(48)));
+describe('seal v2: signing keys sealed under the publisher passphrase', () => {
+  const USER = 'user-1';
+  const EXT = 'ext-1';
+  let seal: any;
+  let dek: Buffer;
+
+  beforeEach(async () => {
+    await import('../../../../apps/extensions/public/seal.js');
+    const T = (globalThis as any).TronSeal;
+    const made = await T.createSeal('correct horse battery', USER);
+    seal = made.seal;
+    dek = Buffer.from(made.dek, 'base64');
+  });
   afterEach(() => vi.unstubAllEnvs());
 
-  it('round-trips', () => {
+  it('the browser seal is accepted, and the passphrase or recovery key yield the same data key', async () => {
+    expect(isPublisherSeal(seal)).toBe(true);
+    expect(verifyDataKey(dek, seal, USER)).toBe(true);
+    expect(verifyDataKey(Buffer.alloc(32), seal, USER)).toBe(false);
+    expect(verifyDataKey(dek, seal, 'someone-else')).toBe(false);
+    const T = (globalThis as any).TronSeal;
+    expect(await T.unlock(seal, 'correct horse battery', USER)).toBe(dek.toString('base64'));
+    await expect(T.unlock(seal, 'not the passphrase', USER)).rejects.toThrow(/wrong/);
+    expect(JSON.stringify(seal)).not.toContain('correct horse');
+    expect(seal.kdf.iterations).toBeGreaterThanOrEqual(600_000);
+  });
+
+  it('round-trips only with the data key, bound to publisher and extension', () => {
     const { privateKeyPem } = generateSigningKey();
-    expect(decryptPrivateKey(encryptPrivateKey(privateKeyPem))).toBe(privateKeyPem);
+    const stored = sealPrivateKey(privateKeyPem, dek, USER, EXT);
+    expect(isSealedKey(stored)).toBe(true);
+    expect(stored).not.toContain('PRIVATE KEY');
+    expect(openPrivateKey(stored, dek, USER, EXT)).toBe(privateKeyPem);
+    expect(() => openPrivateKey(stored, Buffer.alloc(32), USER, EXT)).toThrow();
+    expect(() => openPrivateKey(stored, dek, USER, 'ext-2')).toThrow();
   });
 
-  it('never stores the key in the clear, and uses a fresh iv each time', () => {
+  it('no env fallback: CRX_KEY_SECRET cannot open a v2 key, and a legacy key never opens as v2', () => {
+    vi.stubEnv('CRX_KEY_SECRET', 'x'.repeat(48));
     const { privateKeyPem } = generateSigningKey();
-    const a = encryptPrivateKey(privateKeyPem);
-    const b = encryptPrivateKey(privateKeyPem);
-    expect(a).not.toContain('PRIVATE KEY');
-    expect(a).not.toBe(b);
+    const legacy = legacyEncryptForTests(privateKeyPem);
+    expect(() => openPrivateKey(legacy, dek, USER, EXT)).toThrow(/not sealed/);
+    const sealed = sealPrivateKey(privateKeyPem, dek, USER, EXT);
+    expect(() => legacyDecryptPrivateKey(sealed)).toThrow();
   });
 
-  it('refuses to decrypt tampered ciphertext (GCM tag)', () => {
-    const enc = encryptPrivateKey(generateSigningKey().privateKeyPem);
-    const [iv, tag, ct] = enc.split(':');
-    const flipped = Buffer.from(ct, 'base64');
-    flipped[0] ^= 0xff;
-    expect(() => decryptPrivateKey([iv, tag, flipped.toString('base64')].join(':'))).toThrow();
-  });
-
-  it('fails loudly when CRX_KEY_SECRET is unset rather than storing plaintext', () => {
-    vi.stubEnv('CRX_KEY_SECRET', '');
-    expect(() => encryptPrivateKey('pem')).toThrow(/CRX_KEY_SECRET/);
+  it('migration: a legacy key opens with CRX_KEY_SECRET only while LEGACY_KEY_MIGRATION is on', () => {
+    vi.stubEnv('CRX_KEY_SECRET', 'x'.repeat(48));
+    const { privateKeyPem } = generateSigningKey();
+    const legacy = legacyEncryptForTests(privateKeyPem);
+    const migrated = sealPrivateKey(legacyDecryptPrivateKey(legacy), dek, USER, EXT);
+    expect(openPrivateKey(migrated, dek, USER, EXT)).toBe(privateKeyPem);
+    vi.stubEnv('LEGACY_KEY_MIGRATION', 'off');
+    expect(() => legacyDecryptPrivateKey(legacy)).toThrow(/off/);
   });
 });

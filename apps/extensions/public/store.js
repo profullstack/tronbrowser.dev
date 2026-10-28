@@ -168,6 +168,65 @@ function uiConfirm(title, message, { confirmLabel = 'Confirm', danger = false } 
   }).then((v) => v === true);
 }
 
+
+/* ---------- signing passphrase (seal v2) ----------
+   Signing keys are sealed under a passphrase only the publisher knows
+   (seal.js). We derive the data key here and send only that, with the one
+   request that needs it. The passphrase never leaves this page. */
+function uiSecret(title, message, fields, { confirmLabel = 'Continue' } = {}) {
+  return openModal((dialog, done) => {
+    const inputs = fields.map((f, i) =>
+      `<input class="acct-select" data-f="${i}" type="${f.type || 'password'}" placeholder="${esc(f.placeholder)}" autocomplete="${f.type === 'text' ? 'off' : 'current-password'}">`).join('');
+    dialog.innerHTML = modalShell(title, `${message ? `<p class="modal-text">${esc(message)}</p>` : ''}${inputs}`,
+      `<button type="button" class="btn secondary" data-cancel>Cancel</button>
+       <button type="button" class="btn" data-ok>${esc(confirmLabel)}</button>`);
+    dialog.querySelector('[data-cancel]').addEventListener('click', () => done(null));
+    dialog.querySelector('[data-ok]').addEventListener('click', () =>
+      done(fields.map((_, i) => dialog.querySelector(`[data-f="${i}"]`).value)));
+  });
+}
+
+let sealLib;
+function loadSealLib() {
+  if (globalThis.TronSeal) return Promise.resolve(globalThis.TronSeal);
+  if (!sealLib) {
+    sealLib = new Promise((resolve, reject) => {
+      const el = document.createElement('script');
+      el.src = '/store/seal.js';
+      el.onload = () => resolve(globalThis.TronSeal);
+      el.onerror = () => reject(new Error('could not load seal.js'));
+      document.head.append(el);
+    });
+  }
+  return sealLib;
+}
+
+/** The publisher's data key (base64), setting up a passphrase on first use. null = cancelled. */
+async function signingDek() {
+  const T = await loadSealLib();
+  const { userId, seal } = await api('/publisher/seal');
+  if (!seal) {
+    const v = await uiSecret('Set a signing passphrase',
+      'Your signing keys are sealed under this passphrase. The store keeps no key that can open them, so it signs a release only while you are here. If you lose both this passphrase and the recovery key, your listing can never ship a signed update again.',
+      [{ placeholder: 'Passphrase (10+ characters)' }, { placeholder: 'Repeat passphrase' }], { confirmLabel: 'Set passphrase' });
+    if (!v) return null;
+    if (v[0] !== v[1]) throw new Error('The two passphrases differ.');
+    const made = await T.createSeal(v[0], userId);
+    const r = await api('/publisher/seal', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ seal: made.seal, dek: made.dek }),
+    });
+    await uiAlert('Save your recovery key (shown once)',
+      `${made.recoveryKey}\n\nIt is the only way back in if the passphrase is lost.` +
+      (r.migrated ? ` ${r.migrated} existing key(s) moved under your passphrase.` : ''));
+    return made.dek;
+  }
+  const v = await uiSecret('Signing passphrase', 'Needed to sign this release. Or paste your recovery key in the second box.',
+    [{ placeholder: 'Passphrase' }, { placeholder: 'Recovery key (optional)', type: 'text' }], { confirmLabel: 'Unlock' });
+  if (!v) return null;
+  return v[1] ? T.unlock(seal, v[1], userId, { recovery: true }) : T.unlock(seal, v[0], userId);
+}
+
 /** Choose from a fixed set — a <select> beats asking someone to type a keyword. */
 function uiChoose(title, message, options, { confirmLabel = 'Submit' } = {}) {
   return openModal((dialog, done) => {
@@ -339,6 +398,7 @@ async function renderDetail(slug, root) {
         ${ext.isOwner ? '<button class="btn secondary" id="editBtn">✎ Edit listing</button>' : ''}
         ${ext.isOwner ? '<button class="btn ghost" id="rescanBtn">🛡 Re-scan</button>' : ''}
         ${ext.isOwner && !ext.crxId ? '<button class="btn ghost" id="keyBtn">🔑 Generate signing key</button>' : ''}
+        ${ext.isOwner && ext.crxId ? '<button class="btn ghost" id="signBtn">✍ Sign latest release</button>' : ''}
       </div>
       ${ext.isOwner && !ext.crxId ? `<p class="hint">This listing has no signing key, so Install hands over a .zip that has to be sideloaded. Generating one lets the store serve a signed .crx that installs in one click and auto-updates. The key sets the extension id permanently and can't be rotated.</p>` : ''}
       ${ext.crxId ? `<p class="hint">Extension ID: <code>${esc(ext.crxId)}</code></p>` : ''}
@@ -381,13 +441,34 @@ async function renderDetail(slug, root) {
       btn.disabled = true;
       btn.textContent = '🔑 Generating…';
       try {
-        const { crxId } = await api(`/extensions/${encodeURIComponent(ext.id)}/signing-key`, { method: 'POST' });
+        const dek = await signingDek();
+        if (!dek) { btn.disabled = false; btn.textContent = '🔑 Generate signing key'; return; }
+        const { crxId } = await api(`/extensions/${encodeURIComponent(ext.id)}/signing-key`, {
+          method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ dek }),
+        });
         await uiAlert('Signing key created', `Extension ID: ${crxId} — Install now serves a signed .crx.`);
         await renderDetail(slug, root);
       } catch (err) {
         await uiAlert('Could not generate key', err.message);
         btn.disabled = false;
         btn.textContent = '🔑 Generate signing key';
+      }
+    });
+
+    document.getElementById('signBtn')?.addEventListener('click', async (e) => {
+      const btn = e.currentTarget;
+      btn.disabled = true;
+      try {
+        const dek = await signingDek();
+        if (!dek) return;
+        const r = await api(`/extensions/${encodeURIComponent(ext.id)}/sign`, {
+          method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ dek }),
+        });
+        await uiAlert('Signed', `v${r.version} is now the installable .crx.`);
+      } catch (err) {
+        await uiAlert('Could not sign', err.message);
+      } finally {
+        btn.disabled = false;
       }
     });
 

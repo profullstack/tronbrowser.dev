@@ -440,3 +440,57 @@ export async function revokePublisherToken(userId: string, id: string): Promise<
   const r = await db().execute({ sql: 'DELETE FROM publisher_tokens WHERE id = ? AND user_id = ?', args: [id, userId] });
   return (r.rowsAffected ?? 0) > 0;
 }
+
+/* ---------- publisher key seals (seal v2) ---------- */
+
+export async function publisherSeal(userId: string): Promise<unknown | null> {
+  const r = await db().execute({ sql: 'SELECT seal_json FROM publisher_key_seals WHERE user_id = ?', args: [userId] });
+  const raw = (r.rows[0] as unknown as { seal_json?: string } | undefined)?.seal_json;
+  if (!raw) return null;
+  try { return JSON.parse(raw); } catch { return null; }
+}
+
+export async function savePublisherSeal(userId: string, seal: unknown): Promise<void> {
+  await db().execute({
+    sql: `INSERT INTO publisher_key_seals (user_id, seal_json) VALUES (?, ?)
+          ON CONFLICT (user_id) DO UPDATE SET seal_json = excluded.seal_json, updated_at = CURRENT_TIMESTAMP`,
+    args: [userId, JSON.stringify(seal)],
+  });
+}
+
+export async function replaceSigningKeyCiphertext(extensionId: string, privateKeyEnc: string): Promise<void> {
+  await db().execute({
+    sql: 'UPDATE extension_signing_keys SET private_key_enc = ? WHERE extension_id = ?',
+    args: [privateKeyEnc, extensionId],
+  });
+}
+
+export async function extensionsOwnedBy(userId: string): Promise<Extension[]> {
+  const r = await db().execute({ sql: 'SELECT * FROM extensions WHERE owner_user_id = ?', args: [userId] });
+  return r.rows as unknown as Extension[];
+}
+
+export interface SignedCrx { version_id: string; extension_id: string; version: string; crx_b64: string; created_at: string }
+
+export async function saveSignedCrx(v: { versionId: string; extensionId: string; version: string; crx: Buffer }): Promise<void> {
+  await db().execute({
+    sql: `INSERT INTO extension_signed_crx (version_id, extension_id, version, crx_b64) VALUES (?, ?, ?, ?)
+          ON CONFLICT (version_id) DO UPDATE SET crx_b64 = excluded.crx_b64`,
+    args: [v.versionId, v.extensionId, v.version, v.crx.toString('base64')],
+  });
+}
+
+/** The newest packed .crx for a listing (what download.crx and updates.xml serve). */
+export async function latestSignedCrx(extensionId: string): Promise<SignedCrx | null> {
+  const r = await db().execute({
+    sql: 'SELECT * FROM extension_signed_crx WHERE extension_id = ? ORDER BY created_at DESC LIMIT 1',
+    args: [extensionId],
+  });
+  return (r.rows[0] as unknown as SignedCrx) ?? null;
+}
+
+/** Signing keys still under the legacy CRX_KEY_SECRET (for the cutoff decision). */
+export async function unmigratedSigningKeyCount(): Promise<number> {
+  const r = await db().execute({ sql: "SELECT COUNT(*) AS n FROM extension_signing_keys WHERE private_key_enc NOT LIKE 'v2:%'", args: [] });
+  return Number((r.rows[0] as unknown as { n: number } | undefined)?.n ?? 0);
+}

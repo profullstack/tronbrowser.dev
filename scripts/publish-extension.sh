@@ -65,6 +65,9 @@ resp="$(curl -fsS -X POST "${STORE_URL}/api/store/extensions/${id}/versions" \
   -H 'content-type: application/json' -d "$body")"
 
 echo "published ${STORE_SLUG}: $resp"
+# Signing needs the publisher's passphrase (seal v2); the store holds no key
+# that can sign by itself. Sign from the listing page ("Sign latest release"),
+# or publish with scripts/store-publish.mjs and TRON_SIGNING_PASSPHRASE set.
 
 # 4) Sync the listing copy, if the repo carries one. Publishing a version only
 #    refreshes the bundle — without this the description keeps describing an
