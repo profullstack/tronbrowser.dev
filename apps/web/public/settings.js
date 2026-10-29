@@ -63,8 +63,34 @@ async function requireAuth() {
   const me = await api('/api/auth/me').then((r) => r.json()).catch(() => ({}));
   if (!me.signedIn) { location.href = '/login'; return null; }
   $('who').textContent = me.email || (me.id ? me.id.slice(0, 8) : 'signed in');
+  showCoinpay(me);
   return me;
 }
+
+// Settings -> CoinPay: Connect (signed in only) or Disconnect (refused when
+// CoinPay is the only way into the account).
+const COINPAY_MSG = {
+  connected: 'CoinPay connected.',
+  linked_elsewhere: 'That CoinPay account is already connected to another TronBrowser account.',
+  already_connected: 'This account is already connected to a different CoinPay account. Disconnect it first.',
+  not_signed_in: 'Sign in first, then connect CoinPay.',
+};
+function showCoinpay(me) {
+  const flash = COINPAY_MSG[new URLSearchParams(location.search).get('coinpay')] || '';
+  $('coinpayConnect').hidden = !!me.coinpayConnected;
+  $('coinpayDisconnect').hidden = !me.canDisconnectCoinpay;
+  $('coinpayState').textContent = (flash ? flash + ' ' : '') + (me.coinpayConnected
+    ? (me.canDisconnectCoinpay ? 'Connected.' : 'Connected. This account was made with CoinPay, so it stays connected.')
+    : 'Not connected.');
+}
+$('coinpayDisconnect').addEventListener('click', async () => {
+  if (!confirm('Disconnect CoinPay from this account?')) return;
+  const r = await api('/api/auth/coinpay/disconnect', { method: 'POST' });
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok) { $('coinpayState').textContent = d.error || 'Could not disconnect.'; return; }
+  const me = await api('/api/auth/me').then((x) => x.json()).catch(() => ({}));
+  showCoinpay(me);
+});
 
 // A provider counts as "configured" once it has a key (cloud) or base URL (local).
 function isConfigured(p, cur) {

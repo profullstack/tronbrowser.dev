@@ -46,6 +46,14 @@
     <div class="acct"><span id="who"></span><a href="/store/">Store</a><a href="/">Home</a><a href="#" id="signout">Sign out</a></div>
   </header>
 
+  <h2>CoinPay account</h2>
+  <p class="hint">Sign in to TronBrowser with your CoinPay account. One CoinPay account works across every Profullstack app.</p>
+  <div class="row" id="coinpay">
+    <span id="coinpayState" class="hint" style="margin:0"></span>
+    <a id="coinpayConnect" href="/api/auth/coinpay/login?mode=connect" hidden>Connect CoinPay</a>
+    <button id="coinpayDisconnect" type="button" hidden>Disconnect CoinPay</button>
+  </div>
+
   <h2>Default AI provider</h2>
   <p class="hint">Used by the AI sidebar. Pick a provider and model below; keys sync to your account (cloud).</p>
   <div class="grid">

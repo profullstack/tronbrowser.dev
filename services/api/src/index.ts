@@ -6,7 +6,7 @@ import { getCookie, setCookie, deleteCookie } from 'hono/cookie';
 import {
   createUser, userByCoinpaySub, userByEmail, createSession, userBySession,
   deleteSession, putEmailToken, consumeEmailToken, setEmailVerified, releaseEmail,
-  getSettings, putSettings, type User,
+  getSettings, putSettings, linkCoinpaySub, unlinkCoinpaySub, hasPassword, type User,
 } from './db.js';
 import { token, uuid, hashPassword, verifyPassword, SESSION_TTL, EMAIL_TOKEN_TTL } from './auth.js';
 import { sendEmail } from './email.js';
@@ -16,7 +16,12 @@ import { dnsRoutes } from './dns.js';
 import { tronRelay } from './mcp/tron.js';
 import { safeRedirect } from './redirect.js';
 import { extLoginTarget } from './ext-login.js';
-import { resolveCoinpayUser, releasableEmailHolder } from './coinpay-login.js';
+import {
+  resolveCoinpayUser, releasableEmailHolder, connectCoinpay, encodePending, decodePending, coinpayIssuer,
+} from './coinpay-login.js';
+import {
+  SIGN_IN_SCOPES, authorizeUrl as coinpayAuthorizeUrl, finishSignIn, pkce, randomToken, sameState,
+} from '@profullstack/coinpay-onboard/oauth';
 import { assertDatabaseUrl, db } from './db.js';
 import { pushService } from './push/routes.js';
 import { createCrawlGate, crawlCheck } from './crawl-gate.js';
@@ -26,15 +31,19 @@ import { mountProfile, profileStore, saveSignup, signupProfileErrors } from './p
 // condition to limp along under (there is no file-database fallback).
 assertDatabaseUrl();
 
+// Sign in with CoinPay: confidential client, auth code + PKCE S256 + state +
+// nonce, client secret on the code exchange, id_token iss/aud/exp/nonce checked
+// and the userinfo sub matched (@profullstack/coinpay-onboard/oauth). Scopes are
+// exactly what sign-in needs; the registered client must include them, or
+// CoinPay silently drops the rest.
 const CP = {
   clientId: process.env.COINPAY_CLIENT_ID || '',
   clientSecret: process.env.COINPAY_CLIENT_SECRET || '',
-  redirectUri: process.env.COINPAY_REDIRECT_URI || 'https://tronbrowser.com/api/auth/coinpay/callback',
-  authorizeUrl: process.env.COINPAY_AUTHORIZE_URL || 'https://coinpayportal.com/api/oauth/authorize',
-  tokenUrl: process.env.COINPAY_TOKEN_URL || 'https://coinpayportal.com/api/oauth/token',
-  userinfoUrl: process.env.COINPAY_USERINFO_URL || 'https://coinpayportal.com/api/oauth/userinfo',
-  scopes: (process.env.COINPAY_SCOPES || 'openid profile email did wallet:read').split(/\s+/).filter(Boolean),
+  redirectUri: process.env.COINPAY_REDIRECT_URI || 'https://tronbrowser.dev/api/auth/coinpay/callback',
+  base: coinpayIssuer(process.env.COINPAY_AUTHORIZE_URL),
 };
+const CP_COOKIE = 'cp_pending';
+const CP_COOKIE_PATH = '/api/auth/coinpay';
 const APP_URL = process.env.APP_URL || 'https://tronbrowser.dev';
 
 const app = new Hono();
@@ -107,63 +116,77 @@ app.get('/api/auth/ext-login', async (c) => {
 });
 
 /* ---------- CoinPay OAuth (preferred) ---------- */
-app.get('/api/auth/coinpay/login', (c) => {
-  if (!CP.clientId) return c.text('CoinPay not configured', 500);
-  const state = token();
-  const redirect = c.req.query('redirect') || '';
-  setCookie(c, 'cp_state', state, { httpOnly: true, secure: true, sameSite: 'Lax', path: '/', maxAge: 600 });
-  setCookie(c, 'cp_redirect', redirect, { httpOnly: true, secure: true, sameSite: 'Lax', path: '/', maxAge: 600 });
-  const u = new URL(CP.authorizeUrl);
-  u.searchParams.set('response_type', 'code');
-  u.searchParams.set('client_id', CP.clientId);
-  u.searchParams.set('redirect_uri', CP.redirectUri);
-  u.searchParams.set('scope', CP.scopes.join(' '));
-  u.searchParams.set('state', state);
-  return c.redirect(u.toString());
+// mode=login (default) signs in, or makes an account bound to the CoinPay sub.
+// mode=connect links CoinPay to the signed-in account (settings) and needs a
+// session; a CoinPay login never claims an account by its email.
+app.get('/api/auth/coinpay/login', async (c) => {
+  if (!CP.clientId || !CP.clientSecret) return c.text('CoinPay not configured', 500);
+  const mode = c.req.query('mode') === 'connect' ? 'connect' : 'login';
+  if (mode === 'connect' && !(await currentUser(c))) return c.redirect(`${APP_URL}/login`);
+  const { verifier, challenge } = pkce();
+  const pending = { state: randomToken(), nonce: randomToken(), verifier, mode, redirect: c.req.query('redirect') || '' } as const;
+  setCookie(c, CP_COOKIE, encodePending(pending), { httpOnly: true, secure: true, sameSite: 'Lax', path: CP_COOKIE_PATH, maxAge: 600 });
+  c.header('cache-control', 'no-store');
+  return c.redirect(coinpayAuthorizeUrl({
+    base: CP.base,
+    clientId: CP.clientId,
+    redirectUri: CP.redirectUri,
+    scopes: SIGN_IN_SCOPES,
+    state: pending.state,
+    nonce: pending.nonce,
+    challenge,
+  }));
 });
 
 app.get('/api/auth/coinpay/callback', async (c) => {
+  const pending = decodePending(getCookie(c, CP_COOKIE));
+  deleteCookie(c, CP_COOKIE, { path: CP_COOKIE_PATH });
+  c.header('cache-control', 'no-store');
   const code = c.req.query('code');
-  const state = c.req.query('state');
-  const expectedState = getCookie(c, 'cp_state');
-  // Require a non-empty state that matches the cookie. Without the `!state`/
-  // `!expectedState` guards, a missing cookie AND missing state param both read
-  // as undefined, so `undefined !== undefined` is false and the CSRF check is
-  // silently bypassed (login CSRF).
-  if (!code || !state || !expectedState || state !== expectedState) {
+  // A non-empty state that matches the cookie's, compared in constant time.
+  if (!pending || !code || !sameState(pending.state, c.req.query('state'))) {
     return c.text('invalid oauth state', 400);
   }
-  const redirect = safeRedirect(getCookie(c, 'cp_redirect'), APP_URL);
-
-  const basic = Buffer.from(`${CP.clientId}:${CP.clientSecret}`).toString('base64');
-  const tokRes = await fetch(CP.tokenUrl, {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/x-www-form-urlencoded',
-      authorization: `Basic ${basic}`,
-    },
-    body: new URLSearchParams({
-      grant_type: 'authorization_code', code, redirect_uri: CP.redirectUri,
-      client_id: CP.clientId, client_secret: CP.clientSecret,
-    }),
-  });
-  if (!tokRes.ok) return c.text('coinpay token exchange failed: ' + (await tokRes.text()), 502);
-  const tok: any = await tokRes.json();
-
-  let info: any = {};
+  let claims: { sub: string; email: string | null };
   try {
-    const r = await fetch(CP.userinfoUrl, { headers: { authorization: `Bearer ${tok.access_token}` } });
-    if (r.ok) info = await r.json();
-  } catch { /* ignore */ }
-  const sub = info.sub || info.id || tok.sub;
-  if (!sub) return c.text('coinpay userinfo missing subject', 502);
+    const r = await finishSignIn({
+      code,
+      verifier: pending.verifier,
+      nonce: pending.nonce,
+      clientId: CP.clientId,
+      clientSecret: CP.clientSecret,
+      redirectUri: CP.redirectUri,
+      base: CP.base,
+    });
+    claims = { sub: r.sub, email: r.email };
+  } catch (err) {
+    console.error('[coinpay] sign-in failed:', (err as Error)?.message ?? err);
+    return c.text('coinpay sign-in failed', 502);
+  }
+
+  if (pending.mode === 'connect') {
+    const res = await connectCoinpay({ userByCoinpaySub, linkCoinpaySub }, await currentUser(c), claims.sub);
+    return c.redirect(`${APP_URL}/settings?coinpay=${res.ok ? 'connected' : res.code}`);
+  }
 
   // Bound to the CoinPay sub only. CoinPay never verifies emails, so its email
   // never links to an existing account and is never marked verified.
-  const user = await resolveCoinpayUser({ userByCoinpaySub, userByEmail, createUser, newId: uuid }, String(sub), info);
-  deleteCookie(c, 'cp_state'); deleteCookie(c, 'cp_redirect');
+  const user = await resolveCoinpayUser({ userByCoinpaySub, userByEmail, createUser, newId: uuid }, claims.sub, { email: claims.email });
+  const redirect = safeRedirect(pending.redirect, APP_URL);
   const r = await startSession(c, user.id, redirect);
   return redirect ? r : c.redirect(`${APP_URL}/?signedin=1`);
+});
+
+// Settings -> Disconnect CoinPay. Refused when CoinPay is the only way in.
+app.post('/api/auth/coinpay/disconnect', async (c) => {
+  const user = await currentUser(c);
+  if (!user) return c.json({ error: 'unauthorized' }, 401);
+  if (!user.coinpay_sub) return c.json({ ok: true });
+  if (!(await hasPassword(user.id))) {
+    return c.json({ error: 'CoinPay is the only way to sign in to this account, so it cannot be disconnected.' }, 409);
+  }
+  await unlinkCoinpaySub(user.id);
+  return c.json({ ok: true });
 });
 
 /* ---------- Email + password ---------- */
@@ -216,7 +239,11 @@ app.post('/api/auth/logout', async (c) => {
 app.get('/api/auth/me', async (c) => {
   const user = await currentUser(c);
   if (!user) return c.json({ signedIn: false });
-  return c.json({ signedIn: true, id: user.id, authMethod: user.auth_method, email: user.email, emailVerified: !!user.email_verified });
+  return c.json({
+    signedIn: true, id: user.id, authMethod: user.auth_method, email: user.email, emailVerified: !!user.email_verified,
+    coinpayConnected: !!user.coinpay_sub,
+    canDisconnectCoinpay: !!user.coinpay_sub && (await hasPassword(user.id)),
+  });
 });
 
 /* ---------- Shared profile (@profullstack/profile): /api/v1/me/profile ---------- */
