@@ -84,6 +84,35 @@ export async function createUser(u: {
   });
 }
 
+/**
+ * Connect CoinPay to a signed-in account: set its sub only while the account has
+ * none. 'conflict' when the sub is already bound elsewhere (coinpay_sub is UNIQUE)
+ * or the account already has a different one.
+ */
+export async function linkCoinpaySub(userId: string, sub: string): Promise<'ok' | 'conflict'> {
+  try {
+    const r = await db().execute({
+      sql: "UPDATE users SET coinpay_sub = ?, updated_at = datetime('now') WHERE id = ? AND coinpay_sub IS NULL",
+      args: [sub, userId],
+    });
+    return r.rowsAffected ? 'ok' : 'conflict';
+  } catch (err) {
+    if (/unique|duplicate/i.test(String((err as Error)?.message ?? err))) return 'conflict';
+    throw err;
+  }
+}
+
+/** Disconnect CoinPay (callers check the account has a password first). */
+export async function unlinkCoinpaySub(userId: string): Promise<void> {
+  await db().execute({ sql: "UPDATE users SET coinpay_sub = NULL, updated_at = datetime('now') WHERE id = ?", args: [userId] });
+}
+
+/** Whether the account can sign in without CoinPay (it has a password). */
+export async function hasPassword(userId: string): Promise<boolean> {
+  const r = await db().execute({ sql: 'SELECT password_hash FROM users WHERE id = ?', args: [userId] });
+  return !!(r.rows[0] as unknown as { password_hash: string | null } | undefined)?.password_hash;
+}
+
 /** Drop an unverified email from an account (see releasableEmailHolder). */
 export async function releaseEmail(userId: string): Promise<void> {
   await db().execute({ sql: "UPDATE users SET email = NULL, updated_at = datetime('now') WHERE id = ? AND email_verified = 0", args: [userId] });

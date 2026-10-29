@@ -20,7 +20,7 @@
     "@langchain/langgraph": "^1.5.2",
     "@langchain/openai": "^1.7.0",
     "@logicsrc/agentswarm": "^0.1.0",
-    "@profullstack/coinpay-onboard": "0.2.0",
+    "@profullstack/coinpay-onboard": "0.3.1",
     "@profullstack/libsql-pg": "^0.1.4",
     "@profullstack/profile": "0.1.6",
     "@profullstack/x402-gateway": "^0.13.1",

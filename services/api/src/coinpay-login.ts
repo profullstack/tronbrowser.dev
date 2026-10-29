@@ -68,3 +68,62 @@ export async function resolveCoinpayUser(
 export function releasableEmailHolder(holder: CoinpayUser | null): boolean {
   return !!holder && holder.auth_method === 'coinpay' && !holder.password_hash && !holder.email_verified;
 }
+
+/* ---------------------------------------------------------------- connect -- */
+
+export type ConnectResult = { ok: true } | { ok: false; code: 'not_signed_in' | 'linked_elsewhere' | 'already_connected' };
+
+/**
+ * Connect CoinPay to the signed-in account (settings). Only ever with a session:
+ * a CoinPay login never claims an account by its email.
+ */
+export async function connectCoinpay(
+  deps: {
+    userByCoinpaySub(sub: string): Promise<CoinpayUser | null>;
+    linkCoinpaySub(userId: string, sub: string): Promise<'ok' | 'conflict'>;
+  },
+  current: { id: string; coinpay_sub: string | null } | null,
+  sub: string,
+): Promise<ConnectResult> {
+  if (!current) return { ok: false, code: 'not_signed_in' };
+  const bound = await deps.userByCoinpaySub(sub);
+  if (bound) return bound.id === current.id ? { ok: true } : { ok: false, code: 'linked_elsewhere' };
+  if (current.coinpay_sub) return { ok: false, code: 'already_connected' };
+  return (await deps.linkCoinpaySub(current.id, sub)) === 'ok' ? { ok: true } : { ok: false, code: 'linked_elsewhere' };
+}
+
+/* ---------------------------------------------------- pending OAuth request -- */
+
+/**
+ * What the start route keeps in a short-lived httpOnly cookie: state, the OIDC
+ * nonce, the PKCE verifier, the mode, and where to land.
+ */
+export interface PendingCoinpay {
+  state: string;
+  nonce: string;
+  verifier: string;
+  mode: 'login' | 'connect';
+  redirect: string;
+}
+
+export function encodePending(p: PendingCoinpay): string {
+  return Buffer.from(JSON.stringify({ s: p.state, n: p.nonce, v: p.verifier, m: p.mode, r: p.redirect })).toString('base64url');
+}
+
+export function decodePending(raw: string | undefined | null): PendingCoinpay | null {
+  if (!raw) return null;
+  try {
+    const o = JSON.parse(Buffer.from(raw, 'base64url').toString('utf8'));
+    if (!o || typeof o.s !== 'string' || typeof o.n !== 'string' || typeof o.v !== 'string') return null;
+    if (o.m !== 'login' && o.m !== 'connect') return null;
+    return { state: o.s, nonce: o.n, verifier: o.v, mode: o.m, redirect: typeof o.r === 'string' ? o.r : '' };
+  } catch {
+    return null;
+  }
+}
+
+/** The CoinPay issuer from an endpoint URL (`<issuer>/api/oauth/<x>`), else the hosted one. */
+export function coinpayIssuer(endpoint: string | undefined): string {
+  const m = /^(https?:\/\/[^/]+(?:\/.*?)?)\/api\/oauth\/[a-z_]+\/?$/.exec(String(endpoint ?? ''));
+  return m?.[1] ?? 'https://coinpayportal.com';
+}
