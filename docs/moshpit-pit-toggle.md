@@ -19,7 +19,7 @@ ways to make them work, and the settings page says so:
 | Needs root | yes (rewrites the resolver config, installs a local CA) | no |
 | Survives restart | yes | no — off again on every launch, like 🧅 Tor |
 | `https://` on a pit name | works (pinned proxy + local CA) | works on Linux: the leaf is trusted per name on first use, against the registry pin |
-| Clearnet names | forwarded to public resolvers | never touched |
+| Clearnet names | forwarded to public resolvers | ordinary sites stay direct; W3BS Net names take priority while Pit is on |
 
 The toggle is for the laptop where DNS is not yours to change, or the first
 five minutes before you have run `moshcode dns enable`.
@@ -41,18 +41,22 @@ It is built exactly like the 🧅 Tor toggle:
    for 30 s), falls back to the system resolver if that fails, connects to the
    answer and relays bytes. TLS passes through untouched. Only `CONNECT` over TCP
    is implemented; the browser never asks a SOCKS proxy for UDP.
-3. **The PAC.** The extension (`apps/desktop/extensions/ai-sidebar/pit-proxy.js`)
-   installs a `pac_script` proxy config whose `FindProxyForURL` calls
-   `dnsResolve(host)`. **Anything the system resolver can answer goes `DIRECT`,
-   untouched.** Only a host it has no answer for is sent to the pit resolver.
-   Loopback, single-label intranet names and IP literals always go `DIRECT`.
+3. **W3BS first.** While Pit is on, the extension checks two-label names against
+   W3BS Net before navigation. An active W3BS record opens its published HTTPS
+   target, or its canonical `<name>.w3bs.org` host when no target is published.
+   A name imported from Moshpit uses its `.pit.world` gateway. A W3BS miss moves
+   on to the Moshpit resolver.
+4. **The PAC.** The extension (`apps/desktop/extensions/ai-sidebar/pit-proxy.js`)
+   installs a `pac_script` proxy config. W3BS Net hostnames go through the
+   W3BS-first resolver even when public DNS has a stale answer. For other names,
+   anything the system resolver answers goes `DIRECT`; only unresolved names go
+   to the Moshpit resolver. Loopback, single-label intranet names and IP
+   literals always go `DIRECT`.
 
-That last rule is the point. Real TLDs (`.io`, `.dev`, `.sh`, …) have been
-claimed as Moshpit endings too, so an ending list cannot say whether a host is a
-Moshpit name. The house policy is **clearnet wins, the pit is the fallback**: a
-resolver that silently redirected a domain which already works would be
-indistinguishable from a hijack. `dnsResolve` applies that policy per host with
-no ending list to fetch, cache or age out.
+W3BS is the primary registry when Pit is enabled. Moshpit only fills names W3BS
+does not own; ordinary public sites still connect directly. This lets an active
+W3BS name override a stale public DNS answer without routing unrelated clearnet
+traffic through the pit.
 
 The PAC is not `mandatory`: if it ever fails to evaluate, Chromium falls back to
 `DIRECT` and ordinary browsing keeps working.
@@ -207,9 +211,9 @@ curl -X POST http://127.0.0.1:19061/pit/stop
   database, which only Chromium on Linux reads. Windows can explicitly opt into
   registry-root trust using the setup below. This does not trust self-signed
   origins, and macOS trust setup remains unchanged.
-- **"Moshpit wins."** The resolvers' `MOSHPIT_RESOLVE_MODE=moshpit` lets a
-  registered name override a clearnet one. The toggle only implements the
-  default `fallback` policy.
+- **"Moshpit wins over clearnet."** The resolvers' `MOSHPIT_RESOLVE_MODE=moshpit`
+  lets a registered Moshpit name override a public name. TronBrowser keeps
+  Moshpit as backfill; W3BS primary records are checked first while Pit is on.
 - **Persisting across launches.** Mirrors Tor deliberately; a setting to keep
   the pit on would be a small follow-up.
 

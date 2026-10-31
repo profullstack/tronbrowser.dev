@@ -7,11 +7,9 @@
 // resolver (tron-tor-helper, /pit/*) that answers through the Moshpit
 // DNS-over-HTTPS resolver, and the extension points a PAC script at it.
 //
-// The PAC decides per host with `dnsResolve`: whatever the system resolver CAN
-// answer goes DIRECT, untouched; only a host it has no answer for goes to the
-// pit. That is the house policy — clearnet wins, the pit is the fallback — so no
-// ending list is needed and a real domain is never redirected. Pure functions,
-// tested in pit-proxy.test.js.
+// W3BS names go through the W3BS-first resolver while Pit is on, even if public
+// DNS has a stale answer. Other names the system resolver can answer stay
+// DIRECT; unresolved names use Moshpit as the backfill. Pure functions.
 
 /** Loopback port the helper's pit resolver listens on (tron-tor-helper PIT_SOCKS_PORT). */
 export const PIT_SOCKS_PORT = 9081;
@@ -36,7 +34,12 @@ export function buildPitPac(port = PIT_SOCKS_PORT) {
     "  if (!h || h === 'localhost' || h.indexOf('.') === -1) return 'DIRECT';",
     "  if (h.slice(-10) === '.localhost') return 'DIRECT';",
     "  if (/^[0-9.]+$/.test(h) || h.indexOf(':') !== -1) return 'DIRECT';",
-    // Clearnet wins: anything the system resolver knows stays exactly as it was.
+    // W3BS Net is the primary namespace for its two-label names. Its DoH
+    // resolver falls through to public DNS when W3BS has no matching record.
+    "  var suffix = '.w3bs.org';",
+    "  var w3bsName = h.slice(-suffix.length) === suffix ? h.slice(0, -suffix.length) : '';",
+    `  if (w3bsName && w3bsName.split('.').length === 2) return 'SOCKS5 127.0.0.1:${p}';`,
+    // For all remaining names, ordinary DNS wins and Moshpit backfills misses.
     "  if (dnsResolve(h)) return 'DIRECT';",
     `  return 'SOCKS5 127.0.0.1:${p}';`,
     '}',

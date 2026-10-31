@@ -329,7 +329,7 @@ async function togglePit() {
         : trust.why === 'no-certutil'
           ? '<code>https://</code> on a pit name will warn until <code>certutil</code> is installed (Debian/Ubuntu: <code>libnss3-tools</code>, Fedora: <code>nss-tools</code>, Arch: <code>nss</code>).'
           : '<code>https://</code> on a pit name will warn on this platform; run <code>moshcode dns enable</code> for the certificate.';
-    const tip = `Clearnet names are untouched. ${httpsTip}`;
+    const tip = `W3BS Net names take priority; Moshpit is the backfill. Other clearnet names stay direct. ${httpsTip}`;
     if (!turningOn) {
       setPitButton(false);
       hideNetStatus();

@@ -17,6 +17,7 @@
     "activeTab",
     "scripting",
     "proxy",
+    "webNavigation",
     "privacy",
     "notifications",
     "alarms",
