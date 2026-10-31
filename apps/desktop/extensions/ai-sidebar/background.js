@@ -333,12 +333,142 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 });
 
 // --- Pit toggle ----------------------------------------------------------
-// Resolves Moshpit names (.eggs, .moshpit, …) in THIS session only. The same
-// helper that starts Tor runs a loopback SOCKS5 resolver on demand (/pit/*);
-// the extension installs the PAC from pit-proxy.js, which sends only hosts the
-// system resolver has no answer for to it — clearnet wins, nothing on the
-// machine changes, no root. Whole-machine resolution is still
-// `moshcode dns enable`. Off again on every fresh browser start, like Tor.
+// W3BS Net is primary for recognized names; Moshpit is the backfill. For a
+// bare W3BS name (fumb.duck), route to its W3BS host or published target before
+// DNS. If W3BS has no record, the PAC and SOCKS helper use Moshpit resolution.
+// All of this is scoped to this browser session and only runs while Pit is on.
+const W3BS_NET_RESOLVE = 'https://w3bs.org/api/net/v1/resolve/';
+const W3BS_NET_NAME = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
+const W3BS_HOST_SUFFIX = '.w3bs.org';
+const pitNavigationGeneration = new Map();
+const pitNavigationPending = new Set();
+const pitNavigationChains = new Map();
+
+function w3bsNameForHost(host) {
+  const lower = String(host || '').toLowerCase().replace(/\.$/, '');
+  if (lower.endsWith(W3BS_HOST_SUFFIX)) {
+    const name = lower.slice(0, -W3BS_HOST_SUFFIX.length);
+    return W3BS_NET_NAME.test(name) ? { name } : null;
+  }
+  return W3BS_NET_NAME.test(lower) ? { name: lower } : null;
+}
+
+function appendNetPath(destination, source) {
+  const target = new URL(destination);
+  const incoming = new URL(source);
+  if (incoming.pathname !== '/') {
+    target.pathname = `${target.pathname.replace(/\/+$/, '')}/${incoming.pathname.replace(/^\/+/, '')}`;
+  }
+  if (incoming.search) target.search = incoming.search;
+  if (incoming.hash) target.hash = incoming.hash;
+  return target.href;
+}
+
+async function w3bsNetRecord(name) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 2500);
+  try {
+    const response = await fetch(`${W3BS_NET_RESOLVE}${encodeURIComponent(name)}`, {
+      headers: { accept: 'application/json' },
+      redirect: 'error',
+      signal: controller.signal,
+    });
+    if (response.status === 404) return null;
+    if (!response.ok) return null;
+    return await response.json();
+  } catch (_) {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function routeW3bsNetNavigation(details) {
+  if (details.frameId !== 0 || details.tabId < 0) return;
+  const pendingKey = `${details.tabId}:${details.url}`;
+  if (pitNavigationPending.has(pendingKey)) return;
+  const generation = (pitNavigationGeneration.get(details.tabId) || 0) + 1;
+  pitNavigationGeneration.set(details.tabId, generation);
+
+  let incoming;
+  try {
+    incoming = new URL(details.url);
+  } catch (_) {
+    return;
+  }
+  if (incoming.protocol !== 'https:') return;
+  const candidate = w3bsNameForHost(incoming.hostname);
+  if (!candidate) return;
+
+  pitNavigationPending.add(pendingKey);
+  try {
+    const { pitEnabled } = await chrome.storage.local.get('pitEnabled');
+    if (!pitEnabled || pitNavigationGeneration.get(details.tabId) !== generation) return;
+
+    const record = await w3bsNetRecord(candidate.name);
+    if (!record || pitNavigationGeneration.get(details.tabId) !== generation) return;
+
+    let base;
+    let preservePath = true;
+    if (record.source === 'w3bs') {
+      if (record.status !== 'active') {
+        base = `https://w3bs.org/net?q=${encodeURIComponent(candidate.name)}`;
+        preservePath = false;
+      } else if (typeof record.target === 'string' && record.target) {
+        try {
+          const target = new URL(record.target);
+          if (target.protocol !== 'https:' || target.username || target.password) return;
+          base = target.href;
+        } catch (_) {
+          return;
+        }
+      } else {
+        base = `https://${candidate.name}.w3bs.org/`;
+      }
+    } else if (record.source === 'moshpit') {
+      // W3BS Net imported this name as backfill; its public gateway carries the
+      // name and path without asking ordinary DNS to resolve the Moshpit TLD.
+      const resolved = typeof record.resolved === 'string' && W3BS_NET_NAME.test(record.resolved)
+        ? record.resolved
+        : candidate.name;
+      base = `https://${resolved}.pit.world/`;
+    } else {
+      return;
+    }
+
+    const destination = preservePath ? appendNetPath(base, details.url) : base;
+    if (destination === details.url || pitNavigationGeneration.get(details.tabId) !== generation) return;
+
+    const chain = pitNavigationChains.get(details.tabId) || { seen: new Set(), expiresAt: 0 };
+    if (chain.expiresAt < Date.now()) chain.seen.clear();
+    if (chain.seen.has(incoming.hostname)) return;
+    chain.seen.add(incoming.hostname);
+    chain.expiresAt = Date.now() + 15000;
+    pitNavigationChains.set(details.tabId, chain);
+
+    await chrome.tabs.update(details.tabId, { url: destination });
+  } catch (_) {
+    // A lookup or redirect failure leaves the existing Moshpit/clearnet path
+    // alone; the W3BS check must never block normal navigation.
+  } finally {
+    pitNavigationPending.delete(pendingKey);
+  }
+}
+
+chrome.webNavigation.onBeforeNavigate.addListener((details) => {
+  void routeW3bsNetNavigation(details);
+});
+chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
+  if (changeInfo.status === 'complete') {
+    pitNavigationChains.delete(tabId);
+  }
+});
+chrome.tabs.onRemoved.addListener((tabId) => {
+  pitNavigationChains.delete(tabId);
+  pitNavigationGeneration.delete(tabId);
+  for (const key of pitNavigationPending) if (key.startsWith(`${tabId}:`)) pitNavigationPending.delete(key);
+});
+
 async function setPitBadge(on) {
   try {
     await chrome.action.setBadgeText({ text: on ? 'PIT' : '' });
