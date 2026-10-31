@@ -54,7 +54,7 @@
 	# The crawl pass pages get no CSP: their Buy button posts to /crawl/checkout,
 	# which redirects to coinpayportal.com, and form-action 'self' would block it.
 	@notcrawl not path /crawl /crawl/*
-	header @notcrawl Content-Security-Policy "default-src 'self'; script-src 'self' https://crawlproof.com https://cdn.jsdelivr.net; connect-src 'self' https://crawlproof.com https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://built.indie.pit.world https://pwamart.com; font-src 'self'; frame-src 'self' https://crawlproof.com; base-uri 'self'; form-action 'self' https://pit.world; frame-ancestors 'none'"
+	header @notcrawl Content-Security-Policy "default-src 'self'; script-src 'self' https://crawlproof.com https://cdn.jsdelivr.net; connect-src 'self' https://crawlproof.com https://cdn.jsdelivr.net https://pit.world; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://built.indie.pit.world https://pwamart.com https://logicsrc.com https://profullstack.com; font-src 'self'; frame-src 'self' https://crawlproof.com; base-uri 'self'; form-action 'self' https://pit.world; frame-ancestors 'none'"
 
 	# Correct content types for machine-readable files.
 	@plain path /robots.txt /llms.txt /llms-full.txt /.well-known/security.txt
