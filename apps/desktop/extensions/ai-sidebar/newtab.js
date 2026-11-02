@@ -5,6 +5,7 @@ import { fetchMotd } from './motd.js';
 import { getToken as btrToken, BTR_BASE } from './bittorrented.js';
 import { fetchWithTimeout, storageGet } from './net.js';
 import { w3bsUrl } from './w3bs.js';
+import { loadApps, host, DEFAULT_APPS } from './apps.js';
 
 const el = (id) => document.getElementById(id);
 
@@ -406,6 +407,59 @@ window.addEventListener('message', (e) => {
 });
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closePlayer(); });
 
+// --- Apps: Profullstack's pwamart listings, one tap to install ---
+let installed = new Set();
+let hasHost = false;
+let allApps = [];
+
+function appTile(a) {
+  const on = installed.has(a.slug);
+  const label = on || !hasHost ? 'Open' : 'Install';
+  const icon = /^https:\/\//.test(a.icon)
+    ? `<img src="${escAttr(a.icon)}" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer" width="40" height="40">`
+    : '<span class="app-noicon"></span>';
+  return `<div class="app${on ? ' on' : ''}${DEFAULT_APPS.includes(a.slug) ? ' def' : ''}" title="${escAttr(a.summary)}">` +
+    `${icon}<b>${escapeHtml(a.name)}</b>` +
+    `<button data-app="${escAttr(a.slug)}">${on ? '✓ ' : ''}${label}</button></div>`;
+}
+
+function drawApps() {
+  const q = el('apps-q').value.trim().toLowerCase();
+  const list = q ? allApps.filter((a) => (a.name + ' ' + a.slug + ' ' + a.summary).toLowerCase().includes(q)) : allApps;
+  el('apps').innerHTML = list.map(appTile).join('') || '<p class="muted">No apps match.</p>';
+}
+
+async function renderApps() {
+  allApps = await loadApps();
+  if (!allApps.length) return;
+  const r = await host({ cmd: 'list' });
+  hasHost = !!r.ok;
+  installed = new Set(r.ok ? r.installed : []);
+  el('apps-note').hidden = hasHost;
+  el('apps-note').textContent = hasHost ? '' : 'Installing needs the TronBrowser launcher on Linux; here apps open in their own window.';
+  el('apps-sec').hidden = false;
+  drawApps();
+}
+
+el('apps-q').addEventListener('input', drawApps);
+el('apps').addEventListener('click', async (e) => {
+  const b = e.target.closest('button[data-app]');
+  if (!b) return;
+  const slug = b.getAttribute('data-app');
+  const app = allApps.find((a) => a.slug === slug);
+  if (!app) return;
+  if (!hasHost) { chrome.windows.create({ url: app.start_url, type: 'popup', width: 420, height: 820 }); return; }
+  b.disabled = true;
+  const r = await host({ cmd: installed.has(slug) ? 'open' : 'add', slug });
+  if (r.ok && r.installed) installed = new Set(r.installed);
+  drawApps();
+  if (!r.ok) {
+    const again = el('apps').querySelector(`button[data-app="${slug}"]`);
+    if (again) { again.textContent = 'Retry'; again.title = r.error || 'failed'; }
+  }
+});
+
+renderApps();
 renderMotd();
 renderBtr();
 renderFeeds();

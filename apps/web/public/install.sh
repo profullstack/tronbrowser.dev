@@ -137,7 +137,13 @@ Usage:
   tron pwa search <q>   Search pwamart.com, the app store for web apps
   tron pwa install <slug|url>
                         Open a pwamart app (or any https URL) as an app window
-  tron doctor          Check the engine, locks, databases and disk
+  tron pwa add <slug>... Put pwamart apps in the app drawer in one step
+  tron pwa remove <slug>...
+                        Take them out again (tron pwa installed lists them)
+  tron pwa defaults     Add CoinPay, LogicSRC and TronBrowser (done once per
+                        profile on first start; TRONBROWSER_NO_DEFAULT_APPS=1
+                        skips it)
+  tron doctor         Check the engine, locks, databases and disk
                         (use when "Something went wrong when opening your
                          profile" appears; --json for machine output)
   tron repair           Fix what doctor found, with the browser closed

@@ -36,6 +36,14 @@ shortcut from someone's real Chrome is left exactly as it is.
                        open a pwamart listing (or any URL) as a TronBrowser app
                        window; Install in its address bar then keeps it, and the
                        icon it writes is repointed by sync like any other
+  tron pwa add <slug>...
+                       put pwamart apps in the app drawer in one step: an icon
+                       that opens the app in its own TronBrowser window
+  tron pwa remove <slug>...   take them out again
+  tron pwa installed   slugs added that way
+  tron pwa defaults    add CoinPay, LogicSRC and TronBrowser once per profile
+                       (the launcher runs this; TRONBROWSER_NO_DEFAULT_APPS=1
+                       skips it, and a default you remove stays removed)
 
 `--dry-run` reports what sync/revert would change without writing.
 """
@@ -489,6 +497,9 @@ def cmd_list(apps_dir: str) -> int:
     print(f"Web-app shortcuts in {apps_dir}:\n")
     for sc in shortcuts:
         name = sc.get("Name") or os.path.basename(sc.path)
+        if sc.get(KEY_PWA):
+            print(f"  {name}\n    added by 'tron pwa add' (tron pwa remove {sc.get(KEY_PWA)})")
+            continue
         profile = ours(sc, installed)
         if not profile:
             udd = sc.user_data_dir() or "no profile recorded, and not installed in ours"
@@ -698,6 +709,348 @@ def cmd_install(target: str, dry_run: bool) -> int:
     return 0
 
 
+# --- Apps we put in the app drawer ourselves --------------------------------
+#
+# The engine cannot install a web app on our say-so: it has no PWA DevTools
+# domain, `navigator.install` is not there, the command-line --policy switch is
+# ignored, and chrome.management.generateAppForLink only makes a hosted app that
+# opens in a tab. The managed WebAppInstallForceList policy works but needs root
+# and can never be uninstalled. So an "installed" app here is what the desktop
+# (and the PIT ONE / W3BS phone shell) actually launches: a .desktop entry with
+# the app's icon that runs `tron --app=<start_url>`, a standalone window in the
+# TronBrowser profile. The user removes it like any other app, or with
+# `tron pwa remove`.
+
+# Installed for every new profile, once. Baked in rather than looked up so a
+# first start with no network still gets them; only the icon is fetched.
+DEFAULT_APPS = {
+    "coinpay": {
+        "name": "CoinPay",
+        "start_url": "https://coinpayportal.com/",
+        "icon": "https://coinpayportal.com/icons/icon-512x512.png",
+    },
+    "logicsrc": {
+        "name": "LogicSRC",
+        "start_url": "https://logicsrc.com/",
+        "icon": "https://logicsrc.com/icon.svg",
+    },
+    "tronbrowser": {
+        "name": "TronBrowser",
+        "start_url": "https://tronbrowser.dev/",
+        "icon": "https://tronbrowser.dev/icons/icon-512x512.png",
+    },
+}
+
+KEY_PWA = "X-TronBrowser-Pwa"
+DESKTOP_PREFIX = "tronbrowser-pwa-"
+SLUG_RE = r"[a-z0-9][a-z0-9-]{0,58}[a-z0-9]"
+HOST_NAME = "dev.tronbrowser.pwa"
+ICON_MAX = 2 * 1024 * 1024
+
+
+def data_home() -> str:
+    return os.environ.get("XDG_DATA_HOME") or os.path.join(os.path.expanduser("~"), ".local", "share")
+
+
+def profile_dir() -> str:
+    return profile_dirs()[0]
+
+
+def desktop_path(slug: str) -> str:
+    return os.path.join(applications_dir(), f"{DESKTOP_PREFIX}{slug}.desktop")
+
+
+def icon_path(slug: str, url: str = "") -> str:
+    """Where an app's icon lives. The suffix follows the source (freedesktop
+    picks the loader by it), so an SVG icon is stored as .svg."""
+    ext = ".svg" if url.split("?")[0].lower().endswith(".svg") else ".png"
+    return os.path.join(data_home(), "tronbrowser", "pwa-icons", f"{slug}{ext}")
+
+
+def valid_slug(slug: str) -> bool:
+    import re
+
+    return bool(re.fullmatch(SLUG_RE, slug or ""))
+
+
+def clean_name(name: str, fallback: str) -> str:
+    # One line, no desktop-entry metacharacters a Name= could smuggle in.
+    name = " ".join(str(name or "").split())[:60]
+    return name or fallback
+
+
+def fetch_icon(url: str, dest: str) -> bool:
+    """Download an https icon, capped in size. False keeps the generic icon."""
+    import urllib.request
+
+    if not (url or "").startswith("https://"):
+        return False
+    try:
+        req = urllib.request.Request(url, headers={"user-agent": "tron-pwa"})
+        # https only (checked above); the URL is the listing's own icon.
+        # threatcrush-disable-next-line py-ssrf-outbound-request
+        with urllib.request.urlopen(req, timeout=10) as res:
+            body = res.read(ICON_MAX + 1)
+        if len(body) > ICON_MAX or not body:
+            return False
+        os.makedirs(os.path.dirname(dest), exist_ok=True)
+        with open(dest, "wb") as f:
+            f.write(body)
+        return True
+    except Exception:
+        return False
+
+
+def resolve_app(slug: str) -> dict:
+    """name/start_url/icon for a slug: the store first, the baked-in defaults offline."""
+    try:
+        import urllib.parse
+
+        app = pwamart_get(f"/apps/{urllib.parse.quote(slug)}")["app"]
+        return {
+            "name": app.get("name") or slug,
+            "start_url": app.get("start_url") or app.get("url") or "",
+            "icon": app.get("icon") or "",
+        }
+    except Exception:
+        if slug in DEFAULT_APPS:
+            return dict(DEFAULT_APPS[slug])
+        raise
+
+
+def write_app(slug: str, app: dict, dry_run: bool = False) -> str:
+    """Write the drawer entry for one app; returns its path."""
+    url = app.get("start_url") or ""
+    if not url.startswith("https://"):
+        raise ValueError(f"refusing a non-https start URL: {url}")
+    if any(c in url for c in " \t\r\n\"'\\`$"):
+        raise ValueError(f"refusing an unusual start URL: {url}")
+    name = clean_name(app.get("name"), slug)
+    path = desktop_path(slug)
+    if dry_run:
+        return path
+    icon = icon_path(slug, app.get("icon") or "")
+    have_icon = fetch_icon(app.get("icon") or "", icon) or os.path.isfile(icon)
+    lines = [
+        "[Desktop Entry]",
+        "Type=Application",
+        "Version=1.0",
+        f"Name={name}",
+        f"Comment={name} in TronBrowser",
+        # A literal % in Exec is written %% (desktop entry spec).
+        "Exec=" + escape_exec([launcher_cli(), f"--app={url}"]).replace("%", "%%"),
+        f"Icon={icon if have_icon else 'tronbrowser'}",
+        "Terminal=false",
+        "Categories=Network;WebBrowser;",
+        f"{KEY_PWA}={slug}",
+    ]
+    os.makedirs(applications_dir(), exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=applications_dir(), prefix=".tron-pwa-")
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        f.write("\n".join(lines) + "\n")
+    os.chmod(tmp, 0o644)
+    os.replace(tmp, path)
+    return path
+
+
+def installed_slugs() -> list[str]:
+    try:
+        names = sorted(os.listdir(applications_dir()))
+    except OSError:
+        return []
+    out = []
+    for n in names:
+        if n.startswith(DESKTOP_PREFIX) and n.endswith(".desktop"):
+            slug = n[len(DESKTOP_PREFIX) : -len(".desktop")]
+            if valid_slug(slug):
+                out.append(slug)
+    return out
+
+
+def add_app(slug: str, dry_run: bool = False) -> str:
+    if not valid_slug(slug):
+        raise ValueError("give a pwamart slug")
+    path = write_app(slug, resolve_app(slug), dry_run)
+    if not dry_run:
+        pwamart_count(slug)
+    return path
+
+
+def remove_app(slug: str) -> bool:
+    if not valid_slug(slug):
+        return False
+    gone = False
+    for p in (desktop_path(slug), icon_path(slug), icon_path(slug, ".svg")):
+        try:
+            os.unlink(p)
+            gone = True
+        except OSError:
+            pass
+    return gone
+
+
+def open_app(slug: str) -> None:
+    import shlex
+    import subprocess
+
+    sc = Shortcut.load(desktop_path(slug))
+    if not sc:
+        raise ValueError(f"{slug} is not installed")
+    argv = [a.replace("%%", "%") for a in unescape_exec(sc.get("Exec") or "") if a not in FIELD_CODES]
+    if len(argv) < 2 or not argv[1].startswith("--app=https://"):
+        raise ValueError(f"{slug}: unexpected Exec {shlex.join(argv)}")
+    subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+
+
+def cmd_add(slugs: list[str], dry_run: bool) -> int:
+    if not slugs:
+        print("tron pwa add: give one or more pwamart slugs", file=sys.stderr)
+        return 2
+    rc = 0
+    for slug in slugs:
+        try:
+            path = add_app(slug, dry_run)
+            print(f"{'would add' if dry_run else 'added'} {slug} -> {path}")
+        except Exception as e:
+            print(f"tron pwa add {slug}: {e}", file=sys.stderr)
+            rc = 1
+    return rc
+
+
+def cmd_remove(slugs: list[str]) -> int:
+    rc = 0
+    for slug in slugs:
+        if remove_app(slug):
+            print(f"removed {slug}")
+        else:
+            print(f"tron pwa remove: {slug} is not installed", file=sys.stderr)
+            rc = 1
+    return rc
+
+
+def defaults_marker() -> str:
+    return os.path.join(profile_dir(), ".tron-pwa-defaults")
+
+
+def cmd_defaults(dry_run: bool) -> int:
+    """Put CoinPay, logicsrc and Tron in the drawer, once per profile.
+
+    The marker records each default that was installed, so one the user removed
+    stays removed, and a default added in a later release still arrives. A
+    failed install is not recorded and is retried on the next start.
+    """
+    if os.environ.get("TRONBROWSER_NO_DEFAULT_APPS") == "1":
+        return 0
+    try:
+        with open(defaults_marker(), encoding="utf-8") as f:
+            done = {l.strip() for l in f if l.strip()}
+    except OSError:
+        done = set()
+    todo = [s for s in DEFAULT_APPS if s not in done]
+    for slug in todo:
+        if dry_run:
+            print(f"would add {slug}")
+            continue
+        try:
+            write_app(slug, dict(DEFAULT_APPS[slug]))
+            pwamart_count(slug)
+            done.add(slug)
+        except Exception as e:
+            print(f"tron pwa defaults {slug}: {e}", file=sys.stderr)
+    if todo and not dry_run:
+        os.makedirs(profile_dir(), exist_ok=True)
+        with open(defaults_marker(), "w", encoding="utf-8") as f:
+            f.write("\n".join(sorted(done)) + "\n")
+    return 0
+
+
+def unpacked_extension_id(path: str) -> str:
+    """The id Chromium gives an extension loaded with --load-extension=<path>:
+    sha256 of the absolute path, first 16 bytes, hex digits mapped to a-p."""
+    import hashlib
+
+    digest = hashlib.sha256(os.path.realpath(path).encode("utf-8")).hexdigest()[:32]
+    return "".join(chr(ord("a") + int(c, 16)) for c in digest)
+
+
+def cmd_register_host(ext_dirs: str) -> int:
+    """Let the new-tab widget reach `tron pwa` through native messaging.
+
+    Chromium reads user-level hosts from <user-data-dir>/NativeMessagingHosts,
+    so this needs no root and is scoped to the TronBrowser profile. Rewritten on
+    every start because the launcher (and so this script) moves on upgrade.
+    """
+    dirs = [d for d in (ext_dirs or "").split(",") if d and os.path.isfile(os.path.join(d, "manifest.json"))]
+    if not dirs:
+        return 0
+    host_dir = os.path.join(profile_dir(), "NativeMessagingHosts")
+    os.makedirs(host_dir, exist_ok=True)
+    wrapper = os.path.join(host_dir, "tron-pwa-host")
+    script = os.path.abspath(__file__)
+    env_lines = ""
+    for k in ("TRONBROWSER_DATA", "TRONBROWSER_CLI", "PWAMART_URL"):
+        v = os.environ.get(k)
+        if v:
+            env_lines += f"export {k}='{v.replace(chr(39), '')}'\n"
+    with open(wrapper, "w", encoding="utf-8") as f:
+        f.write(f"#!/bin/sh\n{env_lines}exec python3 '{script.replace(chr(39), '')}' host\n")
+    os.chmod(wrapper, 0o755)
+    import json
+
+    manifest = {
+        "name": HOST_NAME,
+        "description": "TronBrowser app installer (tron pwa)",
+        "path": wrapper,
+        "type": "stdio",
+        "allowed_origins": [f"chrome-extension://{unpacked_extension_id(d)}/" for d in dirs],
+    }
+    with open(os.path.join(host_dir, f"{HOST_NAME}.json"), "w", encoding="utf-8") as f:
+        json.dump(manifest, f, indent=2)
+    return 0
+
+
+def cmd_host() -> int:
+    """One native-messaging request in, one reply out (sendNativeMessage)."""
+    import json
+    import struct
+
+    raw = sys.stdin.buffer.read(4)
+    if len(raw) < 4:
+        return 0
+    (n,) = struct.unpack("<I", raw)
+    if n > 64 * 1024:
+        return 1
+    try:
+        msg = json.loads(sys.stdin.buffer.read(n).decode("utf-8"))
+    except Exception:
+        msg = {}
+    cmd, slug = msg.get("cmd"), str(msg.get("slug") or "")
+    # Our own output must not reach stdout except as the framed reply.
+    real_stdout, sys.stdout = sys.stdout, sys.stderr
+    try:
+        if cmd == "list":
+            reply = {"ok": True, "installed": installed_slugs(), "defaults": list(DEFAULT_APPS)}
+        elif cmd == "add":
+            add_app(slug)
+            reply = {"ok": True, "installed": installed_slugs()}
+        elif cmd == "remove":
+            remove_app(slug)
+            reply = {"ok": True, "installed": installed_slugs()}
+        elif cmd == "open":
+            open_app(slug)
+            reply = {"ok": True}
+        else:
+            reply = {"ok": False, "error": f"unknown command {cmd!r}"}
+    except Exception as e:
+        reply = {"ok": False, "error": str(e)}
+    finally:
+        sys.stdout = real_stdout
+    body = json.dumps(reply).encode("utf-8")
+    sys.stdout.buffer.write(struct.pack("<I", len(body)) + body)
+    sys.stdout.buffer.flush()
+    return 0
+
+
 def main(argv: list[str]) -> int:
     args = [a for a in argv if a != "--dry-run"]
     dry_run = "--dry-run" in argv
@@ -717,7 +1070,20 @@ def main(argv: list[str]) -> int:
         return cmd_search(" ".join(args[1:]))
     if cmd == "install":
         return cmd_install(args[1] if len(args) > 1 else "", dry_run)
-    print(f"tron pwa: unknown command '{cmd}'. Try: list, sync, revert, search, install", file=sys.stderr)
+    if cmd == "add":
+        return cmd_add(args[1:], dry_run)
+    if cmd == "remove":
+        return cmd_remove(args[1:])
+    if cmd == "installed":
+        print("\n".join(installed_slugs()))
+        return 0
+    if cmd == "defaults":
+        return cmd_defaults(dry_run)
+    if cmd == "register-host":
+        return cmd_register_host(args[1] if len(args) > 1 else "")
+    if cmd == "host" or (cmd.startswith("chrome-extension://")):
+        return cmd_host()
+    print(f"tron pwa: unknown command '{cmd}'. Try: list, sync, revert, search, install, add, remove, installed, defaults", file=sys.stderr)
     return 2
 
 

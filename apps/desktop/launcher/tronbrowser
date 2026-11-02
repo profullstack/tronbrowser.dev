@@ -777,6 +777,12 @@ fi
 if [ "$TOR" != "1" ] && [ -z "$MAC_APP" ] && [ -f "$DIR/tron-pwa" ]; then
   if command -v python3 >/dev/null 2>&1; then
     TRONBROWSER_DATA="$DATA" python3 "$DIR/tron-pwa" sync >&2 || true
+    # The new-tab Apps widget installs through `tron pwa` over native
+    # messaging; the host lives in this profile, so no root and no other
+    # browser sees it. Then CoinPay, LogicSRC and TronBrowser go in the app
+    # drawer, once per profile, in the background (it fetches icons).
+    TRONBROWSER_DATA="$DATA" python3 "$DIR/tron-pwa" register-host "$EXT" >&2 || true
+    (TRONBROWSER_DATA="$DATA" python3 "$DIR/tron-pwa" defaults >/dev/null 2>&1 </dev/null &)
   fi
 fi
 
