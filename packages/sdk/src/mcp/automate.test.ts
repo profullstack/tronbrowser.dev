@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { AgentSnapshot } from '@tronbrowser/browser-core';
-import { automateTools, fetchPage, markdownExpression, parseFetchArgs, wallReason, engineStatus } from './automate.js';
+import { automateTools, exclusive, fetchPage, markdownExpression, parseFetchArgs, wallReason, engineStatus } from './automate.js';
 import { ObscuraClient, type ObscuraProcess } from './obscura.js';
 import { McpBrowserSession, type McpPage } from './session.js';
 import { createMcpServer } from './server.js';
@@ -107,6 +107,44 @@ describe('wallReason', () => {
     expect(wallReason(LONG, 'markdown')).toBeNull();
     // A links dump is short by nature; only walls disqualify it.
     expect(wallReason('{"text":"a","href":"https://x/"}', 'links')).toBeNull();
+  });
+});
+
+describe('fetchPage concurrency', () => {
+  it('concurrent fetches each get their own page, never the tab another fetch navigated to', async () => {
+    // One shared tab, like the real Obscura: navigate sets it after a delay, markdown reads whatever it is now.
+    let tab = '';
+    const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+    const obscura = {
+      available: () => true,
+      call: async (name: string, a: Record<string, unknown>) => {
+        if (name === 'browser_navigate') {
+          await sleep(String(a.url).includes('slow') ? 30 : 5);
+          tab = String(a.url);
+          return { content: [{ type: 'text', text: 'ok' }] };
+        }
+        await sleep(10);
+        return { content: [{ type: 'text', text: `# Page at ${tab}\n\n${LONG}` }] };
+      },
+    } as unknown as ObscuraClient;
+    const { session } = fakePage();
+    const urls = ['https://a.example/slow', 'https://b.example/', 'https://c.example/'];
+    const out = await Promise.all(urls.map((url) => fetchPage({ obscura, session }, parseFetchArgs({ url }))));
+    out.forEach((r, i) => {
+      expect(r.outcome.engine).toBe('obscura');
+      expect(r.text).toContain(`# Page at ${urls[i]}`);
+    });
+  });
+
+  it('a failed fetch does not block the next one', async () => {
+    const order: string[] = [];
+    await expect(exclusive(fakePage().session, async () => { order.push('a'); throw new Error('boom'); })).rejects.toThrow('boom');
+    expect(await exclusive(fakePage().session, async () => (order.push('b'), 'ok'))).toBe('ok');
+    const key = {};
+    const first = exclusive(key, async () => { throw new Error('x'); });
+    const second = exclusive(key, async () => 'after');
+    await expect(first).rejects.toThrow('x');
+    expect(await second).toBe('after');
   });
 });
 
