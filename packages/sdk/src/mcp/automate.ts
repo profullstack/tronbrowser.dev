@@ -154,7 +154,26 @@ export function markdownExpression(): string {
 })()`;
 }
 
+/**
+ * One fetch at a time per browser. Each engine drives ONE shared tab: navigate, then read. Two
+ * fetches in flight interleave (A navigates, B navigates, A reads B's page), and every caller got
+ * the last page's text while the status line still named its own URL. So navigate+read is one
+ * critical section per engine, keyed by the browser object. Obscura and Chromium are separate
+ * locks, so an Obscura read and a Chromium fallback can still overlap.
+ */
+const tails = new WeakMap<object, Promise<unknown>>();
+export function exclusive<T>(key: object, run: () => Promise<T>): Promise<T> {
+  const before = tails.get(key) ?? Promise.resolve();
+  const mine = before.then(run, run);
+  tails.set(key, mine.catch(() => undefined));
+  return mine;
+}
+
 async function viaObscura(obscura: ObscuraClient, args: FetchArgs): Promise<string> {
+  return exclusive(obscura, () => obscuraOnce(obscura, args));
+}
+
+async function obscuraOnce(obscura: ObscuraClient, args: FetchArgs): Promise<string> {
   const nav = await obscura.call('browser_navigate', { url: args.url, waitUntil: 'load' }, args.budgetMs);
   if (nav.isError) throw new Error(resultText(nav) || 'navigate failed');
   let result;
@@ -231,8 +250,7 @@ export async function fetchPage(deps: AutomateDeps, args: FetchArgs): Promise<{ 
     if (args.engine === 'obscura') throw new Error(fellBack);
   }
 
-  const page = await deps.session.getPage();
-  const text = await viaChromium(page, args);
+  const text = await exclusive(deps.session, async () => viaChromium(await deps.session.getPage(), args));
   return finish('chromium', text, fellBack);
 }
 
