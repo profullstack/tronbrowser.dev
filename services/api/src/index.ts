@@ -11,7 +11,7 @@ import {
 import { token, uuid, hashPassword, verifyPassword, SESSION_TTL, EMAIL_TOKEN_TTL } from './auth.js';
 import { sendEmail } from './email.js';
 import { store } from './store/routes.js';
-import { swarmRoutes } from './swarm.js';
+import { swarmRoutes, C0MPUTE_BASE } from './swarm.js';
 import { dnsRoutes } from './dns.js';
 import { tronRelay } from './mcp/tron.js';
 import { safeRedirect } from './redirect.js';
@@ -87,7 +87,7 @@ setInterval(() => push.sweep().catch(() => undefined), 3600_000).unref();
 /* ---------- Extension store (tronbrowser.dev/store) ---------- */
 app.route('/api/store', store);
 
-/* ---------- Agent swarm (@logicsrc/agentswarm, BYO key) ---------- */
+/* ---------- Agent swarm (@logicsrc/agentswarm, BYO key or c0mpute) ---------- */
 app.route('/api/swarm', swarmRoutes({ currentUser }));
 
 /* ---------- DNS verifier (signed-in ops tool for /dns) ---------- */
@@ -274,6 +274,7 @@ const PROVIDER_BASE: Record<string, string> = {
   huggingface: 'https://router.huggingface.co/v1',
   kimi: 'https://api.moonshot.ai/v1',
   qwen: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+  c0mpute: C0MPUTE_BASE,
 };
 app.post('/api/models', async (c) => {
   const user = await currentUser(c);

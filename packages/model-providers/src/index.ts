@@ -19,6 +19,7 @@ export const PROVIDER_IDS = [
   'huggingface',
   'kimi',
   'qwen',
+  'c0mpute',
   'ollama',
   'lmstudio',
   'vllm',

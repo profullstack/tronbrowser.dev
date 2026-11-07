@@ -15,6 +15,7 @@ export const DEFAULT_BASE_URLS: Record<ProviderId, string> = {
   huggingface: 'https://router.huggingface.co/v1',
   kimi: 'https://api.moonshot.ai/v1',
   qwen: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+  c0mpute: 'https://infernetprotocol.com/v1',
   ollama: 'http://localhost:11434/v1',
   lmstudio: 'http://localhost:1234/v1',
   vllm: 'http://localhost:8000/v1',
