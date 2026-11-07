@@ -31,6 +31,8 @@ export const PROVIDERS: Record<ProviderId, ProviderInfo> = {
   huggingface: { id: 'huggingface', label: 'Hugging Face',        envVar: 'HUGGINGFACE_API_KEY', local: false, openaiCompatible: false },
   kimi:        { id: 'kimi',        label: 'Kimi (Moonshot AI)',  envVar: 'MOONSHOT_API_KEY',    envVarAliases: ['KIMI_API_KEY'], local: false, openaiCompatible: true },
   qwen:        { id: 'qwen',        label: 'Qwen (Alibaba)',      envVar: 'DASHSCOPE_API_KEY',   envVarAliases: ['QWEN_API_KEY'], local: false, openaiCompatible: true },
+  // c0mpute: the Infernet peer network. A user's own ik_live_ key, or none for the free tier.
+  c0mpute:     { id: 'c0mpute',     label: 'c0mpute (peer network)', envVar: 'C0MPUTE_API_KEY', envVarAliases: ['INFERNET_API_KEY'], local: false, openaiCompatible: true },
   ollama:      { id: 'ollama',      label: 'Ollama (local)',      local: true,  openaiCompatible: true  },
   lmstudio:    { id: 'lmstudio',    label: 'LM Studio (local)',   local: true,  openaiCompatible: true  },
   vllm:        { id: 'vllm',        label: 'vLLM (self-hosted)',  local: true,  openaiCompatible: true  },

@@ -12,6 +12,8 @@ export const PROVIDERS = {
   huggingface: { label: 'Hugging Face',       baseUrl: 'https://router.huggingface.co/v1',                     anthropic: false, keyless: false },
   kimi:        { label: 'Kimi (Moonshot)',    baseUrl: 'https://api.moonshot.ai/v1',                           anthropic: false, keyless: false },
   qwen:        { label: 'Qwen (Alibaba)',     baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1',    anthropic: false, keyless: false },
+  // Your own Infernet account key (ik_live_...), billed per job on c0mpute.com.
+  c0mpute:     { label: 'c0mpute (peer network)', baseUrl: 'https://infernetprotocol.com/v1',                   anthropic: false, keyless: false },
   ollama:      { label: 'Ollama (local)',     baseUrl: 'http://localhost:11434/v1',                            anthropic: false, keyless: true  },
   lmstudio:    { label: 'LM Studio (local)',  baseUrl: 'http://localhost:1234/v1',                             anthropic: false, keyless: true  },
   vllm:        { label: 'vLLM (self-hosted)', baseUrl: 'http://localhost:8000/v1',                             anthropic: false, keyless: true  },
@@ -28,6 +30,7 @@ export const KNOWN_MODELS = {
   huggingface: ['meta-llama/Llama-3.3-70B-Instruct', 'Qwen/Qwen2.5-72B-Instruct'],
   kimi: ['kimi-k2', 'kimi-latest', 'moonshot-v1-128k'],
   qwen: ['qwen-max', 'qwen-plus', 'qwen-turbo'],
+  c0mpute: ['huihui_ai/qwen3.5-abliterated:9b', 'qwen2.5:7b', 'gemma3:4b'],
   ollama: ['llama3.2', 'qwen2.5', 'mistral', 'phi4'],
   lmstudio: [],
   vllm: [],

@@ -31,6 +31,8 @@ const PROVIDERS = [
   { id: 'huggingface', label: 'Hugging Face', keyless: false },
   { id: 'kimi', label: 'Kimi (Moonshot)', keyless: false },
   { id: 'qwen', label: 'Qwen (Alibaba)', keyless: false },
+  // Your own Infernet account key (ik_live_...), billed per job on c0mpute.com.
+  { id: 'c0mpute', label: 'c0mpute (peer network)', keyless: false },
   { id: 'ollama', label: 'Ollama (local)', keyless: true },
   { id: 'lmstudio', label: 'LM Studio (local)', keyless: true },
   { id: 'vllm', label: 'vLLM (self-hosted)', keyless: true },
@@ -48,6 +50,7 @@ const KNOWN_MODELS = {
   huggingface: ['meta-llama/Llama-3.3-70B-Instruct', 'Qwen/Qwen2.5-72B-Instruct'],
   kimi: ['kimi-k2', 'kimi-latest', 'moonshot-v1-128k'],
   qwen: ['qwen-max', 'qwen-plus', 'qwen-turbo'],
+  c0mpute: ['huihui_ai/qwen3.5-abliterated:9b', 'qwen2.5:7b', 'gemma3:4b'],
   ollama: ['llama3.2', 'qwen2.5', 'mistral', 'phi4'],
   lmstudio: [],
   vllm: [],

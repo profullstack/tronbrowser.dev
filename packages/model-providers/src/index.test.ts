@@ -19,12 +19,12 @@ describe('@tronbrowser/model-providers catalog', () => {
     expect(isLocalProvider('kimi')).toBe(false);
   });
 
-  it('has the 8 BYOK providers from crawlproof.com', () => {
+  it('has the 8 BYOK providers from crawlproof.com plus c0mpute', () => {
     expect([...BYOK_PROVIDERS].sort()).toEqual(
-      ['anthropic', 'deepseek', 'google', 'huggingface', 'kimi', 'openai', 'perplexity', 'qwen'].sort(),
+      ['anthropic', 'c0mpute', 'deepseek', 'google', 'huggingface', 'kimi', 'openai', 'perplexity', 'qwen'].sort(),
     );
     expect(LOCAL_PROVIDERS).toEqual(['ollama', 'lmstudio', 'vllm']);
-    expect(PROVIDER_IDS).toHaveLength(11);
+    expect(PROVIDER_IDS).toHaveLength(12);
   });
 
   it('maps providers to the crawlproof.com env var names', () => {
