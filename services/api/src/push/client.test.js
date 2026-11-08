@@ -70,7 +70,7 @@ describe('push client', () => {
     await poll();
     expect(chrome.notifications.create).toHaveBeenCalledTimes(1);
     const [id, shown] = chrome.notifications.create.mock.calls[0];
-    expect(shown).toMatchObject({ title: 'New match', message: 'rust / remote', contextMessage: 'agenticjobs.work' });
+    expect(shown).toMatchObject({ title: 'New match', message: 'rust / remote', contextMessage: 'agenticjobs.pwa.pit.world' });
     expect(chrome.session[id]).toBe('https://agenticjobs.pwa.pit.world/jobs/x');
 
     // Acked: a second poll shows nothing new.
