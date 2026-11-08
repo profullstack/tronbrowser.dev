@@ -57,10 +57,10 @@ describe('pushServiceFrom', () => {
 describe('push client', () => {
   it('a site subscribes, its server pushes, TronBrowser shows it', async () => {
     const vapid = generateVapidKeys();
-    const { subscription } = await subscribe('https://agenticjobs.work', undefined, vapid.publicKey);
+    const { subscription } = await subscribe('https://agenticjobs.pwa.pit.world', undefined, vapid.publicKey);
     expect(subscription.endpoint.startsWith(`${DEFAULT_PUSH_SERVICE}/`)).toBe(true);
     // Asking again returns the same subscription, as the native API does.
-    expect((await getSubscription('https://agenticjobs.work')).subscription.endpoint).toBe(subscription.endpoint);
+    expect((await getSubscription('https://agenticjobs.pwa.pit.world')).subscription.endpoint).toBe(subscription.endpoint);
 
     const sent = await sendPush(subscription, JSON.stringify({ title: 'New match', body: 'rust / remote', url: '/jobs/x' }), {
       keys: vapid, subject: 'mailto:ops@agenticjobs.work', fetch: (u, i) => app.request(String(u), i),
@@ -71,7 +71,7 @@ describe('push client', () => {
     expect(chrome.notifications.create).toHaveBeenCalledTimes(1);
     const [id, shown] = chrome.notifications.create.mock.calls[0];
     expect(shown).toMatchObject({ title: 'New match', message: 'rust / remote', contextMessage: 'agenticjobs.work' });
-    expect(chrome.session[id]).toBe('https://agenticjobs.work/jobs/x');
+    expect(chrome.session[id]).toBe('https://agenticjobs.pwa.pit.world/jobs/x');
 
     // Acked: a second poll shows nothing new.
     await poll();

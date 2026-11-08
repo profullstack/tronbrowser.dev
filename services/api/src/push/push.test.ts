@@ -62,7 +62,7 @@ async function subscribe(applicationServerKey: string | null) {
   const res = await app.request(`${BASE}/subscriptions`, {
     method: 'POST',
     headers: auth,
-    body: JSON.stringify({ origin: 'https://agenticjobs.work', applicationServerKey }),
+    body: JSON.stringify({ origin: 'https://agenticjobs.pwa.pit.world', applicationServerKey }),
   });
   expect(res.status).toBe(201);
   return (await res.json()) as { token: string; endpoint: string };
@@ -88,7 +88,7 @@ describe('tronbrowser push service', () => {
     const pending = await (await app.request(`${BASE}/messages`, { headers: auth })).json();
     expect(pending.messages).toHaveLength(1);
     const [message] = pending.messages;
-    expect(message.origin).toBe('https://agenticjobs.work');
+    expect(message.origin).toBe('https://agenticjobs.pwa.pit.world');
     expect(message.encoding).toBe('aes128gcm');
     // The stored body is ciphertext, not the payload.
     expect(Buffer.from(message.body, 'base64url').toString()).not.toContain('New match');
@@ -96,7 +96,7 @@ describe('tronbrowser push service', () => {
     const plain = new TextDecoder().decode(await decryptPush(fromB64u(message.body), keys));
     expect(plain).toBe(payload);
     expect(notificationFromPayload(plain, message.origin)).toMatchObject({
-      title: 'New match', body: 'rust / remote', url: 'https://agenticjobs.work/jobs/x',
+      title: 'New match', body: 'rust / remote', url: 'https://agenticjobs.pwa.pit.world/jobs/x',
     });
 
     const acked = await app.request(`${BASE}/ack`, { method: 'POST', headers: auth, body: JSON.stringify({ ids: [message.id] }) });
