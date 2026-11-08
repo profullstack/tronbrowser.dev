@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { AgentSnapshot } from '@tronbrowser/browser-core';
-import { automateTools, exclusive, fetchPage, markdownExpression, parseFetchArgs, wallReason, engineStatus } from './automate.js';
+import { automateTools, DEFAULT_OBSCURA_BUDGET_S, exclusive, fetchPage, HttpStatusError, PAGE_LOAD_TIMEOUT_MS, PageLoadTimeoutError, RESPONSE_STATUS_EXPRESSION, markdownExpression, parseFetchArgs, wallReason, engineStatus } from './automate.js';
 import { ObscuraClient, type ObscuraProcess } from './obscura.js';
 import { McpBrowserSession, type McpPage } from './session.js';
 import { createMcpServer } from './server.js';
@@ -88,7 +88,13 @@ describe('parseFetchArgs', () => {
     const a = args();
     expect(a).toMatchObject({ url: 'https://example.com/', format: 'markdown', engine: 'auto' });
     expect(a.maxChars).toBeGreaterThan(1000);
-    expect(a.budgetMs).toBe(20_000);
+    expect(a.budgetMs).toBe(30_000);
+  });
+  it('caps the total render budget at 30 s (fleet browser rule), Obscura 20 s of it', () => {
+    expect(PAGE_LOAD_TIMEOUT_MS).toBe(30_000);
+    expect(DEFAULT_OBSCURA_BUDGET_S).toBe(20);
+    expect(args({ timeout_s: 120 }).budgetMs).toBe(30_000);
+    expect(args({ timeout_s: 10 }).budgetMs).toBe(10_000);
   });
   it('rejects non-http URLs and unknown formats/engines', () => {
     expect(() => parseFetchArgs({ url: 'file:///etc/passwd' })).toThrow(/http/);
@@ -297,5 +303,47 @@ describe('markdownExpression', () => {
     expect(src.trimEnd().endsWith('})()')).toBe(true);
     // It must parse as JavaScript; a syntax slip here breaks every Chromium markdown fetch.
     expect(() => new Function('return ' + src)).not.toThrow();
+  });
+});
+
+describe('fetch_page budget and failures', () => {
+  const chromiumOnly = (page: Partial<McpPage>) => {
+    const { page: base } = fakePage();
+    const p = { ...base, ...page } as McpPage;
+    return new McpBrowserSession(async () => ({ page: p, close: async () => {} }));
+  };
+
+  it('a 5xx main document rejects with HttpStatusError instead of returning the error page', async () => {
+    const session = chromiumOnly({
+      eval: (async (code: string) => (code === RESPONSE_STATUS_EXPRESSION ? 503 : '# Service Unavailable')) as McpPage['eval'],
+    });
+    const err = await fetchPage({ obscura: undefined, session }, args({ engine: 'chromium' })).catch((e) => e);
+    expect(err).toBeInstanceOf(HttpStatusError);
+    expect(err.status).toBe(503);
+  });
+
+  it('passes the remaining budget to goto and rejects when the render outlives it', async () => {
+    const budgets: Array<number | undefined> = [];
+    const session = chromiumOnly({
+      goto: async (_u, o) => {
+        budgets.push(o?.timeoutMs);
+        await new Promise(() => {}); // a page that never loads and an engine that ignores its timeout
+      },
+    });
+    const err = await fetchPage({ obscura: undefined, session }, args({ engine: 'chromium', timeout_s: 0.03 })).catch((e) => e);
+    expect(err).toBeInstanceOf(PageLoadTimeoutError);
+    expect(budgets[0]).toBeLessThanOrEqual(30);
+  });
+
+  it('Chromium only gets what Obscura left of the budget', async () => {
+    let t = 0;
+    const budgets: Array<number | undefined> = [];
+    const { client } = fakeObscura({ browser_markdown: { text: 'Just a moment...' } });
+    const session = chromiumOnly({ goto: async (_u, o) => { budgets.push(o?.timeoutMs); } });
+    // Every clock read advances 5 s: Obscura's lock-held work "takes" time.
+    const r = await fetchPage({ obscura: client, session, now: () => (t += 5_000) }, args());
+    expect(r.outcome.engine).toBe('chromium');
+    expect(budgets[0]).toBeLessThan(30_000);
+    await client.close();
   });
 });

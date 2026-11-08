@@ -9,7 +9,7 @@ import { Browser, type LaunchOptions } from '../browser.js';
 
 export interface McpPage {
   id: string;
-  goto(url: string): Promise<void>;
+  goto(url: string, options?: { timeoutMs?: number }): Promise<void>;
   snapshot(): Promise<AgentSnapshot>;
   click(ref: string): Promise<void>;
   fill(ref: string, value: string): Promise<void>;

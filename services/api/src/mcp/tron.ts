@@ -2,9 +2,11 @@
  * tronbrowser.dev/mcp/tron: the hosted OpenMCP relay. Obscura first for
  * scraping, the ungoogled-chromium engine as the fallback for full-JS pages,
  * the same `fetch_page` router `tron automate` runs locally, plus a
- * `screenshot_page`. Public and keyless, so it is stateless on purpose: every
- * call gets a fresh tab that is closed afterwards, nothing is remembered
- * between calls, targets are public hosts only, and callers are capped.
+ * `screenshot_page`. Public and keyless: every call gets a fresh tab that is
+ * closed afterwards, targets are public hosts only, and callers are capped.
+ * The one thing remembered between calls is which targets are broken
+ * (./flags.ts): a page that timed out, 5xx'd or whose host is unreachable is
+ * answered with a fast "FLAGGED until <date>" error for 30 days.
  *
  * The descriptor a catalog reads is the static /.well-known/openmcp.json on
  * this origin (served by Caddy), which is what makes the listing verified.
@@ -16,6 +18,7 @@ import {
   McpBrowserSession,
   McpServer,
   ObscuraClient,
+  PAGE_LOAD_TIMEOUT_MS,
   parseFetchArgs,
   resolveChromiumBin,
   resolveObscuraBin,
@@ -24,6 +27,8 @@ import {
   type JsonRpcMessage,
   type McpContent,
 } from '@tronbrowser/sdk';
+import { db } from '../db.js';
+import { memoryFlagStore, sqlFlagStore, withFlags, type FlagStore } from './flags.js';
 import { acceptableUrl, clientKey, RateLimiter, type Lookup } from './guard.js';
 
 export const DESCRIPTOR_URL = 'https://tronbrowser.dev/.well-known/openmcp.json';
@@ -32,7 +37,8 @@ export const RATE_BURST = 20;
 export const RATE_PER_MINUTE = 30;
 export const MAX_BODY_BYTES = 1024 * 1024;
 export const MAX_CHARS_CAP = 400_000;
-export const MAX_TIMEOUT_S = 45;
+/** Total render budget a caller may ask for: the fleet's 30 s browser cap. */
+export const MAX_TIMEOUT_S = PAGE_LOAD_TIMEOUT_MS / 1000;
 
 export interface Fetched {
   text: string;
@@ -44,6 +50,8 @@ export interface TronRelayDeps {
   fetch?: (args: FetchArgs) => Promise<Fetched>;
   screenshot?: (url: string) => Promise<Uint8Array>;
   lookup?: Lookup;
+  /** Broken-target memory; Postgres when DATABASE_URL is set, else in memory. */
+  flags?: FlagStore;
   now?: () => number;
   maxConcurrent?: number;
   rate?: { burst: number; perMinute: number };
@@ -82,7 +90,7 @@ export function realEngines(log: (line: string) => void = () => {}) {
   const screenshot = async (url: string): Promise<Uint8Array> => {
     const tab = await chromium.page();
     try {
-      await tab.page.goto(url);
+      await tab.page.goto(url, { timeoutMs: PAGE_LOAD_TIMEOUT_MS });
       return await tab.page.screenshot();
     } finally {
       await tab.close().catch(() => {});
@@ -100,6 +108,8 @@ export function tronRelay(deps: TronRelayDeps = {}): TronRelay {
   const doFetch = deps.fetch ?? (engines as NonNullable<typeof engines>).fetch;
   const doShot = deps.screenshot ?? (engines as NonNullable<typeof engines>).screenshot;
   const lookup = deps.lookup;
+  const flags = deps.flags ?? (process.env.DATABASE_URL || process.env.TRONBROWSER_DB_URL ? sqlFlagStore(db) : memoryFlagStore());
+  const flagged = <T>(url: string, work: () => Promise<T>) => withFlags(flags, url, work, { log, ...(deps.now ? { now: deps.now } : {}) });
   const maxConcurrent = deps.maxConcurrent ?? MAX_CONCURRENT;
   const limiter = new RateLimiter({ burst: deps.rate?.burst ?? RATE_BURST, perMinute: deps.rate?.perMinute ?? RATE_PER_MINUTE, ...(deps.now ? { now: deps.now } : {}) });
   let inFlight = 0;
@@ -119,7 +129,7 @@ export function tronRelay(deps: TronRelayDeps = {}): TronRelay {
   server.register({
     name: 'fetch_page',
     description:
-      'Fetch a public web page as markdown, text, links or html. Obscura renders first (fast, light); the ungoogled-chromium engine takes over for JS-heavy pages and bot walls. engine=obscura|chromium pins one. Keyless; a few fetches at a time.',
+      'Fetch a public web page as markdown, text, links or html. Obscura renders first (fast, light); the ungoogled-chromium engine takes over for JS-heavy pages and bot walls. engine=obscura|chromium pins one. Keyless; a few fetches at a time. 30 s render budget; a page that times out, returns 5xx, or whose host is unreachable is skipped for 30 days with an error starting "FLAGGED until <ISO date>".',
     inputSchema: {
       type: 'object',
       properties: {
@@ -127,7 +137,7 @@ export function tronRelay(deps: TronRelayDeps = {}): TronRelay {
         format: { type: 'string', enum: ['markdown', 'text', 'links', 'html'], description: 'Default markdown' },
         engine: { type: 'string', enum: ['auto', 'obscura', 'chromium'], description: 'Default auto' },
         max_chars: { type: 'integer', minimum: 1000, description: `Cut the answer here. Default 200000, max ${MAX_CHARS_CAP}.` },
-        timeout_s: { type: 'number', description: `Seconds Obscura gets before Chromium takes over. Default 20, max ${MAX_TIMEOUT_S}.` },
+        timeout_s: { type: 'number', description: `Total render budget in seconds (Obscura, then Chromium). Default and max ${MAX_TIMEOUT_S}.` },
       },
       required: ['url'],
       additionalProperties: false,
@@ -138,7 +148,8 @@ export function tronRelay(deps: TronRelayDeps = {}): TronRelay {
       const args = parseFetchArgs({ ...a, url: verdict.url });
       args.maxChars = Math.min(args.maxChars, MAX_CHARS_CAP);
       args.budgetMs = Math.min(args.budgetMs, MAX_TIMEOUT_S * 1000);
-      const r = await guarded(() => doFetch(args));
+      // A flagged target answers before taking a render slot.
+      const r = await flagged(args.url, () => guarded(() => doFetch(args)));
       log(`fetch ${r.outcome.engine} ${r.outcome.ms}ms ${r.outcome.chars}c ${args.url}${r.outcome.fellBack ? ` (${r.outcome.fellBack})` : ''}`);
       return [text(r.text), text(JSON.stringify(r.outcome))];
     },
@@ -156,7 +167,7 @@ export function tronRelay(deps: TronRelayDeps = {}): TronRelay {
       const verdict = await acceptableUrl(a.url, lookup);
       if (!verdict.ok) throw new Error(verdict.error);
       const started = Date.now();
-      const r = await guarded(() => doShot(verdict.url));
+      const r = await flagged(verdict.url, () => guarded(() => doShot(verdict.url)));
       log(`screenshot chromium ${Date.now() - started}ms ${verdict.url}`);
       return [{ type: 'image', data: Buffer.from(r).toString('base64'), mimeType: 'image/png' }];
     },

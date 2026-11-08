@@ -12,6 +12,8 @@
 export interface CdpConnection {
   send<T = unknown>(method: string, params?: Record<string, unknown>): Promise<T>;
   on(method: string, handler: (params: unknown) => void): void;
+  /** Drop a handler added with `on`. Optional so minimal fakes still satisfy the interface. */
+  off?(method: string, handler: (params: unknown) => void): void;
   close(): void;
 }
 
@@ -104,6 +106,10 @@ export class CdpClient implements CdpConnection {
       this.#handlers.set(method, set);
     }
     set.add(handler);
+  }
+
+  off(method: string, handler: (params: unknown) => void): void {
+    this.#handlers.get(method)?.delete(handler);
   }
 
   close(): void {
