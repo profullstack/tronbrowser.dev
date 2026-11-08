@@ -11,7 +11,7 @@
 export interface RemoteLookupConfig {
   /** Must be explicitly true. Absent or false means no request is made. */
   readonly enabled: boolean;
-  /** Endpoint. Defaults to the aiornot.vote provenance API. */
+  /** Endpoint. Defaults to the aiornot provenance API (aiornot.pwa.pit.world). */
   readonly endpoint?: string;
   /** The user's own API key for that service. */
   readonly apiKey: string;
