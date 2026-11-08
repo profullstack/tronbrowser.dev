@@ -31,7 +31,7 @@ export class RemoteLookupDisabledError extends Error {
   }
 }
 
-const DEFAULT_ENDPOINT = 'https://aiornot.vote/api/v1/provenance';
+const DEFAULT_ENDPOINT = 'https://aiornot.pwa.pit.world/api/v1/provenance';
 
 /**
  * Asks the remote service what it makes of a file.
