@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { FetchArgs } from '@tronbrowser/sdk';
 import { tronRelay, MAX_CHARS_CAP, MAX_TIMEOUT_S } from './tron.js';
+import { memoryFlagStore } from './flags.js';
 
 const publicDns = async () => ['93.184.216.34'];
 
@@ -65,6 +66,25 @@ describe('tronbrowser.dev/mcp/tron', () => {
     await r.call('fetch_page', { url: 'https://example.com/', max_chars: 10_000_000, timeout_s: 600 });
     expect(r.fetched[0]!.maxChars).toBe(MAX_CHARS_CAP);
     expect(r.fetched[0]!.budgetMs).toBe(MAX_TIMEOUT_S * 1000);
+    expect(MAX_TIMEOUT_S).toBe(30);
+  });
+
+  it('a timed-out page is answered FLAGGED for 30 days without rendering again', async () => {
+    let renders = 0;
+    const r = relay({
+      flags: memoryFlagStore(),
+      fetch: async (args) => {
+        renders++;
+        throw Object.assign(new Error(`Page load timed out after 30000ms: ${args.url}`), { code: 'PAGE_LOAD_TIMEOUT' });
+      },
+    });
+    const first = await r.call('fetch_page', { url: 'https://slow.example/' });
+    expect(first.isError).toBe(true);
+    expect(first.content[0]!.text).toMatch(/timed out/);
+    const second = await r.call('fetch_page', { url: 'https://slow.example/' });
+    expect(second.isError).toBe(true);
+    expect(second.content[0]!.text).toMatch(/^Error: FLAGGED until \d{4}-\d\d-\d\dT/);
+    expect(renders).toBe(1);
   });
 
   it('refuses private targets before touching an engine', async () => {

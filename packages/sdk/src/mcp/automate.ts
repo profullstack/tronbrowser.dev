@@ -8,6 +8,7 @@
  * times out, or hands back a page that is plainly a wall or empty. `engine`
  * pins either one when the caller knows better.
  */
+import { PAGE_LOAD_TIMEOUT_MS, PageLoadTimeoutError } from '@tronbrowser/browser-core';
 import type { McpContent, McpTool } from './protocol.js';
 import type { McpBrowserSession, McpPage } from './session.js';
 import { resultText, type ObscuraClient } from './obscura.js';
@@ -18,8 +19,18 @@ export const ENGINES = ['auto', 'obscura', 'chromium'] as const;
 export type Engine = (typeof ENGINES)[number];
 
 export const DEFAULT_MAX_CHARS = 200_000;
-/** How long Obscura gets before Chromium takes over. */
-export const DEFAULT_OBSCURA_BUDGET_S = 20;
+/**
+ * PAGE_LOAD_TIMEOUT_MS (browser-core, 30 s) is the total render budget for one fetch_page, Obscura and the Chromium fallback
+ * together (fleet crawler rule: 30 s for a browser load, never longer). It is
+ * both the default and the cap for `timeout_s`. Time spent queued behind
+ * another fetch on the same engine does not count.
+ */
+export { PAGE_LOAD_TIMEOUT_MS, PageLoadTimeoutError };
+export const MAX_PAGE_LOAD_TIMEOUT_S = PAGE_LOAD_TIMEOUT_MS / 1000;
+/** Obscura's share of the budget before Chromium takes over: 20 s of the default 30. */
+export const OBSCURA_SHARE = 2 / 3;
+/** How long Obscura gets before Chromium takes over at the default budget. */
+export const DEFAULT_OBSCURA_BUDGET_S = Math.round(MAX_PAGE_LOAD_TIMEOUT_S * OBSCURA_SHARE);
 /** A rendered page with less text than this is treated as empty or blocked. */
 export const THIN_PAGE_CHARS = 80;
 
@@ -43,7 +54,36 @@ export interface FetchArgs {
   format: FetchFormat;
   engine: Engine;
   maxChars: number;
+  /** Total render budget (Obscura + Chromium), at most PAGE_LOAD_TIMEOUT_MS. */
   budgetMs: number;
+}
+
+/** The main document answered with HTTP 5xx: the server is broken, not the page. */
+export class HttpStatusError extends Error {
+  readonly code = 'HTTP_STATUS' as const;
+  readonly status: number;
+  readonly url: string;
+  constructor(url: string, status: number) {
+    super(`HTTP ${status} from ${url}`);
+    this.name = 'HttpStatusError';
+    this.status = status;
+    this.url = url;
+  }
+}
+
+/** Reject with PageLoadTimeoutError when `work` outlives `ms`. */
+export function withDeadline<T>(work: Promise<T>, ms: number, url: string): Promise<T> {
+  if (ms <= 0) {
+    work.catch(() => {});
+    return Promise.reject(new PageLoadTimeoutError(url, 0));
+  }
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  return Promise.race([
+    work,
+    new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new PageLoadTimeoutError(url, ms)), ms);
+    }),
+  ]).finally(() => clearTimeout(timer));
 }
 
 export interface FetchOutcome {
@@ -93,7 +133,8 @@ export function parseFetchArgs(a: Record<string, unknown>): FetchArgs {
         throw new Error(`engine must be one of ${ENGINES.join('|')}`);
       })();
   const maxChars = typeof a.max_chars === 'number' && a.max_chars > 0 ? Math.floor(a.max_chars) : DEFAULT_MAX_CHARS;
-  const timeoutS = typeof a.timeout_s === 'number' && a.timeout_s > 0 ? Math.min(a.timeout_s, 120) : DEFAULT_OBSCURA_BUDGET_S;
+  const timeoutS =
+    typeof a.timeout_s === 'number' && a.timeout_s > 0 ? Math.min(a.timeout_s, MAX_PAGE_LOAD_TIMEOUT_S) : MAX_PAGE_LOAD_TIMEOUT_S;
   return { url: parsed.toString(), format, engine, maxChars, budgetMs: Math.round(timeoutS * 1000) };
 }
 
@@ -169,34 +210,49 @@ export function exclusive<T>(key: object, run: () => Promise<T>): Promise<T> {
   return mine;
 }
 
-async function viaObscura(obscura: ObscuraClient, args: FetchArgs): Promise<string> {
-  return exclusive(obscura, () => obscuraOnce(obscura, args));
+/**
+ * Obscura under the engine lock. `onStart` fires once the lock is held, so the
+ * caller's budget clock starts there, not while queued behind another fetch.
+ * Every call gets only what is left of `budgetMs`: navigate and read share it.
+ */
+async function viaObscura(obscura: ObscuraClient, args: FetchArgs, budgetMs: number, now: () => number, onStart: () => void): Promise<string> {
+  return exclusive(obscura, () => {
+    onStart();
+    return obscuraOnce(obscura, args, now() + budgetMs, now);
+  });
 }
 
-async function obscuraOnce(obscura: ObscuraClient, args: FetchArgs): Promise<string> {
-  const nav = await obscura.call('browser_navigate', { url: args.url, waitUntil: 'load' }, args.budgetMs);
+async function obscuraOnce(obscura: ObscuraClient, args: FetchArgs, deadline: number, now: () => number): Promise<string> {
+  const left = () => Math.max(1, Math.round(deadline - now()));
+  const nav = await obscura.call('browser_navigate', { url: args.url, waitUntil: 'load' }, left());
   if (nav.isError) throw new Error(resultText(nav) || 'navigate failed');
   let result;
   switch (args.format) {
     case 'markdown':
-      result = await obscura.call('browser_markdown', { max_chars: args.maxChars }, args.budgetMs);
+      result = await obscura.call('browser_markdown', { max_chars: args.maxChars }, left());
       break;
     case 'text':
-      result = await obscura.call('browser_snapshot', { max_chars: args.maxChars }, args.budgetMs);
+      result = await obscura.call('browser_snapshot', { max_chars: args.maxChars }, left());
       break;
     case 'links':
-      result = await obscura.call('browser_links', { limit: 1000 }, args.budgetMs);
+      result = await obscura.call('browser_links', { limit: 1000 }, left());
       break;
     case 'html':
-      result = await obscura.call('browser_evaluate', { expression: 'document.documentElement.outerHTML' }, args.budgetMs);
+      result = await obscura.call('browser_evaluate', { expression: 'document.documentElement.outerHTML' }, left());
       break;
   }
   if (result.isError) throw new Error(resultText(result) || `${args.format} failed`);
   return resultText(result);
 }
 
-async function viaChromium(page: McpPage, args: FetchArgs): Promise<string> {
-  await page.goto(args.url);
+/** The main document's HTTP status (Navigation Timing Level 2), when the engine reports it. */
+export const RESPONSE_STATUS_EXPRESSION =
+  "(() => { try { const e = performance.getEntriesByType('navigation')[0]; return e && e.responseStatus ? e.responseStatus : 0; } catch { return 0; } })()";
+
+async function viaChromium(page: McpPage, args: FetchArgs, budgetMs: number): Promise<string> {
+  await page.goto(args.url, { timeoutMs: budgetMs });
+  const status = Number(await page.eval<number>(RESPONSE_STATUS_EXPRESSION).catch(() => 0));
+  if (status >= 500 && status <= 599) throw new HttpStatusError(args.url, status);
   switch (args.format) {
     case 'markdown':
       return String((await page.eval<string>(markdownExpression())) ?? '');
@@ -233,13 +289,22 @@ export async function fetchPage(deps: AutomateDeps, args: FetchArgs): Promise<{ 
   };
 
   let fellBack: string | undefined;
+  // Render time actually spent (not time queued for an engine lock), against args.budgetMs.
+  let spent = 0;
   if (args.engine !== 'chromium') {
     const obscura = deps.obscura;
     if (!obscura?.available()) {
       fellBack = 'obscura is not installed';
     } else {
+      let began: number | undefined;
+      // Pinned to Obscura it gets the whole budget; in auto mode it leaves Chromium a third.
+      const share = args.engine === 'obscura' ? args.budgetMs : Math.round(args.budgetMs * OBSCURA_SHARE);
       try {
-        const text = await viaObscura(obscura, args);
+        const text = await viaObscura(obscura, args, share, now, () => {
+          began = now();
+        }).finally(() => {
+          if (began !== undefined) spent = now() - began;
+        });
         const reason = args.engine === 'auto' ? wallReason(text, args.format) : null;
         if (!reason) return finish('obscura', text);
         fellBack = `obscura: ${reason}`;
@@ -250,7 +315,14 @@ export async function fetchPage(deps: AutomateDeps, args: FetchArgs): Promise<{ 
     if (args.engine === 'obscura') throw new Error(fellBack);
   }
 
-  const text = await exclusive(deps.session, async () => viaChromium(await deps.session.getPage(), args));
+  const text = await exclusive(deps.session, async () => {
+    const left = Math.round(args.budgetMs - spent);
+    if (left <= 0) throw new PageLoadTimeoutError(args.url, args.budgetMs);
+    const started = now();
+    const page = await deps.session.getPage();
+    // goto rejects at `left`; the deadline also bounds the read after load.
+    return withDeadline(viaChromium(page, args, Math.max(1, Math.round(left - (now() - started)))), left, args.url);
+  });
   return finish('chromium', text, fellBack);
 }
 
@@ -272,7 +344,10 @@ export function automateTools(deps: AutomateDeps): McpTool[] {
           format: { type: 'string', enum: [...FETCH_FORMATS], description: 'Output format (default markdown)' },
           engine: { type: 'string', enum: [...ENGINES], description: 'auto (default): Obscura then Chromium; or pin obscura|chromium' },
           max_chars: { type: 'number', description: `Cut the output to this many characters (default ${DEFAULT_MAX_CHARS})` },
-          timeout_s: { type: 'number', description: `Seconds Obscura gets before Chromium takes over (default ${DEFAULT_OBSCURA_BUDGET_S})` },
+          timeout_s: {
+            type: 'number',
+            description: `Total render budget in seconds, Obscura then Chromium (default and max ${MAX_PAGE_LOAD_TIMEOUT_S})`,
+          },
         },
         ['url'],
       ),

@@ -80,10 +80,10 @@ describe('when the user has opted in', () => {
     expect(init.credentials).toBe('omit');
   });
 
-  it('defaults to the aiornot.vote endpoint and honours an override', async () => {
+  it('defaults to the aiornot endpoint (aiornot.pwa.pit.world since #179) and honours an override', async () => {
     const a = okFetch();
     await lookupRemote('https://example.com/a.png', { enabled: true, apiKey: 'k' }, a);
-    expect(String(a.mock.calls[0]![0])).toContain('aiornot.vote');
+    expect(String(a.mock.calls[0]![0])).toContain('aiornot.pwa.pit.world');
 
     const b = okFetch();
     await lookupRemote(

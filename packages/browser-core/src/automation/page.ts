@@ -58,20 +58,70 @@ export async function enableRuntime(conn: CdpConnection): Promise<void> {
   await conn.send('Runtime.enable');
 }
 
-/** Navigate the page to `url` and wait for load (or `timeoutMs`). */
+/** Total budget for one page load (fleet crawler rule: 30 s for a browser render). */
+export const PAGE_LOAD_TIMEOUT_MS = 30_000;
+
+/** The page did not fire `load` within the budget. A failure, never a silent success. */
+export class PageLoadTimeoutError extends Error {
+  readonly code = 'PAGE_LOAD_TIMEOUT' as const;
+  readonly url: string;
+  readonly timeoutMs: number;
+  constructor(url: string, timeoutMs: number) {
+    super(`Page load timed out after ${timeoutMs}ms: ${url}`);
+    this.name = 'PageLoadTimeoutError';
+    this.url = url;
+    this.timeoutMs = timeoutMs;
+  }
+}
+
+/** Chromium could not load the document at all (DNS, TLS, refused, ...): `errorText` is `net::ERR_*`. */
+export class NavigationError extends Error {
+  readonly code = 'NAVIGATION_FAILED' as const;
+  readonly url: string;
+  readonly errorText: string;
+  constructor(url: string, errorText: string) {
+    super(`Navigation failed (${errorText}): ${url}`);
+    this.name = 'NavigationError';
+    this.url = url;
+    this.errorText = errorText;
+  }
+}
+
+/**
+ * Navigate the page to `url` and wait for `load`. Rejects with NavigationError
+ * when Chromium reports a network error, and with PageLoadTimeoutError when
+ * `load` has not fired within `timeoutMs` (default 30 s). It used to resolve
+ * silently at the timeout, so a dead page looked like a loaded one.
+ */
 export async function goto(
   conn: CdpConnection,
   url: string,
   options: { timeoutMs?: number } = {},
 ): Promise<void> {
-  const timeoutMs = options.timeoutMs ?? 30_000;
+  const timeoutMs = options.timeoutMs ?? PAGE_LOAD_TIMEOUT_MS;
   await conn.send('Page.enable');
-  const loaded = new Promise<void>((resolve) => conn.on('Page.loadEventFired', () => resolve()));
-  await conn.send('Page.navigate', { url });
-  await Promise.race([
-    loaded,
-    new Promise<void>((resolve) => setTimeout(resolve, timeoutMs)),
-  ]);
+  let onLoad: (() => void) | undefined;
+  const loaded = new Promise<void>((resolve) => {
+    onLoad = () => resolve();
+  });
+  const handler = () => onLoad?.();
+  conn.on('Page.loadEventFired', handler);
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const nav = await conn.send<{ loaderId?: string; errorText?: string }>('Page.navigate', { url });
+    if (nav?.errorText) throw new NavigationError(url, nav.errorText);
+    // A same-document navigation (only the #fragment changed) has no loader and fires no load.
+    if (nav && typeof nav === 'object' && 'frameId' in nav && !nav.loaderId) return;
+    await Promise.race([
+      loaded,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new PageLoadTimeoutError(url, timeoutMs)), timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+    conn.off?.('Page.loadEventFired', handler);
+  }
 }
 
 /** Run the extraction expression and return its deterministic JSON value. */
