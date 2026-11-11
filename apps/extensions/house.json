@@ -1,0 +1,46 @@
+{
+  "$comment": "Our own extensions, kept in the store by scripts/store-sync.mjs (.github/workflows/store-sync.yml). Each entry names a GitHub repo, which release tags are extension releases, and which release asset is the Chromium .zip. Adding an extension to the store is adding an entry here; new releases are picked up on the next run.",
+  "extensions": [
+    {
+      "slug": "coinpay-wallet",
+      "name": "CoinPay Portal Wallet",
+      "repo": "profullstack/coinpayportal",
+      "tag": "^extension-v\\d",
+      "asset": "^coinpay-wallet\\.zip$",
+      "homepageUrl": "https://coinpayportal.com"
+    },
+    {
+      "slug": "marksyncr",
+      "name": "MarkSyncr",
+      "repo": "profullstack/marksyncr.com",
+      "tag": "^v\\d",
+      "asset": "^marksyncr-chrome\\.zip$",
+      "homepageUrl": "https://marksyncr.com",
+      "summary": "Two-way bookmark sync between browsers and your own storage: local files, GitHub or Dropbox."
+    },
+    {
+      "slug": "threatcrush",
+      "name": "ThreatCrush",
+      "repo": "profullstack/threatcrush",
+      "tag": "^extension-v\\d",
+      "asset": "^threatcrush-chrome\\.zip$",
+      "homepageUrl": "https://threatcrush.com"
+    },
+    {
+      "slug": "b1dz-sync",
+      "name": "b1dz Sync",
+      "repo": "profullstack/b1dz.com",
+      "tag": "^extension-v\\d",
+      "asset": "^b1dz-sync-chrome\\.zip$",
+      "homepageUrl": "https://b1dz.com"
+    },
+    {
+      "slug": "defpromo",
+      "name": "DefPromo",
+      "repo": "ralyodio/defpromo",
+      "tag": "^v\\d",
+      "asset": "^defpromo-chrome\\.zip$",
+      "homepageUrl": "https://defpromo.com"
+    }
+  ]
+}
