@@ -40,6 +40,16 @@ describe('tronbrowser.dev/mcp/tron', () => {
     expect(list.result.tools.map((t: { name: string }) => t.name)).toEqual(['fetch_page', 'screenshot_page']);
   });
 
+  it('gives every tool a title and explicit readOnly/destructive/openWorld hints (Claude + ChatGPT directories)', async () => {
+    const r = relay();
+    const list = await (await r.post({ jsonrpc: '2.0', id: 1, method: 'tools/list' })).json();
+    for (const t of list.result.tools as Array<{ name: string; title?: string; annotations?: Record<string, unknown> }>) {
+      expect(t.title, t.name).toBeTruthy();
+      for (const hint of ['readOnlyHint', 'destructiveHint', 'openWorldHint']) expect(typeof t.annotations?.[hint], `${t.name} ${hint}`).toBe('boolean');
+      if (t.annotations?.readOnlyHint) expect(t.annotations.destructiveHint).toBe(false);
+    }
+  });
+
   it('runs the MCP handshake over plain JSON and answers notifications with 202', async () => {
     const r = relay();
     const init = await r.post({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-06-18' } });
