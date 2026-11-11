@@ -37,5 +37,8 @@ describe('crawl gate', () => {
   it('leaves /privacy and /terms open to every crawler', async () => {
     expect((await check('/privacy', { 'user-agent': GPT })).status).toBe(204);
     expect((await check('/terms', { 'user-agent': GPT })).status).toBe(204);
+    // Caddy's rewrite runs before forward_auth, so the gate sees the rewritten file name.
+    expect((await check('/privacy.html', { 'user-agent': GPT })).status).toBe(204);
+    expect((await check('/terms.html', { 'user-agent': GPT })).status).toBe(204);
   });
 });
