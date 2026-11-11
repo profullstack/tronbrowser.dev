@@ -34,6 +34,7 @@
     "https://router.huggingface.co/*",
     "https://api.moonshot.ai/*",
     "https://dashscope.aliyuncs.com/*",
+    "https://infernetprotocol.com/*",
     "https://coinpayportal.com/*",
     "https://tronbrowser.dev/*",
     "http://localhost/*",

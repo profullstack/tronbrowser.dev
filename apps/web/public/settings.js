@@ -31,8 +31,9 @@ const PROVIDERS = [
   { id: 'huggingface', label: 'Hugging Face', keyless: false },
   { id: 'kimi', label: 'Kimi (Moonshot)', keyless: false },
   { id: 'qwen', label: 'Qwen (Alibaba)', keyless: false },
-  // Your own Infernet account key (ik_live_...), billed per job on c0mpute.com.
-  { id: 'c0mpute', label: 'c0mpute (peer network)', keyless: false },
+  // The Infernet peer network, ON BY DEFAULT: no key runs on the free daily
+  // tier; an account key (ik_live_...) lifts the limit, billed on c0mpute.com.
+  { id: 'c0mpute', label: 'c0mpute (peer network)', keyless: false, optionalKey: true },
   { id: 'ollama', label: 'Ollama (local)', keyless: true },
   { id: 'lmstudio', label: 'LM Studio (local)', keyless: true },
   { id: 'vllm', label: 'vLLM (self-hosted)', keyless: true },
@@ -41,6 +42,8 @@ const PROVIDERS = [
 // Common models per provider — shown immediately when you pick a provider, even
 // before a key is entered. The live list (/api/models) is merged in on top when
 // a key is available. You can always type a custom id.
+const DEFAULT_PROVIDER = 'c0mpute';
+
 const KNOWN_MODELS = {
   anthropic: ['claude-opus-4-8', 'claude-sonnet-4-6', 'claude-haiku-4-5', 'claude-fable-5'],
   openai: ['gpt-5.5', 'gpt-5', 'gpt-4.1', 'o4-mini', 'gpt-4o'],
@@ -95,9 +98,15 @@ $('coinpayDisconnect').addEventListener('click', async () => {
   showCoinpay(me);
 });
 
-// A provider counts as "configured" once it has a key (cloud) or base URL (local).
+// A provider counts as "configured" once it has a key (cloud) or base URL
+// (local). c0mpute (optionalKey) always counts: it runs keyless on the free tier.
 function isConfigured(p, cur) {
+  if (p.optionalKey) return true;
   return p.keyless ? !!(cur && cur.baseUrl) : !!(cur && cur.apiKey);
+}
+function keyPlaceholder(p) {
+  if (p.optionalKey) return 'API key (optional: free daily tier without one)';
+  return p.keyless ? 'base URL (optional, e.g. http://localhost:11434/v1)' : 'API key';
 }
 
 function buildProviderRows() {
@@ -107,10 +116,9 @@ function buildProviderRows() {
   box.innerHTML = '';
   const keys = settings.aiProviders || {};
 
-  // Default-provider menu lists ONLY configured providers; fall back to all
-  // when nothing is configured yet so the menu is never empty.
-  const configured = PROVIDERS.filter((p) => isConfigured(p, keys[p.id]));
-  const menu = configured.length ? configured : PROVIDERS;
+  // Default-provider menu lists ONLY configured providers. c0mpute always
+  // counts, so the menu is never empty and a fresh account defaults to it.
+  const menu = PROVIDERS.filter((p) => isConfigured(p, keys[p.id]));
   for (const p of menu) {
     const opt = document.createElement('option');
     opt.value = p.id; opt.textContent = p.label; sel.appendChild(opt);
@@ -125,12 +133,12 @@ function buildProviderRows() {
     row.innerHTML =
       `<span class="lab">${p.label}</span>
        <input data-key="${p.id}" type="password"
-         placeholder="${p.keyless ? 'base URL (optional, e.g. http://localhost:11434/v1)' : 'API key'}"
+         placeholder="${keyPlaceholder(p)}"
          value="${val}" />
        <button type="button" class="reveal" data-reveal="${p.id}">show</button>`;
     box.appendChild(row);
   }
-  sel.value = menu.some((p) => p.id === settings.aiDefault) ? settings.aiDefault : (menu[0]?.id || 'anthropic');
+  sel.value = menu.some((p) => p.id === settings.aiDefault) ? settings.aiDefault : DEFAULT_PROVIDER;
   $('model').value = settings.aiModel || settings.aiConfig?.model || '';
   box.querySelectorAll('[data-reveal]').forEach((b) => b.addEventListener('click', () => {
     const inp = box.querySelector(`[data-key="${b.getAttribute('data-reveal')}"]`);
@@ -166,6 +174,7 @@ async function fetchModels() {
 
   const keyInput = document.querySelector(`[data-key="${provider}"]`);
   const apiKey = keyInput ? keyInput.value.trim() : '';
+  if (!apiKey && meta.optionalKey) { $('modelHint').textContent = `${merged.length} common models — free tier, no key needed`; return; }
   if (!apiKey) { $('modelHint').textContent = `${merged.length} common models — add your key above to load the full list`; return; }
 
   $('modelHint').textContent = 'loading models…';

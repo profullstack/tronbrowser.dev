@@ -70,7 +70,7 @@ header button { background: transparent; border: 1px solid var(--line); color: v
   border-radius: 6px; padding: 4px 10px; font: inherit; font-size: 12px; cursor: pointer; }
 .copy-md:hover { color: var(--fg); border-color: var(--cyan); }
 
-.setup { padding: 16px; color: var(--muted); text-align: center; }
+.setup { padding: 6px 16px; font-size: 12px; color: var(--muted); text-align: center; }
 .setup.hidden { display: none; }
 .composer { display: grid; grid-template-columns: 1fr auto; gap: 8px;
   padding: 10px; border-top: 1px solid var(--line); align-items: end; }

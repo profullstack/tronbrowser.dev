@@ -12,12 +12,36 @@ export const PROVIDERS = {
   huggingface: { label: 'Hugging Face',       baseUrl: 'https://router.huggingface.co/v1',                     anthropic: false, keyless: false },
   kimi:        { label: 'Kimi (Moonshot)',    baseUrl: 'https://api.moonshot.ai/v1',                           anthropic: false, keyless: false },
   qwen:        { label: 'Qwen (Alibaba)',     baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1',    anthropic: false, keyless: false },
-  // Your own Infernet account key (ik_live_...), billed per job on c0mpute.com.
-  c0mpute:     { label: 'c0mpute (peer network)', baseUrl: 'https://infernetprotocol.com/v1',                   anthropic: false, keyless: false },
+  // The Infernet peer network. ON BY DEFAULT: with no key it runs on the free
+  // daily tier (enough for light use); an Infernet account key (ik_live_...)
+  // lifts the limit and bills per job on c0mpute.com.
+  c0mpute:     { label: 'c0mpute (peer network)', baseUrl: 'https://infernetprotocol.com/v1',                   anthropic: false, keyless: false, optionalKey: true },
   ollama:      { label: 'Ollama (local)',     baseUrl: 'http://localhost:11434/v1',                            anthropic: false, keyless: true  },
   lmstudio:    { label: 'LM Studio (local)',  baseUrl: 'http://localhost:1234/v1',                             anthropic: false, keyless: true  },
   vllm:        { label: 'vLLM (self-hosted)', baseUrl: 'http://localhost:8000/v1',                             anthropic: false, keyless: true  },
 };
+
+/** The provider used when nothing else is configured: works with no key. */
+export const DEFAULT_PROVIDER = 'c0mpute';
+export const DEFAULT_MODEL = 'huihui_ai/qwen3.5-abliterated:9b';
+export const DEFAULT_CONFIG = Object.freeze({ provider: DEFAULT_PROVIDER, model: DEFAULT_MODEL, apiKey: '', baseUrl: '' });
+
+/** True when a provider can run without a key (local runtimes and c0mpute). */
+export function runsWithoutKey(provider) {
+  const meta = PROVIDERS[provider];
+  return !!(meta && (meta.keyless || meta.optionalKey));
+}
+
+/**
+ * The config the sidebar actually runs on: the saved one when it is usable,
+ * else c0mpute's free tier. A saved config for a key-required provider with
+ * no key falls back too, so the sidebar always works out of the box.
+ */
+export function effectiveConfig(saved) {
+  if (saved && saved.provider && saved.model && PROVIDERS[saved.provider]
+      && (saved.apiKey || runsWithoutKey(saved.provider))) return saved;
+  return { ...DEFAULT_CONFIG };
+}
 
 // Common models per provider — shown immediately when a provider is selected,
 // even before a key is entered. The live list (listModels) merges on top.

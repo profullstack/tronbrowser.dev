@@ -10,9 +10,11 @@
  * and run on the house key (C0MPUTE_API_KEY), capped per user per day. A
  * caller's own key always wins.
  *
- * A request that names no provider and no key is NOT sent to c0mpute unless
- * SWARM_DEFAULT_PROVIDER=c0mpute: the messages are the user's own, and sending
- * them to peer nodes is a choice the user (or the operator) makes explicitly.
+ * c0mpute is ON BY DEFAULT: a request that names no provider and no key runs on
+ * c0mpute too (Anthony, 2026-11-11: "c0mpute turned on by default, no keys
+ * necessary for low usage"). Jobs are end-to-end encrypted to the winning
+ * worker (DIP-0032). An operator can turn the default off with
+ * SWARM_DEFAULT_PROVIDER=none.
  *
  * c0mpute is slow under load (minutes per call), longer than the edge proxy's
  * read timeout. A house-key run therefore answers 200 at once and writes a
@@ -80,8 +82,8 @@ async function buildModel(
  *
  *   own key                     -> the caller's provider and key (c0mpute included)
  *   no key, provider c0mpute    -> c0mpute on the house key
- *   no key, no provider         -> c0mpute on the house key only when
- *                                  SWARM_DEFAULT_PROVIDER=c0mpute; else refused
+ *   no key, no provider         -> c0mpute on the house key (the default),
+ *                                  unless SWARM_DEFAULT_PROVIDER=none
  *   no key, any other provider  -> refused, as before
  */
 export function resolveSwarmProvider(
@@ -92,8 +94,8 @@ export function resolveSwarmProvider(
   const named = typeof body.provider === 'string' && body.provider.trim() ? body.provider.trim() : '';
   if (own) return { provider: named || 'anthropic', apiKey: own, house: false };
 
-  const wantsC0mpute =
-    named === 'c0mpute' || (!named && (env.SWARM_DEFAULT_PROVIDER || '').trim() === 'c0mpute');
+  const defaultOff = (env.SWARM_DEFAULT_PROVIDER || '').trim().toLowerCase() === 'none';
+  const wantsC0mpute = named === 'c0mpute' || (!named && !defaultOff);
   if (!wantsC0mpute) {
     return { error: 'apiKey required (bring your own key), or set provider "c0mpute" to run on c0mpute without one' };
   }

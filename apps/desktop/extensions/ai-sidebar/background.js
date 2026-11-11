@@ -43,11 +43,8 @@ chrome.action.onClicked.addListener((tab) => {
   }
 });
 
-// First run with no AI model configured → open settings so keys can be set.
-chrome.runtime.onInstalled.addListener(async () => {
-  const { aiConfig } = await chrome.storage.local.get('aiConfig');
-  if (!aiConfig || !aiConfig.model) chrome.runtime.openOptionsPage();
-});
+// No first-run settings detour: with no AI provider configured the sidebar
+// runs on c0mpute's free tier, so there is nothing a user must set up first.
 
 // --- Extension store resolution (Tron store first, Chrome Web Store fallback) -
 // The install-helper content script runs on Chrome Web Store detail pages. Since
