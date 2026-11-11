@@ -25,7 +25,7 @@ export function createCrawlGate(env: Record<string, string | undefined> = proces
     coinpay: { apiKey },
     payTo,
     contact: 'mailto:anthony@profullstack.com',
-    openPaths: ['/api/', '/mcp/', '/llms.txt', '/llms-full.txt', '/skill.md', '/install.sh', '/privacy', '/terms'],
+    openPaths: ['/api/', '/mcp/', '/llms.txt', '/llms-full.txt', '/skill.md', '/install.sh', '/privacy', '/terms', '/privacy.html', '/terms.html'],
     exempt: (request: Request) => /(?:^|;\s*)tb_session=/.test(request.headers.get('cookie') ?? ''),
   });
 }
