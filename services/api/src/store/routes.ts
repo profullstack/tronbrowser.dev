@@ -611,6 +611,18 @@ store.post('/extensions/:id/versions', async (c) => {
     }
   }
 
+  // Versions are unique per listing. A resubmit of the latest one is a 409, not
+  // a 500 from the unique index, and for a house draft it is how the listing
+  // goes live (it was submitted before the server knew it was ours).
+  const prior = await latestVersion(ext.id);
+  if (prior && prior.version === v.manifest.version) {
+    if (ext.status === 'draft' && isHousePublisher(user.id)) {
+      await publish(ext.id);
+      return c.json({ ok: true, versionId: prior.id, version: prior.version, live: true, republished: true });
+    }
+    return c.json({ error: `version ${prior.version} is already published` }, 409);
+  }
+
   const version = await addVersion({
     extensionId: ext.id,
     version: v.manifest.version,
