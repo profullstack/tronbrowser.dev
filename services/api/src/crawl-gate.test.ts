@@ -34,4 +34,8 @@ describe('crawl gate', () => {
     expect((await check('/', { 'user-agent': GPT, cookie: 'tb_session=x' })).status).toBe(204);
     expect((await check('/api/healthz', { 'user-agent': GPT })).status).toBe(204);
   });
+  it('leaves /privacy and /terms open to every crawler', async () => {
+    expect((await check('/privacy', { 'user-agent': GPT })).status).toBe(204);
+    expect((await check('/terms', { 'user-agent': GPT })).status).toBe(204);
+  });
 });
