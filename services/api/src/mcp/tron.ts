@@ -128,6 +128,8 @@ export function tronRelay(deps: TronRelayDeps = {}): TronRelay {
   const server = new McpServer({ name: 'tronbrowser', version: '3.9' });
   server.register({
     name: 'fetch_page',
+    title: 'Fetch Web Page',
+    annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true, idempotentHint: true },
     description:
       'Fetch a public web page as markdown, text, links or html. Obscura renders first (fast, light); the ungoogled-chromium engine takes over for JS-heavy pages and bot walls. engine=obscura|chromium pins one. Keyless; a few fetches at a time. 30 s render budget; a page that times out, returns 5xx, or whose host is unreachable is skipped for 30 days with an error starting "FLAGGED until <ISO date>".',
     inputSchema: {
@@ -156,6 +158,8 @@ export function tronRelay(deps: TronRelayDeps = {}): TronRelay {
   });
   server.register({
     name: 'screenshot_page',
+    title: 'Screenshot Web Page',
+    annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true, idempotentHint: true },
     description: 'Render a public web page in the ungoogled-chromium engine and return a PNG of the viewport (1280x900).',
     inputSchema: {
       type: 'object',

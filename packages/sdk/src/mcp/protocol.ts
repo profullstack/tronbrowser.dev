@@ -21,9 +21,20 @@ export type McpContent =
 
 export interface McpTool {
   name: string;
+  /** Human-readable name shown by clients (MCP 2025-06-18). */
+  title?: string;
   description: string;
   inputSchema: Record<string, unknown>;
   handler(args: Record<string, unknown>): Promise<McpContent[]>;
+  /** MCP tool hints; directories want readOnly, destructive and openWorld set explicitly. */
+  annotations?: McpToolAnnotations;
+}
+
+export interface McpToolAnnotations {
+  readOnlyHint?: boolean;
+  destructiveHint?: boolean;
+  idempotentHint?: boolean;
+  openWorldHint?: boolean;
 }
 
 export interface McpServerInfo {
@@ -77,8 +88,10 @@ export class McpServer {
         return ok(id, {
           tools: this.tools().map((t) => ({
             name: t.name,
+            ...(t.title ? { title: t.title } : {}),
             description: t.description,
             inputSchema: t.inputSchema,
+            ...(t.annotations ? { annotations: t.annotations } : {}),
           })),
         });
       case 'tools/call': {
