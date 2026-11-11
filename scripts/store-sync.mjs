@@ -151,7 +151,10 @@ async function sync(entry) {
   const current = listing?.version?.version || null;
   const summary = entry.summary || (isMsg(manifest.description) ? null : String(manifest.description || '').slice(0, 200)) || null;
 
-  if (current && compareVersions(version, current) <= 0) {
+  // A draft (published before the house exemption reached the server, say)
+  // republishes its version so it goes live, instead of counting as current.
+  const draft = listing?.status === 'draft';
+  if (current && !draft && compareVersions(version, current) <= 0) {
     console.log(`= ${entry.slug}: store has ${current}, latest release ${hit.release.tag_name} is ${version}`);
     if (listing && !listing.iconUrl && iconUrl && !DRY) await store(`/extensions/${listing.id}`, { method: 'PATCH', body: JSON.stringify({ iconUrl }) });
     return 'current';
