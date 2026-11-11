@@ -117,6 +117,29 @@ version goes live. Anonymous public download is served by Caddy on the BBS host
 Requires `openssh-client` in the API image (for `ssh`/`ssh-keygen`) — added to
 the Dockerfile.
 
+## Our own extensions (house registry, auto-publish)
+
+`apps/extensions/house.json` lists every extension Profullstack owns: the GitHub
+repo, a regex for its extension release tags and one for the Chromium `.zip`
+asset. `.github/workflows/store-sync.yml` runs `scripts/store-sync.mjs` every
+half hour (and on any change to the registry): for each entry it takes the
+newest matching release, reads `manifest.json` out of the zip, and when that
+version is newer than the store's, publishes it with the release asset as the
+`bundleUrl`. A missing listing is created with the name, summary, homepage and
+the manifest's largest PNG icon.
+
+- **No fee:** the house account's user id is in `STORE_HOUSE_PUBLISHERS`, so its
+  listings go live on their first green version instead of waiting on a $1
+  checkout nothing in CI can complete (`services/api/src/store/house.ts`).
+- **Signed installs:** with `TRON_SIGNING_PASSPHRASE` set the sync unlocks the
+  publisher seal locally and sends only the derived key, so each release is
+  packed into a signed `.crx` and served on `updates.xml`; a new listing gets its
+  signing key (its permanent extension id) on its first publish.
+- **Adding an extension:** make its repo attach a Chromium `.zip` (with
+  `manifest.json` at the root) to a public GitHub release, then add an entry.
+  The per-repo reusable workflow `store-publish.yml` still works for a repo that
+  wants to publish the moment it releases.
+
 ## Not yet wired (follow-ups)
 
 - **Browser file upload** (multipart straight through the API to files) so devs

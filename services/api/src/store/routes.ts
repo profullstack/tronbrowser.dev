@@ -30,6 +30,7 @@ import {
   isSealedKey, legacyDecryptPrivateKey, legacyMigrationEnabled, type PublisherSeal,
 } from './signing.js';
 import { createScan, updateScan } from './db.js';
+import { isHousePublisher } from './house.js';
 
 const APP_URL = process.env.APP_URL || 'https://tronbrowser.dev';
 
@@ -651,7 +652,15 @@ store.post('/extensions/:id/versions', async (c) => {
     }
   }
 
-  return c.json({ ok: true, versionId: version.id, version: version.version, warnings: v.warnings, scan: scanResult, signed });
+  // House listings (our own extensions, published from CI) skip the $1 fee and
+  // go live on their first green version; see house.ts.
+  let live = ext.status === 'live';
+  if (ext.status === 'draft' && isHousePublisher(user.id)) {
+    await publish(ext.id);
+    live = true;
+  }
+
+  return c.json({ ok: true, versionId: version.id, version: version.version, warnings: v.warnings, scan: scanResult, signed, live });
 });
 
 /* ---------- pay the $1 listing fee ---------- */

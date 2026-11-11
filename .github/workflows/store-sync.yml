@@ -1,0 +1,67 @@
+name: Store sync
+
+# Publishes every extension we own to tronbrowser.dev/store from its GitHub
+# releases. The list lives in apps/extensions/house.json; scripts/store-sync.mjs
+# compares each one's newest matching release with what the store serves and
+# publishes anything newer (creating the listing the first time).
+#
+# Central on purpose: a publish step in every extension repo is a step every
+# repo has to remember, and for months none did. An extension repo only has to
+# put a Chromium .zip on a release; this picks it up within the half hour.
+#
+# Secrets (house publisher account, values in the logicsrc vault
+# profullstack/tronbrowser-store-ci--prod):
+#   TRONBROWSER_STORE_TOKEN  tbpub_ publisher token
+#   TRON_SIGNING_PASSPHRASE  publisher signing passphrase, so installs get a signed .crx
+
+on:
+  schedule:
+    - cron: '7,37 * * * *'
+  workflow_dispatch:
+    inputs:
+      only:
+        description: 'Sync just this slug'
+        required: false
+        default: ''
+      dry_run:
+        description: 'Report what would publish, write nothing'
+        type: boolean
+        default: false
+  push:
+    branches: [main]
+    paths:
+      - apps/extensions/house.json
+      - scripts/store-sync.mjs
+
+permissions:
+  contents: read
+
+concurrency:
+  group: store-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          sparse-checkout: |
+            apps/extensions/house.json
+            apps/extensions/public/seal.js
+            scripts/store-sync.mjs
+          sparse-checkout-cone-mode: false
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+
+      - name: Sync
+        env:
+          TRONBROWSER_STORE_TOKEN: ${{ secrets.TRONBROWSER_STORE_TOKEN }}
+          TRON_SIGNING_PASSPHRASE: ${{ secrets.TRON_SIGNING_PASSPHRASE }}
+          GITHUB_TOKEN: ${{ github.token }}
+          ONLY: ${{ inputs.only }}
+          DRY_RUN: ${{ inputs.dry_run && '--dry-run' || '' }}
+        run: node scripts/store-sync.mjs ${ONLY:+--only "$ONLY"} $DRY_RUN
