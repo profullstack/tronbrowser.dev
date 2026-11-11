@@ -1,4 +1,4 @@
-import { PROVIDERS, KNOWN_MODELS, listModels } from "./providers.js";
+import { PROVIDERS, KNOWN_MODELS, listModels, DEFAULT_PROVIDER } from "./providers.js";
 import { mountSettingsSections } from "./settings-sections.js";
 import {
   coinpaySignIn,
@@ -19,9 +19,16 @@ import {
 const el = (id) => document.getElementById(id);
 const PROV_LIST = Object.entries(PROVIDERS);
 
-// A provider counts as "configured" once it has a key (cloud) or base URL (local).
+// A provider counts as "configured" once it has a key (cloud) or base URL
+// (local). c0mpute (optionalKey) is always configured: it runs keyless on the
+// free daily tier, so it is on by default.
 function isConfigured(meta, cur) {
+  if (meta.optionalKey) return true;
   return meta.keyless ? !!(cur && cur.baseUrl) : !!(cur && cur.apiKey);
+}
+function keyPlaceholder(meta) {
+  if (meta.optionalKey) return "API key (optional: free daily tier without one)";
+  return meta.keyless ? "base URL (optional)" : "API key";
 }
 
 /* ---------- AI providers (multiple, with reveal + E2E vault) ---------- */
@@ -31,12 +38,11 @@ function buildProviders(aiProviders, aiDefault) {
   const box = el("providers");
   box.innerHTML = "";
 
-  // Default-provider menu lists ONLY configured providers; fall back to all
-  // when nothing is configured yet so the menu is never empty.
-  const configured = PROV_LIST.filter(([id, meta]) =>
+  // Default-provider menu lists ONLY configured providers. c0mpute always
+  // counts, so the menu is never empty and a fresh install defaults to it.
+  const menu = PROV_LIST.filter(([id, meta]) =>
     isConfigured(meta, aiProviders[id]),
   );
-  const menu = configured.length ? configured : PROV_LIST;
   for (const [id, meta] of menu) {
     const o = document.createElement("option");
     o.value = id;
@@ -51,13 +57,12 @@ function buildProviders(aiProviders, aiDefault) {
     const row = document.createElement("div");
     row.className = "prow";
     row.innerHTML = `<span class="plabel">${escape(meta.label)}</span>
-       <input data-prov="${id}" type="password" placeholder="${meta.keyless ? "base URL (optional)" : "API key"}" value="${escape(val)}" />
+       <input data-prov="${id}" type="password" placeholder="${keyPlaceholder(meta)}" value="${escape(val)}" />
        <button type="button" class="reveal" data-reveal="${id}">show</button>`;
     box.appendChild(row);
   }
   sel.value =
-    (menu.find(([id]) => id === aiDefault) ? aiDefault : menu[0]?.[0]) ||
-    "anthropic";
+    menu.find(([id]) => id === aiDefault) ? aiDefault : DEFAULT_PROVIDER;
   box.querySelectorAll("[data-reveal]").forEach((b) =>
     b.addEventListener("click", () => {
       const inp = box.querySelector(
@@ -100,7 +105,7 @@ async function fetchModels() {
   const cfg = meta.keyless
     ? { provider, baseUrl: val }
     : { provider, apiKey: val };
-  if (!meta.keyless && !val) {
+  if (!meta.keyless && !meta.optionalKey && !val) {
     el("modelHint").textContent =
       `${merged.length} common models — add your key above to load the full list`;
     return;

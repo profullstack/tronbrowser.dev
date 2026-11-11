@@ -1,4 +1,4 @@
-import { PROVIDERS, chatStream } from './providers.js';
+import { PROVIDERS, chatStream, effectiveConfig, DEFAULT_PROVIDER } from './providers.js';
 import { renderMarkdown } from './markdown.js';
 import { storageGet } from './net.js';
 import { PIT_SOCKS_PORT } from './pit-proxy.js';
@@ -23,12 +23,14 @@ let config = null;
 
 async function loadConfig() {
   const { aiConfig } = await storageGet('aiConfig');
-  config = aiConfig || null;
-  const ok = config && config.provider && (config.model) && (config.apiKey || PROVIDERS[config.provider]?.keyless);
-  setupEl.classList.toggle('hidden', !!ok);
-  sendBtn.disabled = !ok;
-  providerEl.textContent = ok ? `${PROVIDERS[config.provider]?.label || config.provider} · ${config.model}` : '';
-  return ok;
+  // c0mpute is on by default: with nothing saved (or a saved provider missing
+  // its key) the sidebar runs on c0mpute's free tier, no key needed.
+  config = effectiveConfig(aiConfig);
+  const onDefault = config.provider === DEFAULT_PROVIDER && !config.apiKey;
+  setupEl.classList.toggle('hidden', !onDefault);
+  sendBtn.disabled = false;
+  providerEl.textContent = `${PROVIDERS[config.provider]?.label || config.provider} · ${config.model}${onDefault ? ' · free tier' : ''}`;
+  return true;
 }
 
 function scrollDown() { messagesEl.scrollTop = messagesEl.scrollHeight; }

@@ -26,10 +26,17 @@ describe('resolveSwarmProvider', () => {
     });
   });
 
-  it('no key and no provider is refused unless the operator made c0mpute the default', () => {
-    expect(resolveSwarmProvider({}, env)).toHaveProperty('error');
+  it('no key and no provider runs on c0mpute by default', () => {
+    expect(resolveSwarmProvider({}, env)).toEqual({ provider: 'c0mpute', apiKey: 'ik_live_house', house: true });
     expect(resolveSwarmProvider({}, { ...env, SWARM_DEFAULT_PROVIDER: 'c0mpute' })).toMatchObject({
       provider: 'c0mpute',
+      house: true,
+    });
+  });
+
+  it('the operator can turn the c0mpute default off', () => {
+    expect(resolveSwarmProvider({}, { ...env, SWARM_DEFAULT_PROVIDER: 'none' })).toHaveProperty('error');
+    expect(resolveSwarmProvider({ provider: 'c0mpute' }, { ...env, SWARM_DEFAULT_PROVIDER: 'none' })).toMatchObject({
       house: true,
     });
   });
