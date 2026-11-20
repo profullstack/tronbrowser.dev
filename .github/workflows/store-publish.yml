@@ -94,11 +94,29 @@ jobs:
       - name: Publish
         env:
           TRONBROWSER_STORE_TOKEN: ${{ secrets.TRONBROWSER_STORE_TOKEN }}
+          IN_NAME: ${{ inputs.name }}
+          IN_MANIFEST: ${{ inputs.manifest }}
+          IN_SLUG: ${{ inputs.slug }}
+          IN_BUNDLE_URL: ${{ inputs.bundle_url }}
+          IN_CRX_URL: ${{ inputs.crx_url }}
+          IN_DRY_RUN: ${{ inputs.dry_run }}
         run: |
-          node .tronbrowser-store/scripts/store-publish.mjs \
-            --name "${{ inputs.name }}" \
-            --manifest "${{ inputs.manifest }}" \
-            ${{ inputs.slug != '' && format('--slug "{0}"', inputs.slug) || '' }} \
-            ${{ inputs.bundle_url != '' && format('--bundle-url "{0}"', inputs.bundle_url) || '' }} \
-            ${{ inputs.crx_url != '' && format('--crx-url "{0}"', inputs.crx_url) || '' }} \
-            ${{ inputs.dry_run && '--dry-run' || '' }}
+          # Inputs arrive through env and are passed as separate argv entries,
+          # never spliced into the script text.
+          if [[ ! "$IN_MANIFEST" =~ ^[A-Za-z0-9._/-]+$ ]] || [[ "$IN_MANIFEST" == *..* ]]; then
+            echo "::error::Invalid manifest path"; exit 1
+          fi
+          if [ -n "$IN_SLUG" ] && [[ ! "$IN_SLUG" =~ ^[A-Za-z0-9._-]+$ ]]; then
+            echo "::error::Invalid slug"; exit 1
+          fi
+          for u in "$IN_BUNDLE_URL" "$IN_CRX_URL"; do
+            if [ -n "$u" ] && [[ ! "$u" =~ ^https?://[^[:space:]]+$ ]]; then
+              echo "::error::Invalid artifact URL"; exit 1
+            fi
+          done
+          args=(--name "$IN_NAME" --manifest "$IN_MANIFEST")
+          [ -n "$IN_SLUG" ] && args+=(--slug "$IN_SLUG")
+          [ -n "$IN_BUNDLE_URL" ] && args+=(--bundle-url "$IN_BUNDLE_URL")
+          [ -n "$IN_CRX_URL" ] && args+=(--crx-url "$IN_CRX_URL")
+          [ "$IN_DRY_RUN" = "true" ] && args+=(--dry-run)
+          node .tronbrowser-store/scripts/store-publish.mjs "${args[@]}"
