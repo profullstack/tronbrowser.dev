@@ -25,6 +25,7 @@ import {
 import { assertDatabaseUrl, db } from './db.js';
 import { pushService } from './push/routes.js';
 import { createCrawlGate, crawlCheck } from './crawl-gate.js';
+import { coinpayFetch } from './coinpay-ua.js';
 import { mountProfile, profileStore, saveSignup, signupProfileErrors } from './profile.js';
 
 // Fail fast: a missing or non-Postgres DATABASE_URL is a deploy error, not a
@@ -157,6 +158,7 @@ app.get('/api/auth/coinpay/callback', async (c) => {
       clientSecret: CP.clientSecret,
       redirectUri: CP.redirectUri,
       base: CP.base,
+      fetch: coinpayFetch,
     });
     claims = { sub: r.sub, email: r.email };
   } catch (err) {

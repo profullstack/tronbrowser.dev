@@ -6,6 +6,7 @@
 // extension_payments row paid (keyed on the session id stored as provider_ref).
 // /confirm can also reconcile by reading the session back with the key.
 import { CoinPay, verifyWebhook, readWebhook } from '@profullstack/coinpay-onboard';
+import { coinpayFetch } from '../coinpay-ua.js';
 
 export const LISTING_FEE_CENTS = 100; // $1.00
 export const LISTING_FEE_CURRENCY = 'usd';
@@ -15,7 +16,7 @@ function client(): CoinPay {
   const key = process.env.COINPAY_API_KEY;
   if (!key) throw new Error('COINPAY_API_KEY not configured');
   const base = process.env.COINPAY_API_URL;
-  return new CoinPay(base ? { token: key, base } : { token: key });
+  return new CoinPay(base ? { token: key, base, fetch: coinpayFetch } : { token: key, fetch: coinpayFetch });
 }
 
 export interface ListingCheckout {

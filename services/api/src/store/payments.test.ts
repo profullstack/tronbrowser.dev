@@ -89,6 +89,7 @@ describe('POST /extensions/:id/checkout', () => {
     const [url, init] = fetchMock.mock.calls[0];
     expect(url).toBe('https://coinpayportal.com/api/checkout/sessions');
     expect(init.headers.authorization).toBe('Bearer cp_live_test');
+    expect(init.headers['user-agent']).toMatch(/^tronbrowser\.dev(\/[\d.]+)? \(\+https:\/\/tronbrowser\.dev\)$/);
     const sent = JSON.parse(init.body);
     expect(sent).toMatchObject({
       amount: LISTING_FEE_CENTS / 100, currency: 'USD', customer_email: 'owner@example.com', account_id: 'user-1',
