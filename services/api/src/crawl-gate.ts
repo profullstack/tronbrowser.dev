@@ -12,6 +12,7 @@
  * other answer (the 402 offer) is copied back to the client as it is.
  */
 import { createGateway } from '@profullstack/x402-gateway';
+import { coinpayFetch } from './coinpay-ua.js';
 
 export type CrawlGate = { handle: (request: Request) => Promise<Response | null> };
 
@@ -23,6 +24,7 @@ export function createCrawlGate(env: Record<string, string | undefined> = proces
     siteUrl: (env.APP_URL || 'https://tronbrowser.dev').replace(/\/+$/, ''),
     siteName: 'TronBrowser',
     coinpay: { apiKey },
+    fetch: coinpayFetch,
     payTo,
     contact: 'mailto:anthony@profullstack.com',
     openPaths: ['/api/', '/mcp/', '/llms.txt', '/llms-full.txt', '/skill.md', '/install.sh', '/privacy', '/terms', '/privacy.html', '/terms.html'],
