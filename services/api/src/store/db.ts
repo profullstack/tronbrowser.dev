@@ -294,11 +294,14 @@ export async function hasPaidListing(extensionId: string): Promise<boolean> {
 
 /* ---------- scans ---------- */
 
+/** Who produced a scan row: the built-in publish-gate scanner (scanner.ts). */
+const SCAN_PROVIDER = 'tron-ext-scanner';
+
 export async function createScan(extensionId: string, versionId: string): Promise<string> {
   const id = uuid();
   await db().execute({
-    sql: `INSERT INTO extension_scans (id, extension_id, version_id, status) VALUES (?, ?, ?, 'pending')`,
-    args: [id, extensionId, versionId],
+    sql: `INSERT INTO extension_scans (id, extension_id, version_id, provider, status) VALUES (?, ?, ?, ?, 'pending')`,
+    args: [id, extensionId, versionId, SCAN_PROVIDER],
   });
   return id;
 }

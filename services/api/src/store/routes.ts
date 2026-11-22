@@ -1,7 +1,8 @@
 // Extension store routes, mounted at /api/store by services/api/src/index.ts.
 //
 // Flow: create draft -> submit MV3 version (upload or PR) -> pay $1 (CoinPay
-// hosted checkout: any coin or PayPal) -> listing goes LIVE instantly + git mirror + async vu1nz scan.
+// hosted checkout: any coin or PayPal) -> listing goes LIVE instantly + git mirror.
+// Every submitted version passes the built-in security scan (scanner.ts) first.
 // Chromium install/auto-update keeps working via /api/store/updates.xml.
 import { Hono } from 'hono';
 import { getCookie } from 'hono/cookie';
@@ -21,7 +22,6 @@ import {
   provisionPublisher, generateKeypair, publicUrlFor, scpCommand, artifactExists, SCP_TARGET,
 } from './fileshost.js';
 import { createListingCheckout, listingSessionPaid, readListingWebhook } from './payments.js';
-import { enqueueScan } from './vu1nz.js';
 import { mirrorListing } from './mirror.js';
 import { fetchArtifact, artifactToZip, extractListingFromCrx, stampUpdateUrl } from './crx.js';
 import { scanArtifact, type ExtensionScanResult } from './scanner.js';
@@ -587,12 +587,10 @@ store.post('/extensions/:id/versions', async (c) => {
 
   // ── Security scan GATE ──────────────────────────────────────────────
   // If we can fetch a .crx, scan its code + permissions and BLOCK the submit
-  // on any critical finding (green light required to publish). Zip-only
-  // bundles fall back to the async (non-gating) vu1nz scan.
+  // on any critical finding (green light required to publish).
   // A .crx is just a header around a ZIP, so scan whichever artifact exists.
   // Gating only on .crx meant every zip-only listing skipped the scanner and
-  // fell through to the async path — which records 'skipped' when no external
-  // scanner is configured, leaving the listing permanently "unscanned".
+  // sat on a permanently "unscanned" badge.
   const scanTarget = crxUrl || bundleUrl;
   let scanResult: ExtensionScanResult | null = null;
   if (scanTarget) {
@@ -639,10 +637,6 @@ store.post('/extensions/:id/versions', async (c) => {
   if (scanResult) {
     // Persist the gating scan result for the store badge.
     await persistScan(ext.id, version.id, scanResult);
-  } else {
-    // No fetchable artifact at all — fall back to the async vu1nz scan, which
-    // records 'skipped' when no external scanner is configured.
-    await enqueueScan(ext.id, version);
   }
 
   // Sign now when the publisher sent their signing key (derived from the
