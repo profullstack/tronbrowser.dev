@@ -310,8 +310,8 @@ importers:
         specifier: 0.1.6
         version: 0.1.6(@libsql/client@0.18.0)(react@19.2.3)
       '@profullstack/x402-gateway':
-        specifier: ^0.18.3
-        version: 0.18.3
+        specifier: ^0.18.4
+        version: 0.18.4
       '@tronbrowser/sdk':
         specifier: workspace:*
         version: link:../../packages/sdk
@@ -1371,8 +1371,8 @@ packages:
       react:
         optional: true
 
-  '@profullstack/x402-gateway@0.18.3':
-    resolution: {integrity: sha512-p0bU1TyKX76IlwRqgLGMlCOGNktVVXAZpXPi2L02lIXm0Lj8IzJmuDe0ddtfXQzPZpKiTIJVvcfUmHqD8fmCMA==}
+  '@profullstack/x402-gateway@0.18.4':
+    resolution: {integrity: sha512-Glff1R6FvaYbiZK+zJv+vB11DOxUU7zQt9yIw/aLrVnta9OTqkULnGzqLy62egL6BZbxtVfW3kx/yHXiZOKVAw==}
     engines: {node: '>=20.11'}
 
   '@react-native/assets-registry@0.86.2':
@@ -5486,7 +5486,7 @@ snapshots:
     optionalDependencies:
       react: 19.2.3
 
-  '@profullstack/x402-gateway@0.18.3':
+  '@profullstack/x402-gateway@0.18.4':
     dependencies:
       '@profullstack/keys': 0.1.0
 
