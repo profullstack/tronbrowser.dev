@@ -31,8 +31,11 @@ describe('crawl gate', () => {
   });
   it('lets browsers, signed-in users and the API through', async () => {
     expect((await check('/', CHROME)).status).toBe(204);
-    expect((await check('/', { 'user-agent': GPT, cookie: 'tb_session=x' })).status).toBe(204);
+    expect((await check('/', { ...CHROME, cookie: 'tb_session=x' })).status).toBe(204);
     expect((await check('/api/healthz', { 'user-agent': GPT })).status).toBe(204);
+  });
+  it('does not let a forged session cookie exempt GPTBot (x402-gateway 0.18.3 sessionCookie)', async () => {
+    expect((await check('/', { 'user-agent': GPT, cookie: 'tb_session=forged' })).status).toBe(402);
   });
   it('leaves /privacy and /terms open to every crawler', async () => {
     expect((await check('/privacy', { 'user-agent': GPT })).status).toBe(204);

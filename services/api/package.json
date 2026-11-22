@@ -23,7 +23,7 @@
     "@profullstack/coinpay-onboard": "0.3.1",
     "@profullstack/libsql-pg": "^0.1.4",
     "@profullstack/profile": "0.1.6",
-    "@profullstack/x402-gateway": "^0.13.1",
+    "@profullstack/x402-gateway": "^0.18.3",
     "@tronbrowser/sdk": "workspace:*",
     "deepagents": "^1.15.1",
     "fflate": "^0.8.3",
