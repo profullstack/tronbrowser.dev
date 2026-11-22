@@ -40,7 +40,6 @@ vi.mock('./db.js', () => {
   };
 });
 vi.mock('./mirror.js', () => ({ mirrorListing: vi.fn(async () => {}) }));
-vi.mock('./vu1nz.js', () => ({ enqueueScan: vi.fn(async () => {}) }));
 
 const { store } = await import('./routes.js');
 const { readListingWebhook, LISTING_FEE_CENTS } = await import('./payments.js');

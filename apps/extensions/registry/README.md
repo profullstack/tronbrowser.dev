@@ -11,9 +11,8 @@ giving an auditable, forkable, greppable trail of what's live.
    `listing.json` here for you.
 
 2. **Pull request** — add `registry/<your-slug>/listing.json` yourself and open a
-   PR. The [vu1nz scan workflow](../../../.github/workflows/extension-scan.yml)
-   runs as the PR check; once the $1 fee clears the PR merges and the listing
-   goes live.
+   PR. The bundle passes the store's built-in security scan; once the $1 fee
+   clears the PR merges and the listing goes live.
 
 ## `listing.json` shape
 

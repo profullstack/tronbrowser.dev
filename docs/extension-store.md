@@ -29,7 +29,7 @@ exactly as Chromium expects.
 - `extensions` — listing (slug, owner, status `draft|live|removed`)
 - `extension_versions` — per-version MV3 manifest + bundle/CRX URLs (`manifest_version` enforced = 3 at the app layer)
 - `extension_payments`: the $1 fee; `coinpay` (older rows may say `stripe`/`x402`); `pending|paid|failed`
-- `extension_scans` — async vu1nz results; non-gating badge
+- `extension_scans` — built-in scanner results; shown as the listing badge
 - `extension_flags` — community flagging
 
 ## Publish flow
@@ -37,17 +37,16 @@ exactly as Chromium expects.
 ```
 create draft ─▶ submit MV3 version ─▶ pay $1 ─▶ LIVE (instant)
   POST /extensions   POST .../versions   POST .../checkout      │
-                     (validateManifest)   CoinPay checkout       ├─▶ git mirror (registry/)
-                                          CoinPay webhook        └─▶ vu1nz scan (async badge)
+                     (validateManifest)   CoinPay checkout       └─▶ git mirror (registry/)
+                                          CoinPay webhook
 ```
 
 Two publish paths (both supported):
 1. **Upload form** (`submit.html`) → API writes the listing + mirrors to git.
-2. **Pull request** to `apps/extensions/registry/<slug>/listing.json` → the
-   `extension-scan.yml` workflow runs vu1nz as the PR check.
+2. **Pull request** to `apps/extensions/registry/<slug>/listing.json`.
 
-Publishing is **instant after payment** — the vu1nz scan and git mirror happen
-out of band and never block going live ("scan + community flagging", not
+Publishing is **instant after payment**: the git mirror happens out of band and
+never blocks going live ("scan + community flagging", not
 pre-review).
 
 ## Payments (`store/payments.ts`)
@@ -62,13 +61,11 @@ on CoinPay's page. CoinPay posts `payment.confirmed` / `payment.forwarded` to
 marks the row paid (idempotent) and publishes. `/confirm` with `{sessionId}`
 reconciles by reading the session back with the API key.
 
-## Security scan — vu1nz.com (`store/vu1nz.ts`)
+## Security scan (`store/scanner.ts`)
 
-Fire-and-forget after a version is submitted: `POST $VU1NZ_API_URL/scan/extension`
-with the manifest + permissions + bundle URL; result stored in `extension_scans`
-and shown as a 🛡 badge. If `VU1NZ_API_URL` is unset the scan is recorded
-`skipped` so the store works without a scanner wired. The same scan runs as a
-GitHub Action check on the PR path.
+Runs when a version is submitted: the .crx or .zip is fetched, its code and
+permissions are scanned, and any critical finding blocks the submit. The verdict
+is stored in `extension_scans` and shown as a 🛡 badge.
 
 ## Endpoints (`/api/store`)
 
@@ -89,7 +86,7 @@ GitHub Action check on the PR path.
 
 See `.env.example` (Extension store section): `APP_URL`, `COINPAY_API_URL`,
 `COINPAY_API_KEY`, `COINPAY_WEBHOOK_SECRET`,
-`VU1NZ_API_URL`, `VU1NZ_API_KEY`, `STORE_REGISTRY_REPO`, `GITHUB_TOKEN`.
+`STORE_REGISTRY_REPO`, `GITHUB_TOKEN`.
 
 ## Bundle hosting — files.profullstack.com (AgentBBS Files)
 

@@ -252,7 +252,7 @@ function scanBadge(scan) {
   if (scan.status === 'done') {
     const sev = scan.severity || 'clean';
     const score = scan.score != null ? ` ${scan.score}/100` : '';
-    return `<span class="badge ${esc(sev)}" title="vu1nz.com scan">🛡 ${esc(sev)}${esc(score)}</span>`;
+    return `<span class="badge ${esc(sev)}" title="Security scan">🛡 ${esc(sev)}${esc(score)}</span>`;
   }
   if (scan.status === 'skipped') return '<span class="badge skipped">unscanned</span>';
   if (scan.status === 'error') return '<span class="badge high">scan error</span>';

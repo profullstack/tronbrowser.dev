@@ -43,11 +43,11 @@ one-click off-store install.
    URL(s). Rejected unless it's valid Manifest V3.
 3. `POST /api/store/extensions/:id/checkout`: pay the $1 fee on a
    **CoinPay** hosted checkout (any supported coin, or PayPal).
-4. On payment the listing flips to **live**, is mirrored to the git registry,
-   and a **vu1nz.com** security scan runs asynchronously (badge on the listing).
+4. On payment the listing flips to **live** and is mirrored to the git registry.
+   Every version passes the store's built-in security scan before it is accepted
+   (badge on the listing).
 
-You can also publish **via a PR** to `registry/<slug>/listing.json` — the vu1nz
-scan runs as the PR's CI check.
+You can also publish **via a PR** to `registry/<slug>/listing.json`.
 
 ## Develop
 
